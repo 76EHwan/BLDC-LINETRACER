@@ -15,12 +15,14 @@
 #include "lcd.h"
 #include "mcf8316c.h"
 
-void Motor_Init(){
+void Motor_Init() {
 	__HAL_TIM_SET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL, 0);
 	__HAL_TIM_SET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL, 0);
 
-	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin,
+			GPIO_PIN_SET);
+	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin,
+			GPIO_PIN_SET);
 	HAL_GPIO_WritePin(Motor_L_Brake_GPIO_Port, Motor_L_Brake_Pin, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(Motor_R_Brake_GPIO_Port, Motor_R_Brake_Pin, GPIO_PIN_SET);
 }
@@ -28,7 +30,7 @@ void Motor_Init(){
 menu_t motorMenu[] = { { "1.M I2CSET", MCF8316C_Set_I2C_Addr }, { "2.M FAULT ",
 		MCF8316C_Test_Fault }, { "3.M VOLT  ", MCF8316C_Get_Voltage }, {
 		"4.M ENC   ", Motor_Test_Encoder }, { "5.M P CTL ", Motor_Test_Kp }, {
-		"6.M PI CTL", }, { "7.M SPEED ", Motor_Test_Speed}, { "8.OUT     ", } };
+		"6.M PI CTL", }, { "7.M SPEED ", Motor_Test_Speed }, { "8.OUT     ", } };
 
 void Motor_Test_Menu() {
 	Encoder_Start();
@@ -78,10 +80,14 @@ void Motor_Start() {
 
 	HAL_LPTIM_Counter_Start_IT(MOTOR_PID_TIM, MOTOR_PID_PERIOD);
 
-	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(Motor_L_Brake_GPIO_Port, Motor_L_Brake_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(Motor_R_Brake_GPIO_Port, Motor_R_Brake_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin,
+			GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin,
+			GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(Motor_L_Brake_GPIO_Port, Motor_L_Brake_Pin,
+			GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(Motor_R_Brake_GPIO_Port, Motor_R_Brake_Pin,
+			GPIO_PIN_RESET);
 }
 
 void Encoder_Start() {
@@ -93,8 +99,10 @@ void Motor_Stop() {
 	HAL_TIM_PWM_Stop(MOTOR_L_TIM, MOTOR_L_CHANNEL);
 	HAL_TIM_PWM_Stop(MOTOR_R_TIM, MOTOR_R_CHANNEL);
 
-	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin,
+			GPIO_PIN_SET);
+	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin,
+			GPIO_PIN_SET);
 	HAL_GPIO_WritePin(Motor_L_Brake_GPIO_Port, Motor_L_Brake_Pin, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(Motor_R_Brake_GPIO_Port, Motor_R_Brake_Pin, GPIO_PIN_SET);
 }
@@ -120,7 +128,6 @@ void Motor_Test_Encoder() {
 		;
 	Encoder_Stop();
 }
-
 
 void Motor_Test_Kp() {
 	Encoder_Start();
@@ -153,14 +160,22 @@ void Motor_Test_Kp() {
 	Encoder_Stop();
 }
 
-void Motor_Test_Speed(){
+void Motor_Test_Speed() {
 	Encoder_Start();
 	Motor_Start();
-	__HAL_TIM_SET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL, __HAL_TIM_GET_AUTORELOAD(MOTOR_L_TIM));
-	__HAL_TIM_SET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL, __HAL_TIM_GET_AUTORELOAD(MOTOR_R_TIM));
-	while(1){
+	__HAL_TIM_SET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL,
+			__HAL_TIM_GET_AUTORELOAD(MOTOR_L_TIM));
+	__HAL_TIM_SET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL,
+			__HAL_TIM_GET_AUTORELOAD(MOTOR_R_TIM));
+	while (1) {
 		Custom_LCD_Printf(0, 0, "%5d", __HAL_TIM_GET_COUNTER(ENCODER_L_TIM));
 		Custom_LCD_Printf(0, 1, "%5d", __HAL_TIM_GET_COUNTER(ENCODER_R_TIM));
+		if (!HAL_GPIO_ReadPin(Motor_L_nFAULT_GPIO_Port, Motor_L_nFAULT_Pin)) {
+			HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_SET);
+		}
+		if (!HAL_GPIO_ReadPin(Motor_R_nFAULT_GPIO_Port, Motor_R_nFAULT_Pin)) {
+			HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_SET);
+		}
 	}
 }
 
