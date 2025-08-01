@@ -33,15 +33,15 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   CONTENTS, READONLY, DEBUGGING, OCTETS
  14 .debug_macro  0004969a  00000000  00000000  0005593e  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 15 .debug_line   000340b0  00000000  00000000  0009efd8  2**0
+ 15 .debug_line   000340b4  00000000  00000000  0009efd8  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 16 .debug_str    0019ab10  00000000  00000000  000d3088  2**0
+ 16 .debug_str    0019ab10  00000000  00000000  000d308c  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .comment      00000043  00000000  00000000  0026db98  2**0
+ 17 .comment      00000043  00000000  00000000  0026db9c  2**0
                   CONTENTS, READONLY
- 18 .debug_frame  0000a9a4  00000000  00000000  0026dbdc  2**2
+ 18 .debug_frame  0000a9a4  00000000  00000000  0026dbe0  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .debug_line_str 0000005c  00000000  00000000  00278580  2**0
+ 19 .debug_line_str 0000005c  00000000  00000000  00278584  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -38940,9 +38940,9 @@ void Encoder_Start() {
  800f01c:	24000d04 	.word	0x24000d04
 
 0800f020 <Encoder_Stop>:
-void Motor_Stop() {
-	HAL_TIM_PWM_Stop(MOTOR_L_TIM, MOTOR_L_CHANNEL);
-	HAL_TIM_PWM_Stop(MOTOR_R_TIM, MOTOR_R_CHANNEL);
+	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(Motor_L_Brake_GPIO_Port, Motor_L_Brake_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(Motor_R_Brake_GPIO_Port, Motor_R_Brake_Pin, GPIO_PIN_SET);
 }
 
 void Encoder_Stop() {

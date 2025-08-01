@@ -7609,7 +7609,7 @@ Discarded input sections
                 0x00000000       0x54 ./Main/Src/motor.o
  .bss.motor     0x00000000       0x58 ./Main/Src/motor.o
  .text.Motor_Stop
-                0x00000000       0x1c ./Main/Src/motor.o
+                0x00000000       0x54 ./Main/Src/motor.o
  .debug_macro   0x00000000      0xaf6 ./Main/Src/motor.o
  .debug_macro   0x00000000       0x22 ./Main/Src/motor.o
  .debug_macro   0x00000000      0x250 ./Main/Src/motor.o
@@ -15435,7 +15435,7 @@ LOAD C:/ST/STM32CubeIDE_1.18.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.ext
  .debug_macro   0x00048f9a      0x326 ./Src/system_stm32h7xx.o
  .debug_macro   0x000492c0      0x3da ./Src/tim.o
 
-.debug_line     0x00000000    0x340b0
+.debug_line     0x00000000    0x340b4
  .debug_line    0x00000000      0xf79 ./Drivers/BSP/ST7735/lcd.o
  .debug_line    0x00000f79      0x530 ./Drivers/BSP/ST7735/logo_160_80.o
  .debug_line    0x000014a9     0x1056 ./Drivers/BSP/ST7735/st7735.o
@@ -15462,27 +15462,27 @@ LOAD C:/ST/STM32CubeIDE_1.18.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.ext
  .debug_line    0x00022e8f      0xb22 ./Main/Src/drive.o
  .debug_line    0x000239b1      0xc65 ./Main/Src/init.o
  .debug_line    0x00024616      0xf59 ./Main/Src/mcf8316c.o
- .debug_line    0x0002556f      0xd56 ./Main/Src/motor.o
- .debug_line    0x000262c5     0x116f ./Main/Src/sensor.o
- .debug_line    0x00027434      0xb79 ./Middlewares/Third_Party/FatFs/src/ff_gen_drv.o
- .debug_line    0x00027fad      0xd80 ./Src/adc.o
- .debug_line    0x00028d2d      0xb9d ./Src/bsp_driver_sd.o
- .debug_line    0x000298ca      0xae8 ./Src/fatfs.o
- .debug_line    0x0002a3b2      0xaaf ./Src/gpio.o
- .debug_line    0x0002ae61      0xb98 ./Src/i2c.o
- .debug_line    0x0002b9f9      0xcc9 ./Src/lptim.o
- .debug_line    0x0002c6c2      0xe9f ./Src/main.o
- .debug_line    0x0002d561      0xb15 ./Src/rtc.o
- .debug_line    0x0002e076      0xbe8 ./Src/sd_diskio.o
- .debug_line    0x0002ec5e      0xac6 ./Src/sdmmc.o
- .debug_line    0x0002f724      0xc55 ./Src/spi.o
- .debug_line    0x00030379      0xa48 ./Src/stm32h7xx_hal_msp.o
- .debug_line    0x00030dc1      0xba7 ./Src/stm32h7xx_it.o
- .debug_line    0x00031968      0x8a7 ./Src/syscalls.o
- .debug_line    0x0003220f      0x583 ./Src/sysmem.o
- .debug_line    0x00032792      0xb5d ./Src/system_stm32h7xx.o
- .debug_line    0x000332ef      0xd47 ./Src/tim.o
- .debug_line    0x00034036       0x7a ./Startup/startup_stm32h743vitx.o
+ .debug_line    0x0002556f      0xd5a ./Main/Src/motor.o
+ .debug_line    0x000262c9     0x116f ./Main/Src/sensor.o
+ .debug_line    0x00027438      0xb79 ./Middlewares/Third_Party/FatFs/src/ff_gen_drv.o
+ .debug_line    0x00027fb1      0xd80 ./Src/adc.o
+ .debug_line    0x00028d31      0xb9d ./Src/bsp_driver_sd.o
+ .debug_line    0x000298ce      0xae8 ./Src/fatfs.o
+ .debug_line    0x0002a3b6      0xaaf ./Src/gpio.o
+ .debug_line    0x0002ae65      0xb98 ./Src/i2c.o
+ .debug_line    0x0002b9fd      0xcc9 ./Src/lptim.o
+ .debug_line    0x0002c6c6      0xe9f ./Src/main.o
+ .debug_line    0x0002d565      0xb15 ./Src/rtc.o
+ .debug_line    0x0002e07a      0xbe8 ./Src/sd_diskio.o
+ .debug_line    0x0002ec62      0xac6 ./Src/sdmmc.o
+ .debug_line    0x0002f728      0xc55 ./Src/spi.o
+ .debug_line    0x0003037d      0xa48 ./Src/stm32h7xx_hal_msp.o
+ .debug_line    0x00030dc5      0xba7 ./Src/stm32h7xx_it.o
+ .debug_line    0x0003196c      0x8a7 ./Src/syscalls.o
+ .debug_line    0x00032213      0x583 ./Src/sysmem.o
+ .debug_line    0x00032796      0xb5d ./Src/system_stm32h7xx.o
+ .debug_line    0x000332f3      0xd47 ./Src/tim.o
+ .debug_line    0x0003403a       0x7a ./Startup/startup_stm32h743vitx.o
 
 .debug_str      0x00000000   0x19ab10
  .debug_str     0x00000000   0x19ab10 ./Drivers/BSP/ST7735/lcd.o

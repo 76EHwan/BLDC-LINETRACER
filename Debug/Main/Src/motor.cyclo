@@ -3,8 +3,8 @@
 ../Main/Src/motor.c:75:6:Motor_Start	1
 ../Main/Src/motor.c:87:6:Encoder_Start	1
 ../Main/Src/motor.c:92:6:Motor_Stop	1
-../Main/Src/motor.c:97:6:Encoder_Stop	1
-../Main/Src/motor.c:102:6:Motor_LPTIM4_IRQ	1
-../Main/Src/motor.c:106:6:Motor_Test_Encoder	3
-../Main/Src/motor.c:119:6:Motor_Test_Kp	4
-../Main/Src/motor.c:150:6:Motor_Test_Speed	1
+../Main/Src/motor.c:102:6:Encoder_Stop	1
+../Main/Src/motor.c:107:6:Motor_LPTIM4_IRQ	1
+../Main/Src/motor.c:111:6:Motor_Test_Encoder	3
+../Main/Src/motor.c:124:6:Motor_Test_Kp	4
+../Main/Src/motor.c:155:6:Motor_Test_Speed	1
