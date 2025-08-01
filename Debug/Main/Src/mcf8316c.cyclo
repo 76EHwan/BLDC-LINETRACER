@@ -1,0 +1,11 @@
+../Main/Src/mcf8316c.c:24:19:MCF8316C_WriteSetting	2
+../Main/Src/mcf8316c.c:47:19:MCF8316C_ReadSetting	2
+../Main/Src/mcf8316c.c:70:19:MCF8316C_WriteRegister	2
+../Main/Src/mcf8316c.c:94:19:MCF8316C_ReadRegister	3
+../Main/Src/mcf8316c.c:122:6:MCF8316C_Get_Voltage	4
+../Main/Src/mcf8316c.c:145:19:MCF8316C_Set_Register	3
+../Main/Src/mcf8316c.c:160:6:MCF8316C_Test_I2C_Addr	9
+../Main/Src/mcf8316c.c:215:6:MCF8316C_Set_I2C_Addr	33
+../Main/Src/mcf8316c.c:345:6:MCF8316C_Check_SAME	3
+../Main/Src/mcf8316c.c:367:6:MCF8316C_Test_Fault	3
+../Main/Src/mcf8316c.c:392:6:MCF8316C_Init	1

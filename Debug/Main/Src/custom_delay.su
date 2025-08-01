@@ -1,0 +1,2 @@
+../Main/Src/custom_delay.c:16:6:Custom_Delay_Init	4	static
+../Main/Src/custom_delay.c:36:6:Custom_Delay_us	24	static

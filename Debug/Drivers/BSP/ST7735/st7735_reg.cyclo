@@ -1,0 +1,4 @@
+../Drivers/BSP/ST7735/st7735_reg.c:46:9:st7735_read_reg	1
+../Drivers/BSP/ST7735/st7735_reg.c:59:9:st7735_write_reg	1
+../Drivers/BSP/ST7735/st7735_reg.c:71:9:st7735_send_data	1
+../Drivers/BSP/ST7735/st7735_reg.c:83:9:st7735_recv_data	1

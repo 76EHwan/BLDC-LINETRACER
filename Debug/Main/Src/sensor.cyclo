@@ -1,0 +1,17 @@
+../Main/Src/sensor.c:55:6:Sensor_Test_Menu	5
+../Main/Src/sensor.c:87:6:Sensor_Start	1
+../Main/Src/sensor.c:101:6:Sensor_Stop	1
+../Main/Src/sensor.c:111:26:Sensor_ADC_Read	2
+../Main/Src/sensor.c:122:6:Sensor_LPTIM3_IRQ	5
+../Main/Src/sensor.c:175:6:Marker_LPTIM3_IRQ	5
+../Main/Src/sensor.c:209:6:Sensor_Printf	1
+../Main/Src/sensor.c:230:6:Sensor_Test_Raw	3
+../Main/Src/sensor.c:240:6:Sensor_Calibration	6
+../Main/Src/sensor.c:268:6:Sensor_Test_Normalized	3
+../Main/Src/sensor.c:278:6:Sensor_Test_State	5
+../Main/Src/sensor.c:297:6:Sensor_Test_Position	3
+../Main/Src/sensor.c:308:6:Sensor_Test_Window	3
+../Main/Src/sensor.c:323:6:Battery_Start	1
+../Main/Src/sensor.c:327:6:Battery_Stop	1
+../Main/Src/sensor.c:331:6:ADC_Battery_LPTIM5_IRQ	1
+../Main/Src/sensor.c:337:6:Sensor_Test_Voltage	3

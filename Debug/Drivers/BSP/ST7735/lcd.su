@@ -1,0 +1,15 @@
+../Drivers/BSP/ST7735/lcd.c:43:6:LCD_Test	48	static
+../Drivers/BSP/ST7735/lcd.c:106:6:LCD_SetBrightness	16	static
+../Drivers/BSP/ST7735/lcd.c:110:10:LCD_GetBrightness	4	static
+../Drivers/BSP/ST7735/lcd.c:117:6:LCD_Light	48	static
+../Drivers/BSP/ST7735/lcd.c:164:6:LCD_ShowChar	128	dynamic
+../Drivers/BSP/ST7735/lcd.c:261:6:LCD_ShowString	40	static
+../Drivers/BSP/ST7735/lcd.c:280:16:lcd_init	16	static
+../Drivers/BSP/ST7735/lcd.c:286:16:lcd_gettick	8	static
+../Drivers/BSP/ST7735/lcd.c:290:16:lcd_writereg	32	static
+../Drivers/BSP/ST7735/lcd.c:307:16:lcd_readreg	24	static
+../Drivers/BSP/ST7735/lcd.c:324:16:lcd_senddata	24	static
+../Drivers/BSP/ST7735/lcd.c:338:16:lcd_recvdata	24	static
+../Drivers/BSP/ST7735/lcd.c:352:6:Custom_LCD_Printf	544	static
+../Drivers/BSP/ST7735/lcd.c:362:6:Custom_LCD_Clear	24	static
+../Drivers/BSP/ST7735/lcd.c:367:6:Set_Color	16	static
