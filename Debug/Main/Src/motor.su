@@ -6,5 +6,5 @@
 ../Main/Src/motor.c:102:6:Encoder_Stop	8	static
 ../Main/Src/motor.c:107:6:Motor_LPTIM4_IRQ	4	static
 ../Main/Src/motor.c:111:6:Motor_Test_Encoder	8	static
-../Main/Src/motor.c:124:6:Motor_Test_Kp	24	static
-../Main/Src/motor.c:155:6:Motor_Test_Speed	8	static
+../Main/Src/motor.c:125:6:Motor_Test_Kp	24	static
+../Main/Src/motor.c:156:6:Motor_Test_Speed	8	static

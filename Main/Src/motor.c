@@ -121,6 +121,7 @@ void Motor_Test_Encoder() {
 	Encoder_Stop();
 }
 
+
 void Motor_Test_Kp() {
 	Encoder_Start();
 	MCF8316C_ReadSetting(MCF8316C_I2C_LEFT_CHANNEL);
