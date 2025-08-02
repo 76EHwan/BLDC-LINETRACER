@@ -29,39 +29,38 @@ void Motor_Init() {
 
 menu_t motorMenu[] = { { "1.M I2CSET", MCF8316C_Set_I2C_Addr }, { "2.M FAULT ",
 		MCF8316C_Test_Fault }, { "3.M VOLT  ", MCF8316C_Get_Voltage }, {
-		"4.M ENC   ", Motor_Test_Encoder }, { "5.M P CTL ", Motor_Test_Kp }, {
+		"4.M ENC   ", Motor_Test_Encoder }, { "5.M MPET ", MCF8316C_Init }, {
 		"6.M PI CTL", }, { "7.M SPEED ", Motor_Test_Speed }, { "8.OUT     ", } };
 
 void Motor_Test_Menu() {
 	Encoder_Start();
-	bool out = true;
-	static uint8_t beforeMenu = 0;
 	static uint8_t maxMenu = sizeof(motorMenu) / sizeof(menu_t);
-	while (out) {
+	static uint8_t beforeMenu = 0;
+	while (1) {
 		uint32_t cnt = ((hlptim1.Instance->CNT + 128) / 256 + beforeMenu)
 				% maxMenu;
-		Custom_LCD_Printf(0, 0, "M Test", hlptim1.Instance->CNT);
+		Custom_LCD_Printf(0, 0, "Main Menu", hlptim1.Instance->CNT);
 		for (uint8_t i = 0; i < maxMenu; i++) {
 			Set_Color(cnt, i);
 			Custom_LCD_Printf(0, i + 1, "%s", (motorMenu + i)->name);
 		}
 		POINT_COLOR = WHITE;
 		BACK_COLOR = BLACK;
+		//		Show_Remain_Battery();
 		if (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) == GPIO_PIN_SET) {
 			while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) == GPIO_PIN_SET)
 				;
 			Custom_LCD_Clear();
-			beforeMenu = cnt;
 			Encoder_Stop();
 			if (cnt == maxMenu - 1)
 				return;
 			(motorMenu + cnt)->func();
-			Custom_LCD_Clear();
 			Encoder_Start();
+			Custom_LCD_Clear();
+			beforeMenu = cnt;
 		}
 	}
 }
-
 typedef struct {
 	float_t id_ref, iq_ref;
 	float_t id, iq;
@@ -98,6 +97,8 @@ void Encoder_Start() {
 void Motor_Stop() {
 	HAL_TIM_PWM_Stop(MOTOR_L_TIM, MOTOR_L_CHANNEL);
 	HAL_TIM_PWM_Stop(MOTOR_R_TIM, MOTOR_R_CHANNEL);
+
+	HAL_LPTIM_Counter_Stop_IT(MOTOR_PID_TIM);
 
 	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin,
 			GPIO_PIN_SET);
@@ -164,18 +165,26 @@ void Motor_Test_Speed() {
 	Encoder_Start();
 	Motor_Start();
 	__HAL_TIM_SET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL,
-			__HAL_TIM_GET_AUTORELOAD(MOTOR_L_TIM));
+			__HAL_TIM_GET_AUTORELOAD(MOTOR_L_TIM) / 100);
 	__HAL_TIM_SET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL,
-			__HAL_TIM_GET_AUTORELOAD(MOTOR_R_TIM));
-	while (1) {
+			__HAL_TIM_GET_AUTORELOAD(MOTOR_R_TIM) / 100);
+	while (!HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin)) {
 		Custom_LCD_Printf(0, 0, "%5d", __HAL_TIM_GET_COUNTER(ENCODER_L_TIM));
 		Custom_LCD_Printf(0, 1, "%5d", __HAL_TIM_GET_COUNTER(ENCODER_R_TIM));
-		if (!HAL_GPIO_ReadPin(Motor_L_nFAULT_GPIO_Port, Motor_L_nFAULT_Pin)) {
+		if (!HAL_GPIO_ReadPin(Motor_L_nFAULT_GPIO_Port, Motor_L_nFAULT_Pin))
 			HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_SET);
-		}
-		if (!HAL_GPIO_ReadPin(Motor_R_nFAULT_GPIO_Port, Motor_R_nFAULT_Pin)) {
+		else
+			HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_RESET);
+		if (!HAL_GPIO_ReadPin(Motor_R_nFAULT_GPIO_Port, Motor_R_nFAULT_Pin))
 			HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_SET);
-		}
+		else
+			HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_RESET);
 	}
+	Motor_Stop();
+	Encoder_Stop();
+	HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_RESET);
+	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
+		;
 }
 

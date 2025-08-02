@@ -20,6 +20,9 @@
 #define MOTOR_PID_PERIOD		0
 #define ENCODER_PERIOD			65535
 
+void Motor_Init();
+
+
 void Motor_Test_Menu(void);
 
 void Motor_Start();

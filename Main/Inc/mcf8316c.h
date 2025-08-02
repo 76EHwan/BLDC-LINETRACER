@@ -74,15 +74,19 @@
 #define INT_ALGO_2_ADDR				0xA2
 #define ALGO_CTRL1_ADDR				0xEA
 #define ALGO_DEBUG1_ADDR			0xEC
-
+#define ALGO_DEBUG2_ADDR			0xEE
 
 /* RAM ADDRESS */
+#define DRIVER_FAULT_ADDR			0xE0
+#define CONTROLLER_FAULT_ADDR		0xE2
+#define MTR_PARAMS					0xE6
 #define MCF8316C_WRITE_READ_ADDR	ALGO_CTRL1_ADDR
 #define MCF8316C_MOTOR_STOP_ADDR	ALGO_DEBUG1_ADDR
 #define MCF8316C_DRIVER_STATE_ADDR	0x190
 #define MCF8316C_CURR_PI_ADDR		0xF0
 
 #define MCF8316C_SPEED_PI_ADDR		0xF2
+#define ALGORITHM_STATUS_ADDR		0x190
 #define MCF8316C_BUS_CURRENT_ADDR	0x410
 #define MCF8316C_VM_ADDR			0x476
 
@@ -181,7 +185,7 @@
 #define BRK_TIME_7S5				(0xD << 13)
 #define BRK_TIME_10S				(0xE << 13)
 #define BRK_TIME_15S				(0xF << 13)
-#define BRK_TIME					BRK_TIME_500MS
+#define BRK_TIME					BRK_TIME_5S
 
 /* HIZ TIME (Hi-Z Time) */
 #define HIZ_TIME_10MS				(0x0 << 9)
@@ -296,7 +300,7 @@
 #define ACTIVE_BRAKE_CURRENT_LIMIT		ACTIVE_BRAKE_CURRENT_2A
 
 /* ACTIVE BRAKE KP (Active Braking Loop Kp) */
-#define ACTIVE_BRAKE_KP_BASE			1.f
+#define ACTIVE_BRAKE_KP_BASE			0.f
 #define ACTIVE_BRAKE_KP_CALC			((uint16_t) (ACTIVE_BRAKE_KP_BASE * 128.f) & 0x3FF)
 #define ACTIVE_BRAKE_KP					(ACTIVE_BRAKE_KP_CALC << 10)
 
@@ -430,7 +434,7 @@
 /* OL ILIMIT CONFIG (Open Loop Current Limit Configuration)*/
 #define OL_LIMIT_CONFIG_OLILIMIT	(0x0 << 3)
 #define OL_LIMIT_CONFIG_ILIMIT		(0x1 << 3)
-#define OL_LIMIT_CONFIG				OL_LIMIT_CONFIG_ILIMIT
+#define OL_LIMIT_CONFIG				OL_LIMIT_CONFIG_OLILIMIT
 
 /* IQ RAMP EN (IQ Ramp Down for Transition) */
 #define IQ_RAMP_ENABLE				(0x1 << 2)
@@ -553,34 +557,34 @@
 
 /* ALIGN ANGLE (Align Angle) */
 #define ALIGN_0DEG		(0x00 << 8)
-#define ALIGN_10DEG		(0x00 << 8)
-#define ALIGN_20DEG		(0x00 << 8)
-#define ALIGN_30DEG		(0x00 << 8)
-#define ALIGN_45DEG		(0x00 << 8)
-#define ALIGN_60DEG		(0x00 << 8)
-#define ALIGN_70DEG		(0x00 << 8)
-#define ALIGN_80DEG		(0x00 << 8)
-#define ALIGN_90DEG		(0x00 << 8)
-#define ALIGN_110DEG	(0x00 << 8)
-#define ALIGN_120DEG	(0x00 << 8)
-#define ALIGN_135DEG	(0x00 << 8)
-#define ALIGN_150DEG	(0x00 << 8)
-#define ALIGN_160DEG	(0x00 << 8)
-#define ALIGN_170DEG	(0x00 << 8)
-#define ALIGN_180DEG	(0x00 << 8)
-#define ALIGN_190DEG	(0x00 << 8)
-#define ALIGN_210DEG	(0x00 << 8)
-#define ALIGN_225DEG	(0x00 << 8)
-#define ALIGN_240DEG	(0x00 << 8)
-#define ALIGN_250DEG	(0x00 << 8)
-#define ALIGN_260DEG	(0x00 << 8)
-#define ALIGN_270DEG	(0x00 << 8)
-#define ALIGN_280DEG	(0x00 << 8)
-#define ALIGN_290DEG	(0x00 << 8)
-#define ALIGN_315DEG	(0x00 << 8)
-#define ALIGN_330DEG	(0x00 << 8)
-#define ALIGN_340DEG	(0x00 << 8)
-#define ALIGN_350DEG	(0x00 << 8)
+#define ALIGN_10DEG		(0x01 << 8)
+#define ALIGN_20DEG		(0x02 << 8)
+#define ALIGN_30DEG		(0x03 << 8)
+#define ALIGN_45DEG		(0x04 << 8)
+#define ALIGN_60DEG		(0x05 << 8)
+#define ALIGN_70DEG		(0x06 << 8)
+#define ALIGN_80DEG		(0x07 << 8)
+#define ALIGN_90DEG		(0x08 << 8)
+#define ALIGN_110DEG	(0x09 << 8)
+#define ALIGN_120DEG	(0x0A << 8)
+#define ALIGN_135DEG	(0x0B << 8)
+#define ALIGN_150DEG	(0x0C << 8)
+#define ALIGN_160DEG	(0x0D << 8)
+#define ALIGN_170DEG	(0x0E << 8)
+#define ALIGN_180DEG	(0x0F << 8)
+#define ALIGN_190DEG	(0x10 << 8)
+#define ALIGN_210DEG	(0x11 << 8)
+#define ALIGN_225DEG	(0x12 << 8)
+#define ALIGN_240DEG	(0x13 << 8)
+#define ALIGN_250DEG	(0x14 << 8)
+#define ALIGN_260DEG	(0x15 << 8)
+#define ALIGN_270DEG	(0x16 << 8)
+#define ALIGN_280DEG	(0x17 << 8)
+#define ALIGN_290DEG	(0x18 << 8)
+#define ALIGN_315DEG	(0x19 << 8)
+#define ALIGN_330DEG	(0x1A << 8)
+#define ALIGN_340DEG	(0x1B << 8)
+#define ALIGN_350DEG	(0x1C << 8)
 #define ALIGN_ANGLE		ALIGN_0DEG
 
 /* SLOW FIRST CYCLE FREQ (First Cycle in Start-up Frequency) */
@@ -806,7 +810,7 @@
 #define MTR_STOP_BRK_TIME_5S			(0xD << 24)
 #define MTR_STOP_BRK_TIME_10S			(0xE << 24)
 #define MTR_STOP_BRK_TIME_15S			(0xF << 24)
-#define MTR_STOP_BRK_TIME				MTR_STOP_BRK_TIME_1S
+#define MTR_STOP_BRK_TIME				MTR_STOP_BRK_TIME_100MS
 
 /* ACT SPIN THR (Active Spin Threshold) */
 #define ACT_SPIN_100PER					(0x0 << 20)
@@ -825,7 +829,7 @@
 #define ACT_SPIN_10PER					(0xD << 20)
 #define ACT_SPIN_5PER					(0xE << 20)
 #define ACT_SPIN_2PER5					(0xF << 20)
-#define ACT_SPIN_THR					ACT_SPIN_25PER
+#define ACT_SPIN_THR					ACT_SPIN_5PER
 
 /* BRAKE SPEED THRESHOLD (Speed Treshold for BRAKE Pin and Motor Stop Options) */
 #define BRAKE_SPEED_100PER				(0x0 << 16)
@@ -844,7 +848,7 @@
 #define BRAKE_SPEED_10PER				(0xD << 16)
 #define BRAKE_SPEED_5PER				(0xE << 16)
 #define BRAKE_SPEED_2PER5				(0xF << 16)
-#define BRAKE_SPEED_THRESHOLD			BRAKE_SPEED_10PER
+#define BRAKE_SPEED_THRESHOLD			BRAKE_SPEED_5PER
 
 /* MOTOR RES (Motor Resistance) */
 #define MOTOR_RES_SELF					(0x00 << 8)
@@ -1103,144 +1107,144 @@
 #define MOTOR_RES_18R5					(0xFD << 8)
 #define MOTOR_RES_19R					(0xFE << 8)
 #define MOTOR_RES_20R					(0xFF << 8)
-#define MOTOR_RES						MOTOR_RES_1R9		/* ECX SPEED 16M 36V RES = 1.92Ω  */
+#define MOTOR_RES						MOTOR_RES_SELF
 
 /* MOTOR IND (Motor Inductance) */
 #define MOTOR_IND_SELF					0x00
-#define MOTOR_IND_0MH006					(0x01 << 8)
-#define MOTOR_IND_0MH007					(0x02 << 8)
-#define MOTOR_IND_0MH008					(0x03 << 8)
-#define MOTOR_IND_0MH009					(0x04 << 8)
-#define MOTOR_IND_0MH010					(0x05 << 8)
-#define MOTOR_IND_0MH011					(0x06 << 8)
-#define MOTOR_IND_0MH012					(0x07 << 8)
-#define MOTOR_IND_0MH013					(0x08 << 8)
-#define MOTOR_IND_0MH014					(0x09 << 8)
-#define MOTOR_IND_0MH015					(0x0A << 8)
-#define MOTOR_IND_0MH016					(0x0B << 8)
-#define MOTOR_IND_0MH017					(0x0C << 8)
-#define MOTOR_IND_0MH018					(0x0D << 8)
-#define MOTOR_IND_0MH019					(0x0E << 8)
+#define MOTOR_IND_0MH006				(0x01 << 8)
+#define MOTOR_IND_0MH007				(0x02 << 8)
+#define MOTOR_IND_0MH008				(0x03 << 8)
+#define MOTOR_IND_0MH009				(0x04 << 8)
+#define MOTOR_IND_0MH010				(0x05 << 8)
+#define MOTOR_IND_0MH011				(0x06 << 8)
+#define MOTOR_IND_0MH012				(0x07 << 8)
+#define MOTOR_IND_0MH013				(0x08 << 8)
+#define MOTOR_IND_0MH014				(0x09 << 8)
+#define MOTOR_IND_0MH015				(0x0A << 8)
+#define MOTOR_IND_0MH016				(0x0B << 8)
+#define MOTOR_IND_0MH017				(0x0C << 8)
+#define MOTOR_IND_0MH018				(0x0D << 8)
+#define MOTOR_IND_0MH019				(0x0E << 8)
 #define MOTOR_IND_0MH02					(0x0F << 8)
-#define MOTOR_IND_0MH022					(0x10 << 8)
-#define MOTOR_IND_0MH024					(0x11 << 8)
-#define MOTOR_IND_0MH026					(0x12 << 8)
-#define MOTOR_IND_0MH028					(0x13 << 8)
+#define MOTOR_IND_0MH022				(0x10 << 8)
+#define MOTOR_IND_0MH024				(0x11 << 8)
+#define MOTOR_IND_0MH026				(0x12 << 8)
+#define MOTOR_IND_0MH028				(0x13 << 8)
 #define MOTOR_IND_0MH03					(0x14 << 8)
-#define MOTOR_IND_0MH032					(0x15 << 8)
-#define MOTOR_IND_0MH034					(0x16 << 8)
-#define MOTOR_IND_0MH036					(0x17 << 8)
-#define MOTOR_IND_0MH038					(0x18 << 8)
+#define MOTOR_IND_0MH032				(0x15 << 8)
+#define MOTOR_IND_0MH034				(0x16 << 8)
+#define MOTOR_IND_0MH036				(0x17 << 8)
+#define MOTOR_IND_0MH038				(0x18 << 8)
 #define MOTOR_IND_0MH04					(0x19 << 8)
-#define MOTOR_IND_0MH042					(0x1A << 8)
-#define MOTOR_IND_0MH044					(0x1B << 8)
-#define MOTOR_IND_0MH046					(0x1C << 8)
-#define MOTOR_IND_0MH048					(0x1D << 8)
+#define MOTOR_IND_0MH042				(0x1A << 8)
+#define MOTOR_IND_0MH044				(0x1B << 8)
+#define MOTOR_IND_0MH046				(0x1C << 8)
+#define MOTOR_IND_0MH048				(0x1D << 8)
 #define MOTOR_IND_0MH05					(0x1E << 8)
-#define MOTOR_IND_0MH052					(0x1F << 8)
-#define MOTOR_IND_0MH054					(0x20 << 8)
-#define MOTOR_IND_0MH056					(0x21 << 8)
-#define MOTOR_IND_0MH058					(0x22 << 8)
+#define MOTOR_IND_0MH052				(0x1F << 8)
+#define MOTOR_IND_0MH054				(0x20 << 8)
+#define MOTOR_IND_0MH056				(0x21 << 8)
+#define MOTOR_IND_0MH058				(0x22 << 8)
 #define MOTOR_IND_0MH06					(0x23 << 8)
-#define MOTOR_IND_0MH062					(0x24 << 8)
-#define MOTOR_IND_0MH064					(0x25 << 8)
-#define MOTOR_IND_0MH066					(0x26 << 8)
-#define MOTOR_IND_0MH068					(0x27 << 8)
+#define MOTOR_IND_0MH062				(0x24 << 8)
+#define MOTOR_IND_0MH064				(0x25 << 8)
+#define MOTOR_IND_0MH066				(0x26 << 8)
+#define MOTOR_IND_0MH068				(0x27 << 8)
 #define MOTOR_IND_0MH07					(0x28 << 8)
-#define MOTOR_IND_0MH072					(0x29 << 8)
-#define MOTOR_IND_0MH074					(0x2A << 8)
-#define MOTOR_IND_0MH076					(0x2B << 8)
-#define MOTOR_IND_0MH078					(0x2C << 8)
+#define MOTOR_IND_0MH072				(0x29 << 8)
+#define MOTOR_IND_0MH074				(0x2A << 8)
+#define MOTOR_IND_0MH076				(0x2B << 8)
+#define MOTOR_IND_0MH078				(0x2C << 8)
 #define MOTOR_IND_0MH08					(0x2D << 8)
-#define MOTOR_IND_0MH082					(0x2E << 8)
-#define MOTOR_IND_0MH084					(0x2F << 8)
-#define MOTOR_IND_0MH086					(0x30 << 8)
-#define MOTOR_IND_0MH088					(0x31 << 8)
+#define MOTOR_IND_0MH082				(0x2E << 8)
+#define MOTOR_IND_0MH084				(0x2F << 8)
+#define MOTOR_IND_0MH086				(0x30 << 8)
+#define MOTOR_IND_0MH088				(0x31 << 8)
 #define MOTOR_IND_0MH09					(0x32 << 8)
-#define MOTOR_IND_0MH092					(0x33 << 8)
-#define MOTOR_IND_0MH094					(0x34 << 8)
-#define MOTOR_IND_0MH096					(0x35 << 8)
-#define MOTOR_IND_0MH099					(0x36 << 8)
+#define MOTOR_IND_0MH092				(0x33 << 8)
+#define MOTOR_IND_0MH094				(0x34 << 8)
+#define MOTOR_IND_0MH096				(0x35 << 8)
+#define MOTOR_IND_0MH099				(0x36 << 8)
 #define MOTOR_IND_0MH1					(0x37 << 8)
-#define MOTOR_IND_0MH105					(0x38 << 8)
+#define MOTOR_IND_0MH105				(0x38 << 8)
 #define MOTOR_IND_0MH11					(0x39 << 8)
-#define MOTOR_IND_0MH115					(0x3A << 8)
+#define MOTOR_IND_0MH115				(0x3A << 8)
 #define MOTOR_IND_0MH12					(0x3B << 8)
-#define MOTOR_IND_0MH125					(0x3C << 8)
+#define MOTOR_IND_0MH125				(0x3C << 8)
 #define MOTOR_IND_0MH13					(0x3D << 8)
-#define MOTOR_IND_0MH135					(0x3E << 8)
+#define MOTOR_IND_0MH135				(0x3E << 8)
 #define MOTOR_IND_0MH14					(0x3F << 8)
-#define MOTOR_IND_0MH145					(0x40 << 8)
+#define MOTOR_IND_0MH145				(0x40 << 8)
 #define MOTOR_IND_0MH15					(0x41 << 8)
-#define MOTOR_IND_0MH155					(0x42 << 8)
+#define MOTOR_IND_0MH155				(0x42 << 8)
 #define MOTOR_IND_0MH16					(0x43 << 8)
-#define MOTOR_IND_0MH165					(0x44 << 8)
+#define MOTOR_IND_0MH165				(0x44 << 8)
 #define MOTOR_IND_0MH17					(0x45 << 8)
-#define MOTOR_IND_0MH175					(0x46 << 8)
+#define MOTOR_IND_0MH175				(0x46 << 8)
 #define MOTOR_IND_0MH18					(0x47 << 8)
-#define MOTOR_IND_0MH185					(0x48 << 8)
+#define MOTOR_IND_0MH185				(0x48 << 8)
 #define MOTOR_IND_0MH19					(0x49 << 8)
-#define MOTOR_IND_0MH195					(0x4A << 8)
+#define MOTOR_IND_0MH195				(0x4A << 8)
 #define MOTOR_IND_0MH2					(0x4B << 8)
-#define MOTOR_IND_0MH205					(0x4C << 8)
+#define MOTOR_IND_0MH205				(0x4C << 8)
 #define MOTOR_IND_0MH21					(0x4D << 8)
-#define MOTOR_IND_0MH215					(0x4E << 8)
+#define MOTOR_IND_0MH215				(0x4E << 8)
 #define MOTOR_IND_0MH22					(0x4F << 8)
-#define MOTOR_IND_0MH225					(0x50 << 8)
+#define MOTOR_IND_0MH225				(0x50 << 8)
 #define MOTOR_IND_0MH23					(0x51 << 8)
-#define MOTOR_IND_0MH235					(0x52 << 8)
+#define MOTOR_IND_0MH235				(0x52 << 8)
 #define MOTOR_IND_0MH24					(0x53 << 8)
-#define MOTOR_IND_0MH245					(0x54 << 8)
+#define MOTOR_IND_0MH245				(0x54 << 8)
 #define MOTOR_IND_0MH25					(0x55 << 8)
-#define MOTOR_IND_0MH255					(0x56 << 8)
+#define MOTOR_IND_0MH255				(0x56 << 8)
 #define MOTOR_IND_0MH26					(0x57 << 8)
-#define MOTOR_IND_0MH265					(0x58 << 8)
+#define MOTOR_IND_0MH265				(0x58 << 8)
 #define MOTOR_IND_0MH27					(0x59 << 8)
-#define MOTOR_IND_0MH275					(0x5A << 8)
+#define MOTOR_IND_0MH275				(0x5A << 8)
 #define MOTOR_IND_0MH28					(0x5B << 8)
-#define MOTOR_IND_0MH285					(0x5C << 8)
+#define MOTOR_IND_0MH285				(0x5C << 8)
 #define MOTOR_IND_0MH29					(0x5D << 8)
-#define MOTOR_IND_0MH295					(0x5E << 8)
+#define MOTOR_IND_0MH295				(0x5E << 8)
 #define MOTOR_IND_0MH3					(0x5F << 8)
-#define MOTOR_IND_0MH305					(0x60 << 8)
+#define MOTOR_IND_0MH305				(0x60 << 8)
 #define MOTOR_IND_0MH31					(0x61 << 8)
-#define MOTOR_IND_0MH315					(0x62 << 8)
+#define MOTOR_IND_0MH315				(0x62 << 8)
 #define MOTOR_IND_0MH32					(0x63 << 8)
-#define MOTOR_IND_0MH325					(0x64 << 8)
+#define MOTOR_IND_0MH325				(0x64 << 8)
 #define MOTOR_IND_0MH33					(0x65 << 8)
-#define MOTOR_IND_0MH335					(0x66 << 8)
+#define MOTOR_IND_0MH335				(0x66 << 8)
 #define MOTOR_IND_0MH34					(0x67 << 8)
-#define MOTOR_IND_0MH345					(0x68 << 8)
+#define MOTOR_IND_0MH345				(0x68 << 8)
 #define MOTOR_IND_0MH35					(0x69 << 8)
-#define MOTOR_IND_0MH355					(0x6A << 8)
+#define MOTOR_IND_0MH355				(0x6A << 8)
 #define MOTOR_IND_0MH36					(0x6B << 8)
-#define MOTOR_IND_0MH365					(0x6C << 8)
+#define MOTOR_IND_0MH365				(0x6C << 8)
 #define MOTOR_IND_0MH37					(0x6D << 8)
-#define MOTOR_IND_0MH375					(0x6E << 8)
+#define MOTOR_IND_0MH375				(0x6E << 8)
 #define MOTOR_IND_0MH38					(0x6F << 8)
-#define MOTOR_IND_0MH385					(0x70 << 8)
+#define MOTOR_IND_0MH385				(0x70 << 8)
 #define MOTOR_IND_0MH39					(0x71 << 8)
-#define MOTOR_IND_0MH395					(0x72 << 8)
+#define MOTOR_IND_0MH395				(0x72 << 8)
 #define MOTOR_IND_0MH4					(0x73 << 8)
-#define MOTOR_IND_0MH405					(0x74 << 8)
+#define MOTOR_IND_0MH405				(0x74 << 8)
 #define MOTOR_IND_0MH41					(0x75 << 8)
-#define MOTOR_IND_0MH415					(0x76 << 8)
+#define MOTOR_IND_0MH415				(0x76 << 8)
 #define MOTOR_IND_0MH42					(0x77 << 8)
-#define MOTOR_IND_0MH425					(0x78 << 8)
+#define MOTOR_IND_0MH425				(0x78 << 8)
 #define MOTOR_IND_0MH43					(0x79 << 8)
-#define MOTOR_IND_0MH435					(0x7A << 8)
+#define MOTOR_IND_0MH435				(0x7A << 8)
 #define MOTOR_IND_0MH44					(0x7B << 8)
-#define MOTOR_IND_0MH445					(0x7C << 8)
+#define MOTOR_IND_0MH445				(0x7C << 8)
 #define MOTOR_IND_0MH45					(0x7D << 8)
-#define MOTOR_IND_0MH455					(0x7E << 8)
+#define MOTOR_IND_0MH455				(0x7E << 8)
 #define MOTOR_IND_0MH46					(0x7F << 8)
-#define MOTOR_IND_0MH465					(0x80 << 8)
+#define MOTOR_IND_0MH465				(0x80 << 8)
 #define MOTOR_IND_0MH47					(0x81 << 8)
-#define MOTOR_IND_0MH475					(0x82 << 8)
+#define MOTOR_IND_0MH475				(0x82 << 8)
 #define MOTOR_IND_0MH48					(0x83 << 8)
-#define MOTOR_IND_0MH485					(0x84 << 8)
+#define MOTOR_IND_0MH485				(0x84 << 8)
 #define MOTOR_IND_0MH49					(0x85 << 8)
-#define MOTOR_IND_0MH495					(0x86 << 8)
+#define MOTOR_IND_0MH495				(0x86 << 8)
 #define MOTOR_IND_0MH5					(0x87 << 8)
 #define MOTOR_IND_0MH51					(0x88 << 8)
 #define MOTOR_IND_0MH52					(0x89 << 8)
@@ -1362,7 +1366,7 @@
 #define MOTOR_IND_18MH5					(0xFD << 8)
 #define MOTOR_IND_19MH					(0xFE << 8)
 #define MOTOR_IND_20MH					(0xFF << 8)
-#define MOTOR_IND						MOTOR_IND_0MH13		/* ECX SPEED 16L 36V 0.129mH */
+#define MOTOR_IND						MOTOR_IND_SELF
 
 /* CLOSED LOOP2 Register Data */
 #define CLOSED_LOOP2_DATA				(MTR_STOP | MTR_STOP_BRK_TIME | ACT_SPIN_THR | BRAKE_SPEED_THRESHOLD | MOTOR_RES | MOTOR_IND)
@@ -1627,27 +1631,27 @@
 #define MOTOR_BEMF_1K85MV				(0xFD << 23)
 #define MOTOR_BEMF_1K9MV				(0xFE << 23)
 #define MOTOR_BEMF_2KMV					(0xFF << 23)
-#define MOTOR_BEMF_CONST				MOTOR_BEMF_70MV			/* ECX SPEED 16M 36V 14.6 RPM/MV => 40.54 MV / HZ => 40.54 * SQRT(3) = 70.22 MV/HZ */
+#define MOTOR_BEMF_CONST				MOTOR_BEMF_SELF
 
-/* CURR LOOP KP (Current iq and id Loop Kp) */
+/* CURR LOOP KP (Current iq and id Loop Kp = Value / 10 ^ SCALE) */
 #define CURR_LOOP_KP_SCALE_0			(0x0 << 21)
 #define CURR_LOOP_KP_SCALE_1			(0x1 << 21)
 #define CURR_LOOP_KP_SCALE_2			(0x2 << 21)
 #define CURR_LOOP_KP_SCALE_3			(0x3 << 21)
-#define CURR_LOOP_KP_SCALE				CURR_LOOP_KP_SCALE_3
-#define CURR_LOOP_KP_VALUE				(0x00 << 13)
+#define CURR_LOOP_KP_SCALE				CURR_LOOP_KP_SCALE_2
+#define CURR_LOOP_KP_VALUE				(0x2D << 13)
 #define CURR_LOOP_KP					(CURR_LOOP_KP_SCALE | CURR_LOOP_KI_VALUE)
 
-/* CURR LOOP KI (Current iq and id Loop Ki) */
+/* CURR LOOP KI (Current iq and id Loop Ki = 1000 * Value / 10 ^ SCALE) */
 #define CURR_LOOP_KI_SCALE_0			(0x0 << 11)
 #define CURR_LOOP_KI_SCALE_1			(0x1 << 11)
 #define CURR_LOOP_KI_SCALE_2			(0x2 << 11)
 #define CURR_LOOP_KI_SCALE_3			(0x3 << 11)
 #define CURR_LOOP_KI_SCALE				CURR_LOOP_KI_SCALE_1
-#define CURR_LOOP_KI_VALUE				(0x00 << 3)
+#define CURR_LOOP_KI_VALUE				(0x52 << 3)
 #define CURR_LOOP_KI					(CURR_LOOP_KI_SCALE | CURR_LOOP_KI_VALUE)
 
-/* SPD LOOP KP1 (Speed Loop Kp = 0.01 * Value / 10 ^ SCALE) */
+/* SPD LOOP KP (Speed Loop Kp = 0.01 * Value / 10 ^ SCALE) */
 #define SPD_LOOP_KP_SCALE_0				(0x0 << 1)
 #define SPD_LOOP_KP_SCALE_1				(0x1 << 1)
 #define SPD_LOOP_KP_SCALE_2				(0x2 << 1)
@@ -1668,12 +1672,12 @@
 #define SPD_LOOP_KI_SCALE_1				(0x1 << 22)
 #define SPD_LOOP_KI_SCALE_2				(0x2 << 22)
 #define SPD_LOOP_KI_SCALE_3				(0x3 << 22)
-#define SPD_LOOP_KI_SCALE				SPD_LOOP_KI_SCALE_0
+#define SPD_LOOP_KI_SCALE				SPD_LOOP_KI_SCALE_3
 #define SPD_LOOP_KI_VALUE				(0x00 << 14)
 #define SPD_LOOP_KI						(SPD_LOOP_KI_SCALE | SPD_LOOP_KI_VALUE)
 
 /* MAX SPEED (Maximum value of Speed in Hz) */
-#define MAX_SPEED_VALUE					0x1						/* ECX SPEED 16M 36V 48600 RPM = 810 Hz = 0x32A*/
+#define MAX_SPEED_VALUE					0x32A						/* ECX SPEED 16M 36V 48600 RPM = 810 Hz = 0x32A*/
 #define MAX_SPEED						(MAX_SPEED_VALUE * 6)		/* MAX_SPEED = 0x32A * 6 = 0x12FC */
 
 /* CLOSED LOOP4  */
@@ -1832,7 +1836,7 @@
 #define ILIMIT_6A			(0xD << 27)
 #define ILIMIT_7A			(0xE << 27)
 #define ILIMIT_8A			(0xF << 27)
-#define ILIMIT				ILIMIT_3A
+#define ILIMIT				ILIMIT_2A
 
 /* HW LOCK LIMIT (Comparator Based Lock Detection Current Threshold) */
 #define HW_LOCK_LIMIT_0A125			(0x0 << 23)
@@ -1851,7 +1855,7 @@
 #define HW_LOCK_LIMIT_6A			(0xD << 23)
 #define HW_LOCK_LIMIT_7A			(0xE << 23)
 #define HW_LOCK_LIMIT_8A			(0xF << 23)
-#define HW_LOCK_LIMIT				HW_LOCK_LIMIT_6A
+#define HW_LOCK_LIMIT				HW_LOCK_LIMIT_2A
 
 /* LOCK ILIMIT (ADC Based Lock Detection Current Threshold) */
 #define LOCK_ILIMIT_0A125			(0x0 << 19)
@@ -2267,7 +2271,7 @@
 #define BUS_CURRENT_LIMIT_6A					(0xD << 22)
 #define BUS_CURRENT_LIMIT_7A					(0xE << 22)
 #define BUS_CURRENT_LIMIT_8A					(0xF << 22)
-#define BUS_CURRENT_LIMIT						BUS_CURRENT_LIMIT_3A
+#define BUS_CURRENT_LIMIT						BUS_CURRENT_LIMIT_2A
 
 /* BUS CURRENT LIMIT ENABLE (Bus Current Limit Enable) */
 #define BUS_CURRENT_LIMIT_ENABLE				(0x1 << 21)
@@ -2491,9 +2495,9 @@
 /* MPET IPD FREQ */
 #define MPET_IPD_FREQ_1										(0x0 << 11)
 #define MPET_IPD_FREQ_2										(0x1 << 11)
-#define MPET_IPD_FREQ_3										(0x2 << 11)
-#define MPET_IPD_FREQ_4										(0x3 << 11)
-#define MPET_IPD_FREQ										MPET_IPD_FREQ_1
+#define MPET_IPD_FREQ_4										(0x2 << 11)
+#define MPET_IPD_FREQ_8										(0x3 << 11)
+#define MPET_IPD_FREQ										MPET_IPD_FREQ_2
 
 /* MPET OPEN LOOP CURRENT */
 #define MPET_OPEN_LOOP_CURRENT_REF_1A						(0x0 < 8)
@@ -2511,7 +2515,7 @@
 #define MPET_OPEN_LOOP_SPEED_REF_25PER						(0x1 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_35PER						(0x2 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_50PER						(0x3 << 6)
-#define MPET_OPEN_LOOP_SPEED_REF							MPET_OPEN_LOOP_SPEED_REF_25PER
+#define MPET_OPEN_LOOP_SPEED_REF							MPET_OPEN_LOOP_SPEED_REF_15PER
 
 /* MPET OPEN LOOP SLEW RATE */
 #define MPET_OPEN_LOOP_SLEW_RATE_0HZ1						(0x0 << 3)
@@ -2574,12 +2578,12 @@
 /* MPET IPD SELECT */
 #define MPET_IPD_SELECT_NORMAL				(0x0 << 2)
 #define MPET_IPD_SELECT_SPECIFIC			(0x1 << 2)
-#define MPET_IPD_SELECT						MPET_IPD_SELECT_SPECIFIC
+#define MPET_IPD_SELECT						MPET_IPD_SELECT_NORMAL
 
 /* MPET KE MEAS PARAMETER SELECT */
 #define MPET_KE_MEAS_PARAMETER_SELECT_NORMAL			(0x0 << 1)
 #define MPET_KE_MEAS_PARAMETER_SELECT_SPECIFIC			(0x1 << 1)
-#define MPET_KE_MEAS_PARAMETER_SELECT					MPET_KE_MEAS_PARAMETER_SELECT_SPECIFIC
+#define MPET_KE_MEAS_PARAMETER_SELECT					MPET_KE_MEAS_PARAMETER_SELECT_NORMAL
 
 /* IPD HIGH RESOLUTION EN */
 #define IPD_HIGH_RESOLUTION_ENABLE			0x1
@@ -2589,6 +2593,45 @@
 /* INT ALGO 2 Register Data */
 #define INT_ALGO_2_DATA						(CL_SLOW_ACC | ACTIVE_BRAKE_BUS_CURRENT_SLEW_RATE | MPET_IPD_SELECT | MPET_KE_MEAS_PARAMETER_SELECT | IPD_HIGH_RESOLUTION_EN)
 
+/*
+ * ALGO_DEBUG2
+ */
+/* MPET CMD */
+#define MPET_CMD_ENABLE						(0x1 << 5)
+#define MPET_CMD_DISABLE					(0x0 << 5)
+#define MPET_CMD							MPET_CMD_ENABLE
+
+/* MPET R */
+#define MPET_R_ENABLE						(0x1 << 4)
+#define MPET_R_DISABLE						(0x0 << 4)
+#define MPET_R								MPET_R_ENABLE
+
+/* MPET L */
+#define MPET_L_ENABLE						(0x1 << 3)
+#define MPET_L_DISABLE						(0x0 << 3)
+#define MPET_L								MPET_L_ENABLE
+
+/* MPET KE */
+#define MPET_KE_ENABLE						(0x1 << 2)
+#define MPET_KE_DISABLE						(0x0 << 2)
+#define MPET_KE								MPET_KE_ENABLE
+
+/* MPET MECH */
+#define MPET_MECH_ENABLE					(0x1 << 1)
+#define MPET_MECH_DISABLE					(0x0 << 1)
+#define MPET_MECH							MPET_MECH_ENABLE
+
+/* MPET WRITE SHADOW */
+#define MPET_WRITE_SHADOW_ENABLE			0x1
+#define MPET_WRITE_SHADOW_DISABLE			0x0
+#define MPET_WRITE_SHADOW					MPET_WRITE_SHADOW_ENABLE
+
+/* ALGO DEBUG2 Register Data */
+#define ALGO_DEBUG2_DATA					(MPET_CMD | MPET_R | MPET_L | MPET_KE | MPET_MECH | MPET_WRITE_SHADOW)
+
+/*
+ * MCF8316C-Q1 I2C FUNCTION
+ */
 
 HAL_StatusTypeDef MCF8316C_WriteSetting(I2C_HandleTypeDef *hi2c);
 HAL_StatusTypeDef MCF8316C_ReadSetting(I2C_HandleTypeDef *hi2c);
@@ -2596,8 +2639,6 @@ HAL_StatusTypeDef MCF8316C_WriteRegister(I2C_HandleTypeDef *hi2c,
 		uint16_t reg_addr, uint8_t *pData);
 HAL_StatusTypeDef MCF8316C_ReadRegister(I2C_HandleTypeDef *hi2c,
 		uint16_t reg_addr, uint8_t *pData, uint16_t Size);
-
-
 
 void MCF8316C_Init();
 
