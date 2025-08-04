@@ -14,6 +14,7 @@
 #include "lcd.h"
 #include "motor.h"
 #include <stdbool.h>
+#include <stdlib.h>
 
 #define MCF8316C_I2C_ADDRESS_7BIT	0x01
 
@@ -97,6 +98,9 @@
 /*
  * EEPROM DATA
  */
+
+#define EEPROM_SIZE					0x04
+#define VM_SIZE_32BIT				0x04
 
 /*
  * ISD_CONFIG
@@ -810,7 +814,7 @@
 #define MTR_STOP_BRK_TIME_5S			(0xD << 24)
 #define MTR_STOP_BRK_TIME_10S			(0xE << 24)
 #define MTR_STOP_BRK_TIME_15S			(0xF << 24)
-#define MTR_STOP_BRK_TIME				MTR_STOP_BRK_TIME_100MS
+#define MTR_STOP_BRK_TIME				MTR_STOP_BRK_TIME_1S
 
 /* ACT SPIN THR (Active Spin Threshold) */
 #define ACT_SPIN_100PER					(0x0 << 20)
@@ -829,7 +833,7 @@
 #define ACT_SPIN_10PER					(0xD << 20)
 #define ACT_SPIN_5PER					(0xE << 20)
 #define ACT_SPIN_2PER5					(0xF << 20)
-#define ACT_SPIN_THR					ACT_SPIN_5PER
+#define ACT_SPIN_THR					ACT_SPIN_25PER
 
 /* BRAKE SPEED THRESHOLD (Speed Treshold for BRAKE Pin and Motor Stop Options) */
 #define BRAKE_SPEED_100PER				(0x0 << 16)
@@ -848,7 +852,7 @@
 #define BRAKE_SPEED_10PER				(0xD << 16)
 #define BRAKE_SPEED_5PER				(0xE << 16)
 #define BRAKE_SPEED_2PER5				(0xF << 16)
-#define BRAKE_SPEED_THRESHOLD			BRAKE_SPEED_5PER
+#define BRAKE_SPEED_THRESHOLD			BRAKE_SPEED_10PER
 
 /* MOTOR RES (Motor Resistance) */
 #define MOTOR_RES_SELF					(0x00 << 8)
@@ -1638,8 +1642,8 @@
 #define CURR_LOOP_KP_SCALE_1			(0x1 << 21)
 #define CURR_LOOP_KP_SCALE_2			(0x2 << 21)
 #define CURR_LOOP_KP_SCALE_3			(0x3 << 21)
-#define CURR_LOOP_KP_SCALE				CURR_LOOP_KP_SCALE_2
-#define CURR_LOOP_KP_VALUE				(0x2D << 13)
+#define CURR_LOOP_KP_SCALE				CURR_LOOP_KP_SCALE_0	// 0x10
+#define CURR_LOOP_KP_VALUE				(0x00 << 13)			// 0x2D
 #define CURR_LOOP_KP					(CURR_LOOP_KP_SCALE | CURR_LOOP_KI_VALUE)
 
 /* CURR LOOP KI (Current iq and id Loop Ki = 1000 * Value / 10 ^ SCALE) */
@@ -1647,8 +1651,8 @@
 #define CURR_LOOP_KI_SCALE_1			(0x1 << 11)
 #define CURR_LOOP_KI_SCALE_2			(0x2 << 11)
 #define CURR_LOOP_KI_SCALE_3			(0x3 << 11)
-#define CURR_LOOP_KI_SCALE				CURR_LOOP_KI_SCALE_1
-#define CURR_LOOP_KI_VALUE				(0x52 << 3)
+#define CURR_LOOP_KI_SCALE				CURR_LOOP_KI_SCALE_0	// 0x01
+#define CURR_LOOP_KI_VALUE				(0x00 << 3)				// 0x52
 #define CURR_LOOP_KI					(CURR_LOOP_KI_SCALE | CURR_LOOP_KI_VALUE)
 
 /* SPD LOOP KP (Speed Loop Kp = 0.01 * Value / 10 ^ SCALE) */
@@ -1656,8 +1660,8 @@
 #define SPD_LOOP_KP_SCALE_1				(0x1 << 1)
 #define SPD_LOOP_KP_SCALE_2				(0x2 << 1)
 #define SPD_LOOP_KP_SCALE_3				(0x3 << 1)
-#define SPD_LOOP_KP_SCALE				SPD_LOOP_KP_SCALE_3
-#define SPD_LOOP_KP_VALUE				0x01
+#define SPD_LOOP_KP_SCALE				SPD_LOOP_KP_SCALE_0
+#define SPD_LOOP_KP_VALUE				0x00
 #define SPD_LOOP_KP_1					(SPD_LOOP_KP_VALUE >> 7)
 #define SPD_LOOP_KP_2					((SPD_LOOP_KP_VALUE & 0x7F) << 24)
 
@@ -1672,7 +1676,7 @@
 #define SPD_LOOP_KI_SCALE_1				(0x1 << 22)
 #define SPD_LOOP_KI_SCALE_2				(0x2 << 22)
 #define SPD_LOOP_KI_SCALE_3				(0x3 << 22)
-#define SPD_LOOP_KI_SCALE				SPD_LOOP_KI_SCALE_3
+#define SPD_LOOP_KI_SCALE				SPD_LOOP_KI_SCALE_0
 #define SPD_LOOP_KI_VALUE				(0x00 << 14)
 #define SPD_LOOP_KI						(SPD_LOOP_KI_SCALE | SPD_LOOP_KI_VALUE)
 
@@ -1836,7 +1840,7 @@
 #define ILIMIT_6A			(0xD << 27)
 #define ILIMIT_7A			(0xE << 27)
 #define ILIMIT_8A			(0xF << 27)
-#define ILIMIT				ILIMIT_2A
+#define ILIMIT				ILIMIT_3A
 
 /* HW LOCK LIMIT (Comparator Based Lock Detection Current Threshold) */
 #define HW_LOCK_LIMIT_0A125			(0x0 << 23)
@@ -1855,7 +1859,7 @@
 #define HW_LOCK_LIMIT_6A			(0xD << 23)
 #define HW_LOCK_LIMIT_7A			(0xE << 23)
 #define HW_LOCK_LIMIT_8A			(0xF << 23)
-#define HW_LOCK_LIMIT				HW_LOCK_LIMIT_2A
+#define HW_LOCK_LIMIT				HW_LOCK_LIMIT_6A
 
 /* LOCK ILIMIT (ADC Based Lock Detection Current Threshold) */
 #define LOCK_ILIMIT_0A125			(0x0 << 19)
@@ -1942,7 +1946,7 @@
 /* IPD TIMEOUT FAULT EN (IPD Timeout Fault Enable */
 #define IPD_TIMEOUT_FAULT_ENABLE			(0x1 << 2)
 #define IPD_TIMEOUT_FAULT_DISABLE			(0x0 << 2)
-#define IPD_TIMEOUT_FAULT_EN				(IPD_TIMEOUT_FAULT_ENABLE)
+#define IPD_TIMEOUT_FAULT_EN				IPD_TIMEOUT_FAULT_ENABLE
 
 /* IPD FREQ FAULT EN (IPD Frequency Fault Enable) */
 #define IPD_FREQUENCY_FAULT_ENABLE			(0x1 << 1)
@@ -2271,7 +2275,7 @@
 #define BUS_CURRENT_LIMIT_6A					(0xD << 22)
 #define BUS_CURRENT_LIMIT_7A					(0xE << 22)
 #define BUS_CURRENT_LIMIT_8A					(0xF << 22)
-#define BUS_CURRENT_LIMIT						BUS_CURRENT_LIMIT_2A
+#define BUS_CURRENT_LIMIT						BUS_CURRENT_LIMIT_3A
 
 /* BUS CURRENT LIMIT ENABLE (Bus Current Limit Enable) */
 #define BUS_CURRENT_LIMIT_ENABLE				(0x1 << 21)
@@ -2292,7 +2296,7 @@
 /* SELF TEST ENABLE (Enable Self-test on Power UP) */
 #define SELF_TEST_ENABLE						(0x1 << 17)
 #define SELF_TEST_DISABLE						(0x0 << 17)
-#define SELF_TEST_EN							SELF_TEST_ENABLE
+#define SELF_TEST_EN							SELF_TEST_DISABLE
 
 /* ACTIVE BRAKE SPEED DELTA LIMIT ENTRY (Difference Between Final Speed and Present Speed) */
 #define ACTIVE_BRAKE_SPEED_DELTA_LIMIT_ENTRY_NO			(0x0 << 13)
@@ -2355,7 +2359,7 @@
 /* OVP EN (Overvoltage Enable) */
 #define OVP_ENABLE						(0x1 << 18)
 #define OVP_DISABLE						(0x0 << 18)
-#define OVP_EN							OVP_DISABLE
+#define OVP_EN							OVP_ENABLE
 
 /* OTW REP (Overtemperature Warning Enable) */
 #define OTW_REP_ENABLE					(0x1 << 17)
@@ -2367,7 +2371,7 @@
 #define OCP_DEG_0US6					(0x1 << 12)
 #define OCP_DEG_1US1					(0x2 << 12)
 #define OCP_DEG_1US6					(0x3 << 12)
-#define OCP_DEG							OCP_DEG_0US2
+#define OCP_DEG							OCP_DEG_0US6
 
 /* OCP LVL (Overcurrent Level Setting) */
 #define OCP_LVL_16A						(0x0 << 10)
@@ -2376,9 +2380,9 @@
 
 /* OCP MODE (OCP Fault Mode) */
 #define OCP_MODE_LATCH					(0x0 << 8)
-#define OCP_MODE_RETRY_500MS			(0x0 << 8)
-#define OCP_MODE_NOT_APPLICABLE			(0x0 << 8)
-#define OCP_MODE						OCP_MODE_LATCH
+#define OCP_MODE_RETRY_500MS			(0x1 << 8)
+#define OCP_MODE_NOT_APPLICABLE			(0x2 << 8)
+#define OCP_MODE						OCP_MODE_RETRY_500MS
 
 /* CSA GAIN (Current Sense Amplifier Gain) */
 #define CSA_GAIN_0V15					0x0
@@ -2483,21 +2487,21 @@
 #define BRAKE_CURRENT_PERSIST_100MS							(0x1 << 15)
 #define BRAKE_CURRENT_PERSIST_250MS							(0x2 << 15)
 #define BRAKE_CURRENT_PERSIST_500MS							(0x3 << 15)
-#define BRAKE_CURRENT_PERSIST								BRAKE_CURRENT_PERSIST_50MS
+#define BRAKE_CURRENT_PERSIST								BRAKE_CURRENT_PERSIST_100MS
 
 /* MPET IPD CURRENT LIMIT */
 #define MPET_IPD_CURRENT_LIMIT_0A1							(0x0 << 13)
 #define MPET_IPD_CURRENT_LIMIT_0A5							(0x1 << 13)
 #define MPET_IPD_CURRENT_LIMIT_1A							(0x2 << 13)
 #define MPET_IPD_CURRENT_LIMIT_2A							(0x3 << 13)
-#define MPET_IPD_CURRENT_LIMIT								MPET_IPD_CURRENT_LIMIT_2A
+#define MPET_IPD_CURRENT_LIMIT								MPET_IPD_CURRENT_LIMIT_1A
 
 /* MPET IPD FREQ */
 #define MPET_IPD_FREQ_1										(0x0 << 11)
 #define MPET_IPD_FREQ_2										(0x1 << 11)
 #define MPET_IPD_FREQ_4										(0x2 << 11)
 #define MPET_IPD_FREQ_8										(0x3 << 11)
-#define MPET_IPD_FREQ										MPET_IPD_FREQ_2
+#define MPET_IPD_FREQ										MPET_IPD_FREQ_1
 
 /* MPET OPEN LOOP CURRENT */
 #define MPET_OPEN_LOOP_CURRENT_REF_1A						(0x0 < 8)
@@ -2515,7 +2519,7 @@
 #define MPET_OPEN_LOOP_SPEED_REF_25PER						(0x1 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_35PER						(0x2 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_50PER						(0x3 << 6)
-#define MPET_OPEN_LOOP_SPEED_REF							MPET_OPEN_LOOP_SPEED_REF_15PER
+#define MPET_OPEN_LOOP_SPEED_REF							MPET_OPEN_LOOP_SPEED_REF_25PER
 
 /* MPET OPEN LOOP SLEW RATE */
 #define MPET_OPEN_LOOP_SLEW_RATE_0HZ1						(0x0 << 3)
@@ -2526,7 +2530,7 @@
 #define MPET_OPEN_LOOP_SLEW_RATE_5HZ						(0x5 << 3)
 #define MPET_OPEN_LOOP_SLEW_RATE_10HZ						(0x6 << 3)
 #define MPET_OPEN_LOOP_SLEW_RATE_20HZ						(0x7 << 3)
-#define MPET_OPEN_LOOP_SLEW_RATE							MPET_OPEN_LOOP_SLEW_RATE_20HZ
+#define MPET_OPEN_LOOP_SLEW_RATE							MPET_OPEN_LOOP_SLEW_RATE_10HZ
 
 /* REV DRV OPEN LOOP DEC */
 #define REV_DRV_OPEN_LOOP_DEC_50PER							0x0
@@ -2632,24 +2636,18 @@
 /*
  * MCF8316C-Q1 I2C FUNCTION
  */
+void I2C_TEST1();
 
-HAL_StatusTypeDef MCF8316C_WriteSetting(I2C_HandleTypeDef *hi2c);
-HAL_StatusTypeDef MCF8316C_ReadSetting(I2C_HandleTypeDef *hi2c);
-HAL_StatusTypeDef MCF8316C_WriteRegister(I2C_HandleTypeDef *hi2c,
-		uint16_t reg_addr, uint8_t *pData);
-HAL_StatusTypeDef MCF8316C_ReadRegister(I2C_HandleTypeDef *hi2c,
-		uint16_t reg_addr, uint8_t *pData, uint16_t Size);
+void I2C_TEST2();
 
-void MCF8316C_Init();
+void MCF8316C_Set_EEPROM();
 
 void MCF8316C_Get_Voltage();
 
-void MCF8316C_Test_I2C_Addr();
+void MCF8316C_Get_Fault();
 
-void MCF8316C_Set_I2C_Addr();
 
-void MCF8316C_Test_Fault();
 
-void MCF8316C_Check_SAME();
+
 
 #endif /* INC_MCF8316C_H_ */

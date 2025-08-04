@@ -37,6 +37,7 @@ extern I2C_HandleTypeDef hi2c1;
 extern I2C_HandleTypeDef hi2c4;
 
 /* USER CODE BEGIN Private defines */
+void I2C_Error();
 
 /* USER CODE END Private defines */
 

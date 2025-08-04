@@ -241,5 +241,10 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef* i2cHandle)
 }
 
 /* USER CODE BEGIN 1 */
-
+void I2C_Error(){
+	while(1){
+	HAL_GPIO_TogglePin(E3_GPIO_Port, E3_Pin);
+	HAL_Delay(100);
+	}
+}
 /* USER CODE END 1 */

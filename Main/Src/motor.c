@@ -27,10 +27,16 @@ void Motor_Init() {
 	HAL_GPIO_WritePin(Motor_R_Brake_GPIO_Port, Motor_R_Brake_Pin, GPIO_PIN_SET);
 }
 
-menu_t motorMenu[] = { { "1.M I2CSET", MCF8316C_Set_I2C_Addr }, { "2.M FAULT ",
-		MCF8316C_Test_Fault }, { "3.M VOLT  ", MCF8316C_Get_Voltage }, {
-		"4.M ENC   ", Motor_Test_Encoder }, { "5.M MPET ", MCF8316C_Init }, {
-		"6.M PI CTL", }, { "7.M SPEED ", Motor_Test_Speed }, { "8.OUT     ", } };
+menu_t motorMenu[] = {
+		{ "1.M I2CSET", MCF8316C_Set_EEPROM},
+		{ "2.M FAULT ", MCF8316C_Get_Fault},
+		{ "3.M VOLT  ", MCF8316C_Get_Voltage},
+		{ "4.M ENC   ", },
+		{ "5.M MPET ",  },
+		{ "6.M PI CTL", },
+		{ "7.M SPEED ", },
+		{ "8.OUT     ", }
+};
 
 void Motor_Test_Menu() {
 	Encoder_Start();
@@ -130,61 +136,4 @@ void Motor_Test_Encoder() {
 	Encoder_Stop();
 }
 
-void Motor_Test_Kp() {
-	Encoder_Start();
-	MCF8316C_ReadSetting(MCF8316C_I2C_LEFT_CHANNEL);
-	HAL_Delay(200);
-
-	uint8_t rx_buffer[4];
-	MCF8316C_ReadRegister(MCF8316C_I2C_LEFT_CHANNEL, MCF8316C_SPEED_PI_ADDR,
-			rx_buffer, sizeof(rx_buffer));
-	uint32_t speed_data = 0;
-	for (uint8_t i = 0; i < sizeof(rx_buffer); i++) {
-		speed_data |= (*(rx_buffer + i) << (8 * i));
-	}
-//	uint16_t speed_ki_data = speed_data >> 16;
-//	uint16_t speed_kp_data = speed_data & 0xffff;
-//	float speed_ki = (speed_ki_data & 0xff);
-//	float speed_kp = (speed_kp_data & 0xff);
-//	Custom_LCD_Printf(0, 0, "SPEED Ki");
-//	Custom_LCD_Printf(0, 1, "%f", speed_ki);
-//	Custom_LCD_Printf(0, 2, "SPEED Kp");
-//	Custom_LCD_Printf(0, 3, "%f", speed_kp);
-	Custom_LCD_Printf(0, 4, "%08x", speed_data);
-	Custom_LCD_Printf(0, 5, "%08x", CLOSED_LOOP4_DATA);
-	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) != GPIO_PIN_SET) {
-
-	}
-	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) == GPIO_PIN_SET)
-		;
-
-	Encoder_Stop();
-}
-
-void Motor_Test_Speed() {
-	Encoder_Start();
-	Motor_Start();
-	__HAL_TIM_SET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL,
-			__HAL_TIM_GET_AUTORELOAD(MOTOR_L_TIM) / 100);
-	__HAL_TIM_SET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL,
-			__HAL_TIM_GET_AUTORELOAD(MOTOR_R_TIM) / 100);
-	while (!HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin)) {
-		Custom_LCD_Printf(0, 0, "%5d", __HAL_TIM_GET_COUNTER(ENCODER_L_TIM));
-		Custom_LCD_Printf(0, 1, "%5d", __HAL_TIM_GET_COUNTER(ENCODER_R_TIM));
-		if (!HAL_GPIO_ReadPin(Motor_L_nFAULT_GPIO_Port, Motor_L_nFAULT_Pin))
-			HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_SET);
-		else
-			HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_RESET);
-		if (!HAL_GPIO_ReadPin(Motor_R_nFAULT_GPIO_Port, Motor_R_nFAULT_Pin))
-			HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_SET);
-		else
-			HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_RESET);
-	}
-	Motor_Stop();
-	Encoder_Stop();
-	HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_RESET);
-	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
-		;
-}
 
