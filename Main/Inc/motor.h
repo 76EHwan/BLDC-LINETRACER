@@ -8,6 +8,15 @@
 #ifndef MAIN_INC_MOTOR_H_
 #define MAIN_INC_MOTOR_H_
 
+#include <stdbool.h>
+#include "init.h"
+#include "sensor.h"
+#include "tim.h"
+#include "lptim.h"
+#include "math.h"
+#include "lcd.h"
+#include "mcf8316c.h"
+
 #define ENCODER_L_TIM			&hlptim1
 #define ENCODER_R_TIM			&hlptim2
 #define MOTOR_PID_TIM			&hlptim4
@@ -26,6 +35,7 @@ void Motor_Init();
 void Motor_Test_Menu(void);
 
 void Motor_Start();
+
 void Encoder_Start();
 
 void Motor_Stop();

@@ -5,15 +5,9 @@
  *      Author: kth59
  */
 
-#include <stdbool.h>
-#include "init.h"
-#include "sensor.h"
+
 #include "motor.h"
-#include "tim.h"
-#include "lptim.h"
-#include "math.h"
-#include "lcd.h"
-#include "mcf8316c.h"
+
 
 void Motor_Init() {
 	__HAL_TIM_SET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL, 0);
@@ -31,10 +25,10 @@ menu_t motorMenu[] = {
 		{ "1.M I2CSET", MCF8316C_Set_EEPROM},
 		{ "2.M FAULT ", MCF8316C_Get_Fault},
 		{ "3.M VOLT  ", MCF8316C_Get_Voltage},
-		{ "4.M ENC   ", },
-		{ "5.M MPET ",  },
-		{ "6.M PI CTL", },
-		{ "7.M SPEED ", },
+		{ "4.M ENC   ", Motor_Test_Encoder},
+		{ "5.M MPET ",  MCF8316C_MPET},
+		{ "6.M PI CTL", MCF8316C_PI_CTRL},
+		{ "7.M SPEED ", I2C_TEST3},
 		{ "8.OUT     ", }
 };
 
@@ -85,13 +79,13 @@ void Motor_Start() {
 
 	HAL_LPTIM_Counter_Start_IT(MOTOR_PID_TIM, MOTOR_PID_PERIOD);
 
-	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin,
-			GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin,
-			GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(Motor_L_Brake_GPIO_Port, Motor_L_Brake_Pin,
 			GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(Motor_R_Brake_GPIO_Port, Motor_R_Brake_Pin,
+			GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin,
+			GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin,
 			GPIO_PIN_RESET);
 }
 
@@ -135,5 +129,4 @@ void Motor_Test_Encoder() {
 		;
 	Encoder_Stop();
 }
-
 

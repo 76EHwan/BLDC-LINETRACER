@@ -7,13 +7,23 @@
 
 #include "mcf8316c.h"
 
-HAL_StatusTypeDef Transmit_Set(I2C_HandleTypeDef *hi2c) {
+HAL_StatusTypeDef Transmit_Set(I2C_HandleTypeDef *hi2c, uint8_t size) {
 	HAL_StatusTypeDef status;
 	uint8_t tx_buffer[7];
 	uint16_t slave_address_8bit = MCF8316C_I2C_ADDRESS_7BIT << 1;
 
-	tx_buffer[0] = CONTROL_WRITE | CONTROL_CRC | CONTROL_DATA_LEN
-			| CONTROL_MEM_SEC;
+	tx_buffer[0] = CONTROL_WRITE | CONTROL_CRC | CONTROL_MEM_SEC;
+	switch (size) {
+	case 2:
+		tx_buffer[0] |= CONTROL_DATA_16BIT;
+		break;
+	case 8:
+		tx_buffer[0] |= CONTROL_DATA_64BIT;
+		break;
+	default:
+		tx_buffer[0] |= CONTROL_DATA_32BIT;
+		break;
+	}
 	tx_buffer[1] = ((MCF8316C_WRITE_READ_ADDR >> 8) & 0xF) | CONTROL_MEM_PAGE;
 	tx_buffer[2] = MCF8316C_WRITE_READ_ADDR & 0xFF;
 	tx_buffer[3] = MCF8316C_REG_WRITE_BIT & 0xFF;
@@ -30,7 +40,7 @@ HAL_StatusTypeDef Transmit_Set(I2C_HandleTypeDef *hi2c) {
 	return HAL_OK;
 }
 
-HAL_StatusTypeDef Receive_Set(I2C_HandleTypeDef *hi2c) {
+HAL_StatusTypeDef Receive_Set(I2C_HandleTypeDef *hi2c, uint8_t size) {
 	HAL_StatusTypeDef status;
 	uint8_t tx_buffer[7];
 	uint16_t slave_address_8bit = MCF8316C_I2C_ADDRESS_7BIT << 1;
@@ -225,33 +235,66 @@ HAL_StatusTypeDef Receive_Reg(I2C_HandleTypeDef *hi2c, uint16_t reg_addr,
 //		;
 //}
 
-#define ISD_CONFIG_ADDR				0x80
-#define REV_DRIVE_CONFIG_ADDR		0x82
-#define MOTOR_STARTUP1_ADDR			0x84
-#define MOTOR_STARTUP2_ADDR			0x86
-#define CLOSED_LOOP1_ADDR			0x88
-#define CLOSED_LOOP2_ADDR			0x8A
-#define CLOSED_LOOP3_ADDR			0x8C
-#define CLOSED_LOOP4_ADDR			0x8E
-#define REF_PROFILES1_ADDR			0x94
-#define REF_PROFILES2_ADDR			0x96
-#define REF_PROFILES3_ADDR			0x98
-#define REF_PROFILES4_ADDR			0x9A
-#define REF_PROFILES5_ADDR			0x9C
-#define REF_PROFILES6_ADDR			0x9E
-#define FAULT_CONFIG1_ADDR			0x90
-#define FAULT_CONFIG2_ADDR			0x92
-#define PIN_CONFIG_ADDR				0xA4
-#define DEVICE_CONFIG1_ADDR			0xA6
-#define DEVICE_CONFIG2_ADDR			0xA8
-#define PERI_CONFIG1_ADDR			0xAA
-#define GD_CONFIG1_ADDR				0xAC
-#define GD_CONFIG2_ADDR				0xAE
-#define INT_ALGO_1_ADDR				0xA0
-#define INT_ALGO_2_ADDR				0xA2
-#define ALGO_CTRL1_ADDR				0xEA
-#define ALGO_DEBUG1_ADDR			0xEC
-#define ALGO_DEBUG2_ADDR			0xEE
+void I2C_TEST3() {
+	uint8_t tx_buffer[4];
+	uint8_t rx_buffer[4];
+	HAL_StatusTypeDef status;
+
+	I2C_HandleTypeDef *hi2c = MCF8316C_I2C_LEFT_CHANNEL;
+	uint16_t reg_addr = ALGO_DEBUG2_ADDR;
+	uint32_t reg_data = ALGO_DEBUG2_DATA;
+
+	status = Receive_Set(hi2c, sizeof(rx_buffer));
+	if (status) {
+		Custom_LCD_Printf(0, 2, "RX ERR");
+		I2C_Error();
+	}
+	status = Receive_Reg(hi2c, reg_addr, rx_buffer, sizeof(rx_buffer));
+	if (status) {
+		Custom_LCD_Printf(0, 3, "RX ERR");
+		I2C_Error();
+	}
+	Custom_LCD_Printf(0, 4, "%02x%02x%02x%02x", rx_buffer[3], rx_buffer[2],
+			rx_buffer[1], rx_buffer[0]);
+
+	for (uint8_t i = 0; i < 4; i++) {
+		tx_buffer[i] = (reg_data >> (8 * i)) & 0xFF;
+	}
+	status = Transmit_Reg_32BIT(hi2c, reg_addr, tx_buffer);
+	if (status) {
+		Custom_LCD_Printf(0, 0, "TX ERR");
+		I2C_Error();
+	}
+
+	status = Transmit_Set(hi2c, sizeof(tx_buffer));
+	if (status) {
+		Custom_LCD_Printf(0, 1, "TX ERR");
+		I2C_Error();
+	}
+	HAL_Delay(100);
+
+	status = Receive_Set(hi2c, sizeof(rx_buffer));
+	if (status) {
+		Custom_LCD_Printf(0, 2, "RX ERR");
+		I2C_Error();
+	}
+	status = Receive_Reg(hi2c, reg_addr, rx_buffer, sizeof(rx_buffer));
+	if (status) {
+		Custom_LCD_Printf(0, 3, "RX ERR");
+		I2C_Error();
+	}
+	HAL_Delay(300);
+
+	Custom_LCD_Printf(0, 5, "%02x%02x%02x%02x", tx_buffer[3], tx_buffer[2],
+			tx_buffer[1], tx_buffer[0]);
+	Custom_LCD_Printf(0, 6, "%02x%02x%02x%02x", rx_buffer[3], rx_buffer[2],
+			rx_buffer[1], rx_buffer[0]);
+
+	while (!HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
+		;
+	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
+		;
+}
 
 void MCF8316C_Set_EEPROM() {
 	uint8_t tx_buffer[4];
@@ -448,7 +491,15 @@ void MCF8316C_Set_EEPROM() {
 			err_array |= 0x1 << 22;
 		}
 
-		status = Transmit_Set(hi2c);
+		for (i = 0; i < 4; i++) {
+			tx_buffer[i] = (ALGO_DEBUG2_DATA >> (8 * i)) & 0xFF;
+		}
+		status = Transmit_Reg_32BIT(hi2c, ALGO_DEBUG2_ADDR, tx_buffer);
+		if (status) {
+			err_array |= 0x1 << 22;
+		}
+
+		status = Transmit_Set(hi2c, sizeof(tx_buffer));
 		if (status) {
 			Custom_LCD_Printf(0, 2 * j, "TX ERR");
 			I2C_Error();
@@ -466,10 +517,11 @@ void MCF8316C_Set_EEPROM() {
 
 void MCF8316C_Get_Fault() {
 	uint8_t rx_buffer[4];
+	uint8_t tx_buffer[4];
 	HAL_StatusTypeDef status;
 
-	Receive_Set(MCF8316C_I2C_LEFT_CHANNEL);
-	Receive_Set(MCF8316C_I2C_RIGHT_CHANNEL);
+	Receive_Set(MCF8316C_I2C_LEFT_CHANNEL, sizeof(rx_buffer));
+	Receive_Set(MCF8316C_I2C_RIGHT_CHANNEL, sizeof(rx_buffer));
 	HAL_Delay(100);
 
 	status = Receive_Reg(MCF8316C_I2C_LEFT_CHANNEL, DRIVER_FAULT_ADDR,
@@ -513,6 +565,12 @@ void MCF8316C_Get_Fault() {
 
 	while (!HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
 		;
+	tx_buffer[0] = MCF8316C_FAULT_CLEAR & 0xFF;
+	tx_buffer[1] = (MCF8316C_FAULT_CLEAR >> 8) & 0xFF;
+	tx_buffer[2] = (MCF8316C_FAULT_CLEAR >> 16) & 0xFF;
+	tx_buffer[3] = (MCF8316C_FAULT_CLEAR >> 24) & 0xFF;
+	status = Receive_Reg(MCF8316C_I2C_LEFT_CHANNEL,
+	MCF8316C_WRITE_READ_ADDR, tx_buffer, sizeof(tx_buffer));
 	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
 		;
 }
@@ -540,3 +598,102 @@ void MCF8316C_Get_Voltage() {
 		;
 }
 
+void MCF8316C_MPET() {
+	uint8_t rx_buffer_16[2];
+	uint8_t rx_buffer_32[4];
+
+	HAL_GPIO_WritePin(Motor_L_Brake_GPIO_Port, Motor_L_Brake_Pin,
+			GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin,
+			GPIO_PIN_RESET);
+
+	HAL_TIM_PWM_Start(MOTOR_L_TIM, MOTOR_L_CHANNEL);
+	uint32_t duty = __HAL_TIM_GET_AUTORELOAD(MOTOR_L_TIM) / 4;
+	__HAL_TIM_SET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL, duty);
+	Custom_LCD_Printf(0, 0, "MTR PARAMS");
+
+	while (!HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin)) {
+//		status = Receive_Set(MCF8316C_I2C_LEFT_CHANNEL, sizeof(rx_buffer_16));
+//		if(status) break;
+//		status = Receive_Reg(MCF8316C_I2C_LEFT_CHANNEL, ALGORITHM_STATUS_ADDR,
+//				rx_buffer_16, sizeof(rx_buffer_16));
+//		if(status) break;
+//
+//		uint16_t algo_status = (rx_buffer_16[1] << 8) | rx_buffer_16[0];
+//		Custom_LCD_Printf(0, 9, "STATUS:%02x", algo_status);
+
+//		if (algo_status == 0x14) {
+//			Receive_Reg(MCF8316C_I2C_LEFT_CHANNEL, MCF8316C_CURR_PI_ADDR,
+//					rx_buffer_16, sizeof(rx_buffer_16));
+//			Receive_Reg(MCF8316C_I2C_LEFT_CHANNEL, MCF8316C_SPEED_PI_ADDR,
+//					rx_buffer_16, sizeof(rx_buffer_16));
+//			Custom_LCD_Printf(0, 5, "KI:%02x", rx_buffer_16[1]);
+//			Custom_LCD_Printf(0, 6, "KP:%02x", rx_buffer_16[0]);
+//
+//		}
+//
+//		if (algo_status == 0x17) {
+//			Receive_Reg(MCF8316C_I2C_LEFT_CHANNEL, MTR_PARAMS, rx_buffer_32,
+//					sizeof(rx_buffer_32));
+//			Custom_LCD_Printf(0, 2, "BEMF:%02x", rx_buffer_32[2]);
+//		}
+//		if (algo_status == 0x17 || algo_status == 0x18)
+//			break;
+	}
+	Motor_Stop();
+
+	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
+		;
+	Receive_Set(MCF8316C_I2C_LEFT_CHANNEL, sizeof(rx_buffer_16));
+	HAL_Delay(100);
+	Receive_Reg(MCF8316C_I2C_LEFT_CHANNEL, MTR_PARAMS, rx_buffer_16,
+			sizeof(rx_buffer_16));
+	Custom_LCD_Printf(0, 3, "KI:%02x", rx_buffer_16[1]);
+	Custom_LCD_Printf(0, 4, "KP:%02x", rx_buffer_16[0]);
+
+	Receive_Reg(MCF8316C_I2C_LEFT_CHANNEL, MTR_PARAMS, rx_buffer_16,
+			sizeof(rx_buffer_16));
+
+	uint16_t algo_status = (rx_buffer_16[1] << 8) | rx_buffer_16[0];
+	Custom_LCD_Printf(0, 9, "STATUS:%02x", algo_status);
+
+	Receive_Set(MCF8316C_I2C_LEFT_CHANNEL, sizeof(rx_buffer_32));
+	HAL_Delay(100);
+	Receive_Reg(MCF8316C_I2C_LEFT_CHANNEL, MTR_PARAMS, rx_buffer_32,
+			sizeof(rx_buffer_32));
+	Custom_LCD_Printf(0, 1, "R:%02x L:%02x", rx_buffer_32[3], rx_buffer_32[1]);
+	Custom_LCD_Printf(0, 2, "BEMF:%02x", rx_buffer_32[2]);
+
+	while (!HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
+		;
+	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
+		;
+}
+
+void MCF8316C_PI_CTRL() {
+	Motor_Start();
+	Encoder_Start();
+	uint8_t rx_buffer_16[2];
+	uint32_t duty = __HAL_TIM_GET_AUTORELOAD(MOTOR_L_TIM) / 100 * 15;
+	__HAL_TIM_SET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL, duty);
+	while (!HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin)) {
+		Receive_Set(MCF8316C_I2C_LEFT_CHANNEL, sizeof(rx_buffer_16));
+		Receive_Reg(MCF8316C_I2C_LEFT_CHANNEL, ALGORITHM_STATUS_ADDR,
+				rx_buffer_16, sizeof(rx_buffer_16));
+		uint16_t algo_status = (rx_buffer_16[1] << 8) | rx_buffer_16[0];
+		Custom_LCD_Printf(0, 9, "STATUS:%02x", algo_status);
+		HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin,
+				!HAL_GPIO_ReadPin(Motor_L_nFAULT_GPIO_Port,
+				Motor_L_nFAULT_Pin));
+		HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin,
+				!HAL_GPIO_ReadPin(Motor_R_nFAULT_GPIO_Port,
+				Motor_R_nFAULT_Pin));
+		Custom_LCD_Printf(0, 0, "L: %5d", *(ENCODER_L_TIM.Instance->CNT));
+		Custom_LCD_Printf(0, 1, "R: %5d", *(ENCODER_R_TIM.Instance->CNT));
+	}
+	Motor_Stop();
+	Encoder_Stop();
+
+	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
+		;
+}
