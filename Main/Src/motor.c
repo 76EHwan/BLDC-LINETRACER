@@ -26,9 +26,9 @@ menu_t motorMenu[] = {
 		{ "2.M FAULT ", MCF8316C_Get_Fault},
 		{ "3.M VOLT  ", MCF8316C_Get_Voltage},
 		{ "4.M ENC   ", Motor_Test_Encoder},
-		{ "5.M MPET ",  MCF8316C_MPET},
-		{ "6.M PI CTL", MCF8316C_PI_CTRL},
-		{ "7.M SPEED ", I2C_TEST3},
+		{ "5.M MPET ",  MCF8316C_MPET },
+		{ "6.M PI CTL", },
+		{ "7.M SPEED ", },
 		{ "8.OUT     ", }
 };
 

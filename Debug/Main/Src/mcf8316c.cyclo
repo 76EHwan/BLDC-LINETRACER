@@ -1,10 +1,8 @@
-../Main/Src/mcf8316c.c:10:19:Transmit_Set	4
-../Main/Src/mcf8316c.c:43:19:Receive_Set	2
+../Main/Src/mcf8316c.c:10:19:Transmit_Set	2
+../Main/Src/mcf8316c.c:33:19:Receive_Set	4
 ../Main/Src/mcf8316c.c:66:19:Transmit_Reg_32BIT	2
 ../Main/Src/mcf8316c.c:90:19:Receive_Reg	3
-../Main/Src/mcf8316c.c:238:6:I2C_TEST3	10
-../Main/Src/mcf8316c.c:299:6:MCF8316C_Set_EEPROM	54
-../Main/Src/mcf8316c.c:518:6:MCF8316C_Get_Fault	7
-../Main/Src/mcf8316c.c:578:6:MCF8316C_Get_Voltage	4
-../Main/Src/mcf8316c.c:601:6:MCF8316C_MPET	5
-../Main/Src/mcf8316c.c:673:6:MCF8316C_PI_CTRL	3
+../Main/Src/mcf8316c.c:238:6:MCF8316C_Set_EEPROM	52
+../Main/Src/mcf8316c.c:449:6:MCF8316C_Get_Fault	7
+../Main/Src/mcf8316c.c:502:6:MCF8316C_Get_Voltage	4
+../Main/Src/mcf8316c.c:525:6:MCF8316C_MPET	7
