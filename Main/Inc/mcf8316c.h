@@ -63,7 +63,6 @@
 #define MOTOR_R_SPEED_KI
 #define MOTOR_R_SPEED_KP
 
-
 /*
  * EEPROM ADDRESS
  */
@@ -411,7 +410,7 @@
 #define IPD_CLK_FREQ_2KHZ		(0x5 << 14)
 #define IPD_CLK_FREQ_5KHZ		(0x6 << 14)
 #define IPD_CLK_FREQ_10KHZ		(0x7 << 14)
-#define IPD_CLK_FREQ			IPD_CLK_FREQ_10KHZ
+#define IPD_CLK_FREQ			IPD_CLK_FREQ_1KHZ
 
 /* IPD_CURR_THR (Initial Position Detection Threshold */
 #define IPD_CURR_0A25			(0x00 << 9)
@@ -432,7 +431,7 @@
 #define IPD_CURR_6A667			(0x0F << 9)
 #define IPD_CURR_7A333			(0x10 << 9)
 #define IPD_CURR_8A				(0x11 << 9)
-#define IPD_CURR_THR			IPD_CURR_0A25
+#define IPD_CURR_THR			IPD_CURR_0A5
 
 /* IPD RLS MODE (Initial Position Detection Release Mode) */
 #define IPD_RLS_BRAKE			(0x0 << 8)
@@ -497,7 +496,7 @@
 #define OL_ILIMIT_6A		(0xD << 27)
 #define OL_ILIMIT_7A		(0xE << 27)
 #define OL_ILIMIT_8A		(0xF << 27)
-#define OL_ILIMIT			OL_ILIMIT_1A5
+#define OL_ILIMIT			OL_ILIMIT_2A5
 
 /* OL ACC A1 (Open Loop Acceleration Coefficient A1) */
 #define OL_ACC_A1_0HZ01		(0x0 << 23)
@@ -896,7 +895,7 @@
 #define CURR_LOOP_KP_SCALE_2			(0x2 << 21)
 #define CURR_LOOP_KP_SCALE_3			(0x3 << 21)
 #define CURR_LOOP_KP_SCALE				CURR_LOOP_KP_SCALE_0	// 0x10
-#define CURR_LOOP_KP_VALUE				(0x00 << 13)			// 0x2D
+#define CURR_LOOP_KP_VALUE				(0x04 << 13)			// 0x2D
 #define CURR_LOOP_KP					(CURR_LOOP_KP_SCALE | CURR_LOOP_KI_VALUE)
 
 /* CURR LOOP KI (Current iq and id Loop Ki = 1000 * Value / 10 ^ SCALE) */
@@ -905,7 +904,7 @@
 #define CURR_LOOP_KI_SCALE_2			(0x2 << 11)
 #define CURR_LOOP_KI_SCALE_3			(0x3 << 11)
 #define CURR_LOOP_KI_SCALE				CURR_LOOP_KI_SCALE_0	// 0x01
-#define CURR_LOOP_KI_VALUE				(0x00 << 3)				// 0x52
+#define CURR_LOOP_KI_VALUE				(0x0D << 3)				// 0x52
 #define CURR_LOOP_KI					(CURR_LOOP_KI_SCALE | CURR_LOOP_KI_VALUE)
 
 /* SPD LOOP KP (Speed Loop Kp = 0.01 * Value / 10 ^ SCALE) */
@@ -914,7 +913,7 @@
 #define SPD_LOOP_KP_SCALE_2				(0x2 << 9)
 #define SPD_LOOP_KP_SCALE_3				(0x3 << 9)
 #define SPD_LOOP_KP_SCALE				SPD_LOOP_KP_SCALE_0
-#define SPD_LOOP_KP_VALUE				0x00
+#define SPD_LOOP_KP_VALUE				0x0D
 #define SPD_LOOP_KP_1					((SPD_LOOP_KP_SCALE | SPD_LOOP_KP_VALUE) >> 7)
 #define SPD_LOOP_KP_2					(((SPD_LOOP_KP_SCALE | SPD_LOOP_KP_VALUE) & 0x7F) << 24)
 
@@ -930,7 +929,7 @@
 #define SPD_LOOP_KI_SCALE_2				(0x2 << 22)
 #define SPD_LOOP_KI_SCALE_3				(0x3 << 22)
 #define SPD_LOOP_KI_SCALE				SPD_LOOP_KI_SCALE_0
-#define SPD_LOOP_KI_VALUE				(0x00 << 14)
+#define SPD_LOOP_KI_VALUE				(0x0D << 14)
 #define SPD_LOOP_KI						(SPD_LOOP_KI_SCALE | SPD_LOOP_KI_VALUE)
 
 /* MAX SPEED (Maximum value of Speed in Hz) */
@@ -1612,7 +1611,7 @@
 /* OVP EN (Overvoltage Enable) */
 #define OVP_ENABLE						(0x1 << 18)
 #define OVP_DISABLE						(0x0 << 18)
-#define OVP_EN							OVP_ENABLE
+#define OVP_EN							OVP_DISABLE
 
 /* OTW REP (Overtemperature Warning Enable) */
 #define OTW_REP_ENABLE					(0x1 << 17)
@@ -1747,7 +1746,7 @@
 #define MPET_IPD_CURRENT_LIMIT_0A5							(0x1 << 13)
 #define MPET_IPD_CURRENT_LIMIT_1A							(0x2 << 13)
 #define MPET_IPD_CURRENT_LIMIT_2A							(0x3 << 13)
-#define MPET_IPD_CURRENT_LIMIT								MPET_IPD_CURRENT_LIMIT_0A1
+#define MPET_IPD_CURRENT_LIMIT								MPET_IPD_CURRENT_LIMIT_2A
 
 /* MPET IPD FREQ */
 #define MPET_IPD_FREQ_1										(0x0 << 11)
@@ -1765,14 +1764,14 @@
 #define MPET_OPEN_LOOP_CURRENT_REF_6A						(0x5 < 8)
 #define MPET_OPEN_LOOP_CURRENT_REF_7A						(0x6 < 8)
 #define MPET_OPEN_LOOP_CURRENT_REF_8A						(0x7 < 8)
-#define MPET_OPEN_LOOP_CURRENT_REF							MPET_OPEN_LOOP_CURRENT_REF_2A
+#define MPET_OPEN_LOOP_CURRENT_REF							MPET_OPEN_LOOP_CURRENT_REF_4A
 
 /* MPET OPEN LOOP SPEED REF*/
 #define MPET_OPEN_LOOP_SPEED_REF_15PER						(0x0 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_25PER						(0x1 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_35PER						(0x2 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_50PER						(0x3 << 6)
-#define MPET_OPEN_LOOP_SPEED_REF							MPET_OPEN_LOOP_SPEED_REF_25PER
+#define MPET_OPEN_LOOP_SPEED_REF							MPET_OPEN_LOOP_SPEED_REF_15PER
 
 /* MPET OPEN LOOP SLEW RATE */
 #define MPET_OPEN_LOOP_SLEW_RATE_0HZ1						(0x0 << 3)
@@ -1835,12 +1834,12 @@
 /* MPET IPD SELECT */
 #define MPET_IPD_SELECT_NORMAL				(0x0 << 2)
 #define MPET_IPD_SELECT_SPECIFIC			(0x1 << 2)
-#define MPET_IPD_SELECT						MPET_IPD_SELECT_NORMAL
+#define MPET_IPD_SELECT						MPET_IPD_SELECT_SPECIFIC
 
 /* MPET KE MEAS PARAMETER SELECT */
 #define MPET_KE_MEAS_PARAMETER_SELECT_NORMAL			(0x0 << 1)
 #define MPET_KE_MEAS_PARAMETER_SELECT_SPECIFIC			(0x1 << 1)
-#define MPET_KE_MEAS_PARAMETER_SELECT					MPET_KE_MEAS_PARAMETER_SELECT_NORMAL
+#define MPET_KE_MEAS_PARAMETER_SELECT					MPET_KE_MEAS_PARAMETER_SELECT_SPECIFIC
 
 /* IPD HIGH RESOLUTION EN */
 #define IPD_HIGH_RESOLUTION_ENABLE			0x1
@@ -1849,7 +1848,6 @@
 
 /* INT ALGO 2 Register Data */
 #define INT_ALGO_2_DATA						(CL_SLOW_ACC | ACTIVE_BRAKE_BUS_CURRENT_SLEW_RATE | MPET_IPD_SELECT | MPET_KE_MEAS_PARAMETER_SELECT | IPD_HIGH_RESOLUTION_EN)
-
 
 /*
  * ALGO_DEBUG1
@@ -1974,8 +1972,5 @@ void MCF8316C_Get_Voltage();
 void MCF8316C_Get_Fault();
 
 void MCF8316C_MPET();
-
-
-
 
 #endif /* INC_MCF8316C_H_ */
