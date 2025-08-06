@@ -1,7 +1,8 @@
 ../Main/Src/mcf8316c.c:10:19:Transmit_Set	40	static
 ../Main/Src/mcf8316c.c:33:19:Receive_Set	40	static
-../Main/Src/mcf8316c.c:56:19:Transmit_Reg_32BIT	48	static
-../Main/Src/mcf8316c.c:80:19:Receive_Reg	40	static
-../Main/Src/mcf8316c.c:256:6:MCF8316C_Set_EEPROM	32	static
-../Main/Src/mcf8316c.c:467:6:MCF8316C_Get_Fault	32	static
-../Main/Src/mcf8316c.c:520:6:MCF8316C_Get_Voltage	56	static
+../Main/Src/mcf8316c.c:66:19:Transmit_Reg_32BIT	48	static
+../Main/Src/mcf8316c.c:90:19:Receive_Reg	40	static
+../Main/Src/mcf8316c.c:238:6:MCF8316C_Set_EEPROM	32	static
+../Main/Src/mcf8316c.c:449:6:MCF8316C_Get_Fault	32	static
+../Main/Src/mcf8316c.c:502:6:MCF8316C_Get_Voltage	56	static
+../Main/Src/mcf8316c.c:525:6:MCF8316C_MPET	40	static
