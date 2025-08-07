@@ -5,15 +5,9 @@
  *      Author: kth59
  */
 
-#include <stdbool.h>
-#include "init.h"
-#include "sensor.h"
 #include "motor.h"
-#include "tim.h"
-#include "lptim.h"
-#include "math.h"
-#include "lcd.h"
-#include "mcf8316c.h"
+
+motor_t motor[2];
 
 void Motor_Init() {
 	__HAL_TIM_SET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL, 0);
@@ -31,9 +25,9 @@ menu_t motorMenu[] = {
 		{ "1.M I2CSET", MCF8316C_Set_EEPROM},
 		{ "2.M FAULT ", MCF8316C_Get_Fault},
 		{ "3.M VOLT  ", MCF8316C_Get_Voltage},
-		{ "4.M ENC   ", },
-		{ "5.M MPET ",  },
-		{ "6.M PI CTL", },
+		{ "4.M ENC   ", Motor_Test_Encoder},
+		{ "5.M MPET ",  MCF8316C_MPET},
+		{ "6.M PI CTL", MCF8316C_PID_CONTROL},
 		{ "7.M SPEED ", },
 		{ "8.OUT     ", }
 };
@@ -67,19 +61,11 @@ void Motor_Test_Menu() {
 		}
 	}
 }
-typedef struct {
-	float_t id_ref, iq_ref;
-	float_t id, iq;
-	float_t vd, vq;
-	float_t theta;
-	int32_t encD, cmdD;
-	float_t curV;
-	uint16_t encPst;
-} motor_t;
 
-motor_t motor[2];
 
 void Motor_Start() {
+
+
 	HAL_TIM_PWM_Start(MOTOR_L_TIM, MOTOR_L_CHANNEL);
 	HAL_TIM_PWM_Start(MOTOR_R_TIM, MOTOR_R_CHANNEL);
 
@@ -120,8 +106,24 @@ void Encoder_Stop() {
 }
 
 void Motor_LPTIM4_IRQ() {
+	uint32_t arr_L = __HAL_TIM_GET_AUTORELOAD(MOTOR_L_TIM);
+	uint32_t arr_R = __HAL_TIM_GET_AUTORELOAD(MOTOR_R_TIM);
 
+	float_t mps_L = motor[ML].mps * SPUR_GEAR / PINION_GEAR;
+	float_t rps_L = mps_L / METER_PER_ROTOR;
+
+	uint32_t dutyL = arr_L * rps_L / MAX_SPEED_VALUE;
+
+	float_t mps_R = motor[MR].mps * SPUR_GEAR / PINION_GEAR;
+	float_t rps_R = mps_R / METER_PER_ROTOR;
+
+	uint32_t dutyR = arr_R * rps_R / MAX_SPEED_VALUE;
+
+
+	__HAL_TIM_SET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL, dutyL);
+	__HAL_TIM_SET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL, dutyR);
 }
+
 
 void Motor_Test_Encoder() {
 	Encoder_Start();

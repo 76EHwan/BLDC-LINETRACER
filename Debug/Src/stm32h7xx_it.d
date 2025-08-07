@@ -44,6 +44,18 @@ Src/stm32h7xx_it.o: ../Src/stm32h7xx_it.c ../Inc/main.h \
  ../Inc/stm32h7xx_it.h \
  C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/sensor.h \
  C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/motor.h \
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/init.h \
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Drivers/BSP/ST7735/lcd.h \
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Drivers/BSP/ST7735/st7735.h \
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Drivers/BSP/ST7735/st7735_reg.h \
+ ../Inc/tim.h ../Inc/main.h \
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/sensor.h \
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/motor.h \
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/drive.h \
+ ../Inc/lptim.h \
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/switch.h \
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/mcf8316c.h \
+ ../Inc/i2c.h \
  C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/drive.h
 ../Inc/main.h:
 ../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal.h:
@@ -91,4 +103,17 @@ Src/stm32h7xx_it.o: ../Src/stm32h7xx_it.c ../Inc/main.h \
 ../Inc/stm32h7xx_it.h:
 C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/sensor.h:
 C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/motor.h:
+C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/init.h:
+C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Drivers/BSP/ST7735/lcd.h:
+C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Drivers/BSP/ST7735/st7735.h:
+C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Drivers/BSP/ST7735/st7735_reg.h:
+../Inc/tim.h:
+../Inc/main.h:
+C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/sensor.h:
+C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/motor.h:
+C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/drive.h:
+../Inc/lptim.h:
+C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/switch.h:
+C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/mcf8316c.h:
+../Inc/i2c.h:
 C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/drive.h:

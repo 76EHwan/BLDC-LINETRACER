@@ -17,7 +17,6 @@ float c_v;	// current velocity
 void Drive_LPTIM5_IRQ() {
 	c_v = (fabsf(t_v - c_v) < accel * dt) ?
 			t_v : ((t_v - c_v > 0) ? c_v + accel * dt : c_v - accel * dt);
-
 }
 
 void Drive_First() {

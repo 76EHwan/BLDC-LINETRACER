@@ -5,4 +5,6 @@
 ../Main/Src/mcf8316c.c:238:6:MCF8316C_Set_EEPROM	32	static
 ../Main/Src/mcf8316c.c:449:6:MCF8316C_Get_Fault	32	static
 ../Main/Src/mcf8316c.c:502:6:MCF8316C_Get_Voltage	56	static
-../Main/Src/mcf8316c.c:525:6:MCF8316C_MPET	40	static
+../Main/Src/mcf8316c.c:529:6:MCF8316C_MPET	40	static
+../Main/Src/mcf8316c.c:564:6:MCF8316C_Save_Parameters_To_EEPROM	16	static
+../Main/Src/mcf8316c.c:582:6:MCF8316C_PID_CONTROL	16	static

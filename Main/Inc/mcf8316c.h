@@ -301,7 +301,7 @@
 #define ACTIVE_BRAKE_CURRENT_5A			(0x5 << 20)
 #define ACTIVE_BRAKE_CURRENT_6A			(0x6 << 20)
 #define ACTIVE_BRAKE_CURRENT_7A			(0x7 << 20)
-#define ACTIVE_BRAKE_CURRENT_LIMIT		ACTIVE_BRAKE_CURRENT_2A
+#define ACTIVE_BRAKE_CURRENT_LIMIT		ACTIVE_BRAKE_CURRENT_4A
 
 /* ACTIVE BRAKE KP (Active Braking Loop Kp) */
 #define ACTIVE_BRAKE_KP_BASE			0.f
@@ -344,7 +344,7 @@
 #define ALIGN_SLOW_RAMP_2KA				(0xD << 25)
 #define ALIGN_SLOW_RAMP_5KA				(0xE << 25)
 #define ALIGN_SLOW_RAMP_NO_LIMIT		(0xF << 25)
-#define ALIGN_SLOW_RAMP_RATE			ALIGN_SLOW_RAMP_25A
+#define ALIGN_SLOW_RAMP_RATE			ALIGN_SLOW_RAMP_250A
 
 /* ALIGN TIME (Align Time */
 #define ALIGN_TIME_10MS					(0x0 << 21)
@@ -1111,7 +1111,7 @@
 #define MOTOR_RES_18R5					(0xFD << 8)
 #define MOTOR_RES_19R					(0xFE << 8)
 #define MOTOR_RES_20R					(0xFF << 8)
-#define MOTOR_RES						MOTOR_RES_SELF
+#define MOTOR_RES						MOTOR_RES_1R9		//0R63
 
 /* MOTOR IND (Motor Inductance) */
 #define MOTOR_IND_SELF					0x00
@@ -1370,7 +1370,7 @@
 #define MOTOR_IND_18MH5					(0xFD << 8)
 #define MOTOR_IND_19MH					(0xFE << 8)
 #define MOTOR_IND_20MH					(0xFF << 8)
-#define MOTOR_IND						MOTOR_IND_SELF
+#define MOTOR_IND						MOTOR_IND_0MH13	//	0MH03
 
 /* CLOSED LOOP2 Register Data */
 #define CLOSED_LOOP2_DATA				(MTR_STOP | MTR_STOP_BRK_TIME | ACT_SPIN_THR | BRAKE_SPEED_THRESHOLD | MOTOR_RES | MOTOR_IND)
@@ -1635,15 +1635,15 @@
 #define MOTOR_BEMF_1K85MV				(0xFD << 23)
 #define MOTOR_BEMF_1K9MV				(0xFE << 23)
 #define MOTOR_BEMF_2KMV					(0xFF << 23)
-#define MOTOR_BEMF_CONST				MOTOR_BEMF_SELF
+#define MOTOR_BEMF_CONST				MOTOR_BEMF_70MV
 
 /* CURR LOOP KP (Current iq and id Loop Kp = Value / 10 ^ SCALE) */
 #define CURR_LOOP_KP_SCALE_0			(0x0 << 21)
 #define CURR_LOOP_KP_SCALE_1			(0x1 << 21)
 #define CURR_LOOP_KP_SCALE_2			(0x2 << 21)
 #define CURR_LOOP_KP_SCALE_3			(0x3 << 21)
-#define CURR_LOOP_KP_SCALE				CURR_LOOP_KP_SCALE_0	// 0x10
-#define CURR_LOOP_KP_VALUE				(0x00 << 13)			// 0x2D
+#define CURR_LOOP_KP_SCALE				CURR_LOOP_KP_SCALE_0	// 0x00
+#define CURR_LOOP_KP_VALUE				(0xFF << 13)			// 0x03
 #define CURR_LOOP_KP					(CURR_LOOP_KP_SCALE | CURR_LOOP_KI_VALUE)
 
 /* CURR LOOP KI (Current iq and id Loop Ki = 1000 * Value / 10 ^ SCALE) */
@@ -1651,8 +1651,8 @@
 #define CURR_LOOP_KI_SCALE_1			(0x1 << 11)
 #define CURR_LOOP_KI_SCALE_2			(0x2 << 11)
 #define CURR_LOOP_KI_SCALE_3			(0x3 << 11)
-#define CURR_LOOP_KI_SCALE				CURR_LOOP_KI_SCALE_0	// 0x01
-#define CURR_LOOP_KI_VALUE				(0x00 << 3)				// 0x52
+#define CURR_LOOP_KI_SCALE				CURR_LOOP_KI_SCALE_0	// 0x00
+#define CURR_LOOP_KI_VALUE				(0xFF << 3)				// 0xF1
 #define CURR_LOOP_KI					(CURR_LOOP_KI_SCALE | CURR_LOOP_KI_VALUE)
 
 /* SPD LOOP KP (Speed Loop Kp = 0.01 * Value / 10 ^ SCALE) */
@@ -1661,9 +1661,10 @@
 #define SPD_LOOP_KP_SCALE_2				(0x2 << 1)
 #define SPD_LOOP_KP_SCALE_3				(0x3 << 1)
 #define SPD_LOOP_KP_SCALE				SPD_LOOP_KP_SCALE_0
-#define SPD_LOOP_KP_VALUE				0x00
-#define SPD_LOOP_KP_1					(SPD_LOOP_KP_VALUE >> 7)
-#define SPD_LOOP_KP_2					((SPD_LOOP_KP_VALUE & 0x7F) << 24)
+#define SPD_LOOP_KP_VALUE				0x04
+#define SPD_LOOP_KP						(SPD_LOOP_KP_SCALE << 8 | SPD_LOOP_KP_VALUE)
+#define SPD_LOOP_KP_1					(SPD_LOOP_KP >> 7)
+#define SPD_LOOP_KP_2					((SPD_LOOP_KP & 0x7F) << 24)
 
 /* CLOSED LOOP3 Register Data */
 #define CLOSED_LOOP3_DATA				(MOTOR_BEMF_CONST | CURR_LOOP_KP | CURR_LOOP_KI | SPD_LOOP_KP_1)
@@ -2122,7 +2123,7 @@
 #define BRAKE_INPUT_BRAKE_PIN_MODE			(0x1 << 2)
 #define BRAKE_INPUT_DIGITAL_SPEED_CTRL		(0x2 << 2)
 #define BRAKE_INPUT_DIGITAL_SPEED_FREQ		(0x3 << 2)
-#define BRAKE_INPUT							BRAKE_INPUT_DIGITAL_SPEED_CTRL
+#define BRAKE_INPUT							BRAKE_INPUT_HW_PIN
 
 /* SPEED MODE (Configure Motor Control Input Source)*/
 #define SPEED_MODE_ANAL_SPEED				0x0
@@ -2519,7 +2520,7 @@
 #define MPET_OPEN_LOOP_SPEED_REF_25PER						(0x1 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_35PER						(0x2 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_50PER						(0x3 << 6)
-#define MPET_OPEN_LOOP_SPEED_REF							MPET_OPEN_LOOP_SPEED_REF_25PER
+#define MPET_OPEN_LOOP_SPEED_REF							MPET_OPEN_LOOP_SPEED_REF_15PER
 
 /* MPET OPEN LOOP SLEW RATE */
 #define MPET_OPEN_LOOP_SLEW_RATE_0HZ1						(0x0 << 3)
@@ -2613,17 +2614,17 @@
 /* MPET L */
 #define MPET_L_ENABLE						(0x1 << 3)
 #define MPET_L_DISABLE						(0x0 << 3)
-#define MPET_L								MPET_L_ENABLE
+#define MPET_L								MPET_L_DISABLE
 
 /* MPET KE */
 #define MPET_KE_ENABLE						(0x1 << 2)
 #define MPET_KE_DISABLE						(0x0 << 2)
-#define MPET_KE								MPET_KE_ENABLE
+#define MPET_KE								MPET_KE_DISABLE
 
 /* MPET MECH */
 #define MPET_MECH_ENABLE					(0x1 << 1)
 #define MPET_MECH_DISABLE					(0x0 << 1)
-#define MPET_MECH							MPET_MECH_ENABLE
+#define MPET_MECH							MPET_MECH_DISABLE
 
 /* MPET WRITE SHADOW */
 #define MPET_WRITE_SHADOW_ENABLE			0x1
@@ -2636,9 +2637,6 @@
 /*
  * MCF8316C-Q1 I2C FUNCTION
  */
-void I2C_TEST1();
-
-void I2C_TEST2();
 
 void MCF8316C_Set_EEPROM();
 
@@ -2646,8 +2644,8 @@ void MCF8316C_Get_Voltage();
 
 void MCF8316C_Get_Fault();
 
+void MCF8316C_MPET();
 
-
-
+void MCF8316C_PID_CONTROL();
 
 #endif /* INC_MCF8316C_H_ */
