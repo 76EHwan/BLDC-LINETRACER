@@ -1,10 +1,9 @@
 ../Main/Src/mcf8316c.c:10:19:Transmit_Set	40	static
 ../Main/Src/mcf8316c.c:33:19:Receive_Set	40	static
-../Main/Src/mcf8316c.c:66:19:Transmit_Reg_32BIT	48	static
-../Main/Src/mcf8316c.c:90:19:Receive_Reg	40	static
-../Main/Src/mcf8316c.c:238:6:MCF8316C_Set_EEPROM	32	static
-../Main/Src/mcf8316c.c:449:6:MCF8316C_Get_Fault	32	static
-../Main/Src/mcf8316c.c:502:6:MCF8316C_Get_Voltage	56	static
-../Main/Src/mcf8316c.c:529:6:MCF8316C_MPET	40	static
-../Main/Src/mcf8316c.c:564:6:MCF8316C_Save_Parameters_To_EEPROM	16	static
-../Main/Src/mcf8316c.c:582:6:MCF8316C_PID_CONTROL	16	static
+../Main/Src/mcf8316c.c:66:19:Transmit_Reg	48	static
+../Main/Src/mcf8316c.c:99:19:Receive_Reg	40	static
+../Main/Src/mcf8316c.c:245:6:MCF8316C_Set_EEPROM	32	static
+../Main/Src/mcf8316c.c:456:6:MCF8316C_Get_Fault	32	static
+../Main/Src/mcf8316c.c:509:6:MCF8316C_Get_Voltage	56	static
+../Main/Src/mcf8316c.c:543:6:MCF8316C_MPET	40	static
+../Main/Src/mcf8316c.c:613:6:MCF8316C_PID_CONTROL	24	static

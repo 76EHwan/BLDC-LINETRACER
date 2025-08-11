@@ -9,6 +9,7 @@
 #define MAIN_INC_DRIVE_H_
 
 #include "main.h"
+#include "motor.h"
 
 void Drive_First(void);
 void Drive_Second(void);

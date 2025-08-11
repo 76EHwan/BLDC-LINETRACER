@@ -23,14 +23,24 @@
 #define MOTOR_PID_PERIOD		0
 #define ENCODER_PERIOD			65535
 
-#define ROTOR_PER_TICK			(1.f/2048.f)
-
-#define SPUR_GEAR				39
-#define PINION_GEAR				11
+#define SPUR_GEAR				39.f
+#define PINION_GEAR				11.f
 
 #define WHEEL_DIAMETER			0.0215f
-#define METER_PER_ROTOR			(2 * WHEEL_DIAMETER * M_PI)
 
+#define METER_PER_WHEEL			(WHEEL_DIAMETER * M_PI)
+
+#define WHEEL_PER_ROTOR			(PINION_GEAR / SPUR_GEAR)
+
+#define METER_PER_ROTOR			(METER_PER_WHEEL * WHEEL_PER_ROTOR)
+
+#define ROTOR_PER_TICK			(1.f/2048.f)
+
+#define METER_PER_TICK			(METER_PER_WHEEL * WHEEL_PER_ROTOR * ROTOR_PER_TICK)
+
+
+
+#define dt	0.0005f
 
 
 
@@ -45,7 +55,9 @@
 #include "mcf8316c.h"
 
 typedef struct {
+	uint16_t enc_pst;
 	float_t mps;
+	float_t err_rps;
 	uint32_t max_freq;
 } motor_t;
 

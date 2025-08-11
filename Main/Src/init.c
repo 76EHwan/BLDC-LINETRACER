@@ -76,7 +76,9 @@ void Init() {
 			Custom_LCD_Clear();
 			Encoder_Stop();
 
-			(menu + cnt_l)->func();
+			MCF8316C_Set_EEPROM();
+			MCF8316C_MPET();
+//			(menu + cnt_l)->func();
 
 			Encoder_Start();
 			Custom_LCD_Clear();

@@ -5,7 +5,6 @@
  *      Author: kth59
  */
 
-#define dt	0.0005f
 
 #include "drive.h"
 

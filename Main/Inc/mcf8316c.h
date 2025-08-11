@@ -110,12 +110,12 @@
 
 #define ISD_ENABLE					(0x1 << 30)
 #define ISD_DISABLE					(0x0 << 30)
-#define ISD_EN						ISD_ENABLE
+#define ISD_EN						ISD_DISABLE
 
 /* BRAKE (Brake) */
 #define BRAKE_ENABLE				(0x1 << 29)
 #define BRAKE_DISABLE				(0x0 << 29)
-#define BRAKE_EN					BRAKE_ENABLE
+#define BRAKE_EN					BRAKE_DISABLE
 
 /* HIZ (Hi-Z) */
 #define HIZ_ENABLE					(0x1 << 28)
@@ -189,7 +189,7 @@
 #define BRK_TIME_7S5				(0xD << 13)
 #define BRK_TIME_10S				(0xE << 13)
 #define BRK_TIME_15S				(0xF << 13)
-#define BRK_TIME					BRK_TIME_5S
+#define BRK_TIME					BRK_TIME_50MS
 
 /* HIZ TIME (Hi-Z Time) */
 #define HIZ_TIME_10MS				(0x0 << 9)
@@ -219,7 +219,7 @@
 #define STAT_DETECT_THR_750MV		(0x5 << 6)
 #define STAT_DETECT_THR_1V			(0x6 << 6)
 #define STAT_DETECT_THR_1V5			(0x7 << 6)
-#define STAT_DETECT_THR				STAT_DETECT_THR_100MV
+#define STAT_DETECT_THR				STAT_DETECT_THR_50MV
 
 /* REV DRV HANDOFF THR (Reverse Drive Speed Threshold) */
 #define REV_DRV_HANDOFF_2PER5		(0x0 << 2)
@@ -363,7 +363,7 @@
 #define ALIGN_TIME_5S					(0xD << 21)
 #define ALIGN_TIME_7S5					(0xE << 21)
 #define ALIGN_TIME_10S					(0xF << 21)
-#define ALIGN_TIME						ALIGN_TIME_3S
+#define ALIGN_TIME						ALIGN_TIME_500MS
 
 /* ALIGN OR SLOW CURRENT ILIMIT (Align or Slow First Cycle Current Limit) */
 #define ALIGN_OR_SLOW_CURRENT_ILIMIT_0A125		(0x0 << 17)
@@ -382,7 +382,7 @@
 #define ALIGN_OR_SLOW_CURRENT_ILIMIT_6A			(0xD << 17)
 #define ALIGN_OR_SLOW_CURRENT_ILIMIT_7A			(0xE << 17)
 #define ALIGN_OR_SLOW_CURRENT_ILIMIT_8A			(0xF << 17)
-#define ALIGN_OR_SLOW_CURRENT_ILIMIT			ALIGN_OR_SLOW_CURRENT_ILIMIT_1A5
+#define ALIGN_OR_SLOW_CURRENT_ILIMIT			ALIGN_OR_SLOW_CURRENT_ILIMIT_3A
 
 /* IPD CLK FREQ (Initial Position Detection Clock Frequency) */
 #define IPD_CLK_FREQ_50HZ		(0x0 << 14)
@@ -443,7 +443,7 @@
 /* IQ RAMP EN (IQ Ramp Down for Transition) */
 #define IQ_RAMP_ENABLE				(0x1 << 2)
 #define IQ_RAMP_DISABLE				(0x0 << 2)
-#define IQ_RAMP_EN					IQ_RAMP_DISABLE
+#define IQ_RAMP_EN					IQ_RAMP_ENABLE
 
 /* ACTIVE BRAKE EN (Active Braking During Decelation */
 #define ACTIVE_BRAKE_ENABLE			(0x1 << 1)
@@ -479,7 +479,7 @@
 #define OL_ILIMIT_6A		(0xD << 27)
 #define OL_ILIMIT_7A		(0xE << 27)
 #define OL_ILIMIT_8A		(0xF << 27)
-#define OL_ILIMIT			OL_ILIMIT_1A5
+#define OL_ILIMIT			OL_ILIMIT_3A
 
 /* OL ACC A1 (Open Loop Acceleration Coefficient A1) */
 #define OL_ACC_A1_0HZ01		(0x0 << 23)
@@ -498,7 +498,7 @@
 #define OL_ACC_A1_1KHZ		(0xD << 23)
 #define OL_ACC_A1_5KHZ		(0xE << 23)
 #define OL_ACC_A1_10KHZ		(0xF << 23)
-#define OL_ACC_A1			OL_ACC_A1_25HZ
+#define OL_ACC_A1			OL_ACC_A1_10HZ
 
 /* OL ACC A2 (Open Loop Acceleration Coefficient A2) */
 #define OL_ACC_A2_0HZ		(0x0 << 19)
@@ -557,7 +557,7 @@
 #define OPN_CL_HANDOFF_45PER		(0x1D << 13)
 #define OPN_CL_HANDOFF_47PER5		(0x1E << 13)
 #define OPN_CL_HANDOFF_50PER		(0x1F << 13)
-#define OPN_CL_HANDOFF_THR			OPN_CL_HANDOFF_20PER
+#define OPN_CL_HANDOFF_THR			OPN_CL_HANDOFF_1PER
 
 /* ALIGN ANGLE (Align Angle) */
 #define ALIGN_0DEG		(0x00 << 8)
@@ -608,7 +608,7 @@
 #define SLOW_FIRST_CYC_FREQ_40PER		(0xD << 4)
 #define SLOW_FIRST_CYC_FREQ_45PER		(0xE << 4)
 #define SLOW_FIRST_CYC_FREQ_50PER		(0xF << 4)
-#define SLOW_FIRST_CYC_FREQ				SLOW_FIRST_CYC_FREQ_1PER
+#define SLOW_FIRST_CYC_FREQ				SLOW_FIRST_CYC_FREQ_5PER
 
 /* FIRST CYCLE FREQ SEL (First Cycle in Open Loop Start-up) */
 #define FIRST_CYCLE_FREQ_SEL_0HZ		(0x0 << 3)
@@ -783,7 +783,7 @@
 /* SPEED LOOP DIS (Speed Loop Disable or Torque Mode Enable) */
 #define SPEED_LOOP_ENABLE			(0x0 << 1)
 #define SPEED_LOOP_DISABLE			(0x1 << 1)
-#define SPEED_LOOP_DIS				SPEED_LOOP_ENABLE
+#define SPEED_LOOP_DIS				SPEED_LOOP_DISABLE
 
 /* CLOSED_LOOP1 Register Data */
 #define CLOSED_LOOP1_DATA			(OVERMODULATION_ENABLE | CL_ACC | CL_DEC_CONFIG | CL_DEC | PWM_FREQ_OUT | PWM_MODE | FG_SEL | FG_DIV | FG_CONFIG | FG_BEMF_THR | AVS_EN | DEADTIME_COMP_EN | SPEED_LOOP_DIS)
@@ -1111,7 +1111,7 @@
 #define MOTOR_RES_18R5					(0xFD << 8)
 #define MOTOR_RES_19R					(0xFE << 8)
 #define MOTOR_RES_20R					(0xFF << 8)
-#define MOTOR_RES						MOTOR_RES_1R9		//0R63
+#define MOTOR_RES						MOTOR_RES_0R96		//0R63
 
 /* MOTOR IND (Motor Inductance) */
 #define MOTOR_IND_SELF					0x00
@@ -1370,7 +1370,7 @@
 #define MOTOR_IND_18MH5					(0xFD << 8)
 #define MOTOR_IND_19MH					(0xFE << 8)
 #define MOTOR_IND_20MH					(0xFF << 8)
-#define MOTOR_IND						MOTOR_IND_0MH13	//	0MH03
+#define MOTOR_IND						MOTOR_IND_0MH064	//	0MH03
 
 /* CLOSED LOOP2 Register Data */
 #define CLOSED_LOOP2_DATA				(MTR_STOP | MTR_STOP_BRK_TIME | ACT_SPIN_THR | BRAKE_SPEED_THRESHOLD | MOTOR_RES | MOTOR_IND)
@@ -1635,15 +1635,15 @@
 #define MOTOR_BEMF_1K85MV				(0xFD << 23)
 #define MOTOR_BEMF_1K9MV				(0xFE << 23)
 #define MOTOR_BEMF_2KMV					(0xFF << 23)
-#define MOTOR_BEMF_CONST				MOTOR_BEMF_70MV
+#define MOTOR_BEMF_CONST				MOTOR_BEMF_40MV5
 
 /* CURR LOOP KP (Current iq and id Loop Kp = Value / 10 ^ SCALE) */
 #define CURR_LOOP_KP_SCALE_0			(0x0 << 21)
 #define CURR_LOOP_KP_SCALE_1			(0x1 << 21)
 #define CURR_LOOP_KP_SCALE_2			(0x2 << 21)
 #define CURR_LOOP_KP_SCALE_3			(0x3 << 21)
-#define CURR_LOOP_KP_SCALE				CURR_LOOP_KP_SCALE_0	// 0x00
-#define CURR_LOOP_KP_VALUE				(0xFF << 13)			// 0x03
+#define CURR_LOOP_KP_SCALE				CURR_LOOP_KP_SCALE_1	// 0x00
+#define CURR_LOOP_KP_VALUE				(0x20 << 13)			// 0x03
 #define CURR_LOOP_KP					(CURR_LOOP_KP_SCALE | CURR_LOOP_KI_VALUE)
 
 /* CURR LOOP KI (Current iq and id Loop Ki = 1000 * Value / 10 ^ SCALE) */
@@ -1651,8 +1651,8 @@
 #define CURR_LOOP_KI_SCALE_1			(0x1 << 11)
 #define CURR_LOOP_KI_SCALE_2			(0x2 << 11)
 #define CURR_LOOP_KI_SCALE_3			(0x3 << 11)
-#define CURR_LOOP_KI_SCALE				CURR_LOOP_KI_SCALE_0	// 0x00
-#define CURR_LOOP_KI_VALUE				(0xFF << 3)				// 0xF1
+#define CURR_LOOP_KI_SCALE				CURR_LOOP_KI_SCALE_3	// 0x00
+#define CURR_LOOP_KI_VALUE				(0x0 << 3)				// 0xF1
 #define CURR_LOOP_KI					(CURR_LOOP_KI_SCALE | CURR_LOOP_KI_VALUE)
 
 /* SPD LOOP KP (Speed Loop Kp = 0.01 * Value / 10 ^ SCALE) */
@@ -1661,7 +1661,7 @@
 #define SPD_LOOP_KP_SCALE_2				(0x2 << 1)
 #define SPD_LOOP_KP_SCALE_3				(0x3 << 1)
 #define SPD_LOOP_KP_SCALE				SPD_LOOP_KP_SCALE_0
-#define SPD_LOOP_KP_VALUE				0x04
+#define SPD_LOOP_KP_VALUE				0x0
 #define SPD_LOOP_KP						(SPD_LOOP_KP_SCALE << 8 | SPD_LOOP_KP_VALUE)
 #define SPD_LOOP_KP_1					(SPD_LOOP_KP >> 7)
 #define SPD_LOOP_KP_2					((SPD_LOOP_KP & 0x7F) << 24)
@@ -1678,7 +1678,7 @@
 #define SPD_LOOP_KI_SCALE_2				(0x2 << 22)
 #define SPD_LOOP_KI_SCALE_3				(0x3 << 22)
 #define SPD_LOOP_KI_SCALE				SPD_LOOP_KI_SCALE_0
-#define SPD_LOOP_KI_VALUE				(0x00 << 14)
+#define SPD_LOOP_KI_VALUE				(0x0 << 14)
 #define SPD_LOOP_KI						(SPD_LOOP_KI_SCALE | SPD_LOOP_KI_VALUE)
 
 /* MAX SPEED (Maximum value of Speed in Hz) */
@@ -1841,7 +1841,7 @@
 #define ILIMIT_6A			(0xD << 27)
 #define ILIMIT_7A			(0xE << 27)
 #define ILIMIT_8A			(0xF << 27)
-#define ILIMIT				ILIMIT_3A
+#define ILIMIT				ILIMIT_3A5
 
 /* HW LOCK LIMIT (Comparator Based Lock Detection Current Threshold) */
 #define HW_LOCK_LIMIT_0A125			(0x0 << 23)
@@ -1860,7 +1860,7 @@
 #define HW_LOCK_LIMIT_6A			(0xD << 23)
 #define HW_LOCK_LIMIT_7A			(0xE << 23)
 #define HW_LOCK_LIMIT_8A			(0xF << 23)
-#define HW_LOCK_LIMIT				HW_LOCK_LIMIT_6A
+#define HW_LOCK_LIMIT				HW_LOCK_LIMIT_8A
 
 /* LOCK ILIMIT (ADC Based Lock Detection Current Threshold) */
 #define LOCK_ILIMIT_0A125			(0x0 << 19)
@@ -1957,7 +1957,7 @@
 /* SATURATION FLAGS EN (Indication of Current Loop and Speed Loop Saturation Enable) */
 #define SATURATION_FLAGS_ENABLE				0x1
 #define SATURATION_FLAGS_DISABLE			0x0
-#define SATURATION_FLAGS_EN					SATURATION_FLAGS_DISABLE
+#define SATURATION_FLAGS_EN					SATURATION_FLAGS_ENABLE
 
 /* FAULT CONFIG1 Register Data */
 #define FAULT_CONFIG1_DATA					(ILIMIT | HW_LOCK_LIMIT | LOCK_ILIMIT | LOCK_ILIMIT_MODE | LOCK_ILIMIT_DEG | LCK_RETRY | MTR_LCK_MODE | IPD_TIMEOUT_FAULT_EN | IPD_FREQUENCY_FAULT_EN | SATURATION_FLAGS_EN)
@@ -2360,7 +2360,7 @@
 /* OVP EN (Overvoltage Enable) */
 #define OVP_ENABLE						(0x1 << 18)
 #define OVP_DISABLE						(0x0 << 18)
-#define OVP_EN							OVP_ENABLE
+#define OVP_EN							OVP_DISABLE
 
 /* OTW REP (Overtemperature Warning Enable) */
 #define OTW_REP_ENABLE					(0x1 << 17)
@@ -2377,7 +2377,7 @@
 /* OCP LVL (Overcurrent Level Setting) */
 #define OCP_LVL_16A						(0x0 << 10)
 #define OCP_LVL_24A						(0x1 << 10)
-#define OCP_LVL							OCP_LVL_16A
+#define OCP_LVL							OCP_LVL_24A
 
 /* OCP MODE (OCP Fault Mode) */
 #define OCP_MODE_LATCH					(0x0 << 8)
@@ -2449,7 +2449,7 @@
 /* FAST ISD EN (Enable Fast Speed Durign ISD) */
 #define FAST_ISD_ENABLE										(0x1 << 26)
 #define FAST_ISD_DISABLE									(0x0 << 26)
-#define FAST_ISD_EN											FAST_ISD_ENABLE
+#define FAST_ISD_EN											FAST_ISD_DISABLE
 
 /* ISD STOP TIME */
 #define ISD_STOP_TIME_1MS									(0x0 << 24)
@@ -2470,7 +2470,7 @@
 #define ISD_TIMEOUT_750MS									(0x1 << 20)
 #define ISD_TIMEOUT_1S										(0x2 << 20)
 #define ISD_TIMEOUT_2S										(0x3 << 20)
-#define ISD_TIMEOUT											ISD_TIMEOUT_500MS
+#define ISD_TIMEOUT											ISD_TIMEOUT_1S
 
 /* AUTO HANDOFF MIN BEMF */
 #define AUTO_HANDOFF_MIN_BEMF_0MV							(0x0 << 17)
@@ -2481,7 +2481,7 @@
 #define AUTO_HANDOFF_MIN_BEMF_1000MV						(0x5 << 17)
 #define AUTO_HANDOFF_MIN_BEMF_1250MV						(0x6 << 17)
 #define AUTO_HANDOFF_MIN_BEMF_2500MV						(0x7 << 17)
-#define AUTO_HANDOFF_MIN_BEMF								AUTO_HANDOFF_MIN_BEMF_500MV
+#define AUTO_HANDOFF_MIN_BEMF								AUTO_HANDOFF_MIN_BEMF_250MV
 
 /* BRAKE CURRENT PERSIST */
 #define BRAKE_CURRENT_PERSIST_50MS							(0x0 << 15)
@@ -2578,7 +2578,7 @@
 #define ACTIVE_BRAKE_BUS_CURRENT_SLEW_RATE_1KA			(0x5 << 3)
 #define ACTIVE_BRAKE_BUS_CURRENT_SLEW_RATE_5KA			(0x6 << 3)
 #define ACTIVE_BRAKE_BUS_CURRENT_SLEW_RATE_NO_LIMIT		(0x7 << 3)
-#define ACTIVE_BRAKE_BUS_CURRENT_SLEW_RATE				ACTIVE_BRAKE_BUS_CURRENT_SLEW_RATE_500A
+#define ACTIVE_BRAKE_BUS_CURRENT_SLEW_RATE				ACTIVE_BRAKE_BUS_CURRENT_SLEW_RATE_250A
 
 /* MPET IPD SELECT */
 #define MPET_IPD_SELECT_NORMAL				(0x0 << 2)
@@ -2614,17 +2614,17 @@
 /* MPET L */
 #define MPET_L_ENABLE						(0x1 << 3)
 #define MPET_L_DISABLE						(0x0 << 3)
-#define MPET_L								MPET_L_DISABLE
+#define MPET_L								MPET_L_ENABLE
 
 /* MPET KE */
 #define MPET_KE_ENABLE						(0x1 << 2)
 #define MPET_KE_DISABLE						(0x0 << 2)
-#define MPET_KE								MPET_KE_DISABLE
+#define MPET_KE								MPET_KE_ENABLE
 
 /* MPET MECH */
 #define MPET_MECH_ENABLE					(0x1 << 1)
 #define MPET_MECH_DISABLE					(0x0 << 1)
-#define MPET_MECH							MPET_MECH_DISABLE
+#define MPET_MECH							MPET_MECH_ENABLE
 
 /* MPET WRITE SHADOW */
 #define MPET_WRITE_SHADOW_ENABLE			0x1
