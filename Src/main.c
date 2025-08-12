@@ -201,11 +201,11 @@ int main(void)
 //	__HAL_TIM_SetCompare(&htim1,TIM_CHANNEL_1,10);
 	HAL_GPIO_WritePin(E3_GPIO_Port, MARK_L_Pin | MARK_R_Pin | E3_Pin,
 			GPIO_PIN_SET);
-	HAL_TIM_PWM_Start(&htim15, TIM_CHANNEL_1);
-	__HAL_TIM_SetCompare(&htim15,TIM_CHANNEL_1, 5);
+//	HAL_TIM_PWM_Start(&htim15, TIM_CHANNEL_1);
+//	__HAL_TIM_SetCompare(&htim15,TIM_CHANNEL_1, 5);
 	LCD_Test();
-	__HAL_TIM_SetCompare(&htim15, TIM_CHANNEL_1, 0);
-	HAL_TIM_PWM_Stop(&htim15, TIM_CHANNEL_1);
+//	__HAL_TIM_SetCompare(&htim15, TIM_CHANNEL_1, 0);
+//	HAL_TIM_PWM_Stop(&htim15, TIM_CHANNEL_1);
 	Custom_LCD_Clear();
   /* USER CODE END 2 */
 

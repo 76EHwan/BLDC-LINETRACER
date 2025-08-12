@@ -256,7 +256,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (ISD_CONFIG_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, ISD_CONFIG_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, ISD_CONFIG_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 0;
 		}
@@ -264,7 +265,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (MOTOR_STARTUP1_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, MOTOR_STARTUP1_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, MOTOR_STARTUP1_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 1;
 		}
@@ -272,7 +274,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (MOTOR_STARTUP2_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, MOTOR_STARTUP2_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, MOTOR_STARTUP2_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 2;
 		}
@@ -280,7 +283,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (CLOSED_LOOP1_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, CLOSED_LOOP1_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, CLOSED_LOOP1_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 3;
 		}
@@ -288,7 +292,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (CLOSED_LOOP2_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, CLOSED_LOOP2_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, CLOSED_LOOP2_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 4;
 		}
@@ -296,7 +301,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (CLOSED_LOOP3_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, CLOSED_LOOP3_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, CLOSED_LOOP3_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 5;
 		}
@@ -304,7 +310,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (CLOSED_LOOP4_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, CLOSED_LOOP4_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, CLOSED_LOOP4_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 6;
 		}
@@ -312,7 +319,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (REF_PROFILE1_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, REF_PROFILES1_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, REF_PROFILES1_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 7;
 		}
@@ -320,7 +328,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (REF_PROFILE2_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, REF_PROFILES2_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, REF_PROFILES2_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 8;
 		}
@@ -328,7 +337,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (REF_PROFILE3_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, REF_PROFILES3_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, REF_PROFILES3_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 9;
 		}
@@ -336,7 +346,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (REF_PROFILE4_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, REF_PROFILES4_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, REF_PROFILES4_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 10;
 		}
@@ -344,7 +355,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (REF_PROFILE5_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, REF_PROFILES5_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, REF_PROFILES5_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 11;
 		}
@@ -352,7 +364,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (REF_PROFILE6_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, REF_PROFILES6_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, REF_PROFILES6_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 12;
 		}
@@ -360,7 +373,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (FAULT_CONFIG1_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, FAULT_CONFIG1_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, FAULT_CONFIG1_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 13;
 		}
@@ -368,7 +382,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (FAULT_CONFIG2_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, FAULT_CONFIG2_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, FAULT_CONFIG2_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 14;
 		}
@@ -376,7 +391,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (PIN_CONFIG_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, PIN_CONFIG_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, PIN_CONFIG_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 15;
 		}
@@ -384,7 +400,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (DEVICE_CONFIG1_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, DEVICE_CONFIG1_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, DEVICE_CONFIG1_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 16;
 		}
@@ -392,7 +409,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (DEVICE_CONFIG2_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, DEVICE_CONFIG2_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, DEVICE_CONFIG2_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 17;
 		}
@@ -400,7 +418,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (PERI_CONFIG1_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, PERI_CONFIG1_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, PERI_CONFIG1_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 18;
 		}
@@ -408,7 +427,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (GD_CONFIG1_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, GD_CONFIG1_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, GD_CONFIG1_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 19;
 		}
@@ -416,7 +436,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (GD_CONFIG2_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, GD_CONFIG2_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, GD_CONFIG2_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 20;
 		}
@@ -424,7 +445,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (INT_ALGO_1_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, INT_ALGO_1_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, INT_ALGO_1_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 21;
 		}
@@ -432,7 +454,8 @@ void MCF8316C_Set_EEPROM() {
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (INT_ALGO_2_DATA >> (8 * i)) & 0xFF;
 		}
-		status = Transmit_Reg(hi2c, INT_ALGO_2_ADDR, tx_buffer, sizeof(tx_buffer));
+		status = Transmit_Reg(hi2c, INT_ALGO_2_ADDR, tx_buffer,
+				sizeof(tx_buffer));
 		if (status) {
 			err_array |= 0x1 << 22;
 		}
@@ -535,16 +558,17 @@ void MCF8316C_Get_Voltage() {
 
 // mcf8316c.c
 
-/**
+/*
  * @brief MPET를 실행하여 모터 파라미터를 측정하고 결과를 섀도우 레지스터에 기록합니다.
  * @note  이 함수는 EEPROM에 저장하지 않습니다. 모터가 완전히 멈춘 후
  * MCF8316C_Save_Parameters_To_EEPROM() 함수를 호출해야 합니다.
  */
+
 void MCF8316C_MPET() {
 	uint8_t tx_buffer32[4];
 	uint8_t rx_buffer32[4];
 	uint8_t rx_buffer16[2];
-	I2C_HandleTypeDef *hi2c = MCF8316C_I2C_LEFT_CHANNEL; // 우선 한쪽 채널만 테스트
+	I2C_HandleTypeDef *hi2c = MCF8316C_I2C_RIGHT_CHANNEL; // 우선 한쪽 채널만 테스트
 
 //	Transmit_Set(hi2c);
 //	HAL_Delay(300);
@@ -552,28 +576,40 @@ void MCF8316C_MPET() {
 	for (uint8_t i = 0; i < 4; i++) {
 		tx_buffer32[i] = (ALGO_DEBUG2_DATA >> (8 * i)) & 0xFF;
 	}
-	if (Transmit_Reg(hi2c, ALGO_DEBUG2_ADDR, tx_buffer32, sizeof(tx_buffer32)) != HAL_OK) {
-		Custom_LCD_Printf(0, 1, "MPET Start Fail!");
-		return;
-	}
+	Custom_LCD_Printf(0, 0, "MPET Start");
 //
 //	HAL_Delay(300);
 //
 //	Receive_Set(hi2c, sizeof(rx_buffer16));
 //
-//	HAL_Delay(100);
 
-	HAL_GPIO_WritePin(Motor_L_Brake_GPIO_Port, Motor_L_Brake_Pin,
+	HAL_GPIO_WritePin(Motor_R_Brake_GPIO_Port, Motor_R_Brake_Pin,
 			GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin,
+	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin,
 			GPIO_PIN_RESET);
+
+	if (Transmit_Reg(hi2c, ALGO_DEBUG2_ADDR, tx_buffer32, sizeof(tx_buffer32))
+			!= HAL_OK) {
+		Custom_LCD_Printf(0, 1, "Fail!");
+		return;
+	}
+
+	HAL_Delay(100);
 
 	Custom_LCD_Clear();
 
 	while (!HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin)) {
-		Receive_Reg(hi2c, ALGORITHM_STATUS_ADDR, rx_buffer16,
-				sizeof(rx_buffer16));
-		Custom_LCD_Printf(0, 0, "%02x%02x", rx_buffer16[1], rx_buffer16[0]);
+		if (HAL_I2C_IsDeviceReady(hi2c, MCF8316C_I2C_ADDRESS_7BIT << 1, 1, 0x01) == HAL_OK) {
+//			Receive_Reg(hi2c, ALGO_STATUS_MPET, rx_buffer32,
+//					sizeof(rx_buffer32));
+			Receive_Reg(hi2c, ALGORITHM_STATUS_ADDR, rx_buffer16, sizeof(rx_buffer16));
+			HAL_GPIO_WritePin(E3_GPIO_Port, E3_Pin, GPIO_PIN_SET);
+		}
+		else HAL_GPIO_WritePin(E3_GPIO_Port, E3_Pin, GPIO_PIN_RESET);
+
+//		Custom_LCD_Printf(0, 1, "%02x%02x%02x%02x", rx_buffer32[3], rx_buffer32[2], rx_buffer32[1], rx_buffer32[0]);
+		Custom_LCD_Printf(0, 1, "%02x%02x", rx_buffer16[1], rx_buffer16[0]);
+		HAL_Delay(500);
 	}
 
 	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
@@ -584,9 +620,6 @@ void MCF8316C_MPET() {
 			GPIO_PIN_SET);
 
 	HAL_Delay(500);
-
-	Receive_Set(hi2c, sizeof(rx_buffer32));
-	HAL_Delay(100);
 
 	// 측정된 파라미터가 MTR_PARAMS 레지스터에 기록되었는지 확인
 	HAL_StatusTypeDef status = Receive_Reg(hi2c, MTR_PARAMS, rx_buffer32,
@@ -605,7 +638,7 @@ void MCF8316C_MPET() {
 		;
 }
 
-/**
+/*
  * @brief 현재 섀도우 레지스터에 있는 파라미터 값들을 EEPROM에 영구 저장합니다.
  * @note  이 함수는 반드시 모터가 완전히 멈춘 상태에서만 호출해야 합니다.
  */

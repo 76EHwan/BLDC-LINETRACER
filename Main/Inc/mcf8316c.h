@@ -81,6 +81,7 @@
 #define DRIVER_FAULT_ADDR			0xE0
 #define CONTROLLER_FAULT_ADDR		0xE2
 #define MTR_PARAMS					0xE6
+#define ALGO_STATUS_MPET			0xE8
 #define MCF8316C_WRITE_READ_ADDR	ALGO_CTRL1_ADDR
 #define MCF8316C_MOTOR_STOP_ADDR	ALGO_DEBUG1_ADDR
 #define MCF8316C_DRIVER_STATE_ADDR	0x190
@@ -110,7 +111,7 @@
 
 #define ISD_ENABLE					(0x1 << 30)
 #define ISD_DISABLE					(0x0 << 30)
-#define ISD_EN						ISD_DISABLE
+#define ISD_EN						ISD_ENABLE
 
 /* BRAKE (Brake) */
 #define BRAKE_ENABLE				(0x1 << 29)
@@ -170,7 +171,7 @@
 #define BRK_CURR_THR_2A				(0x5 << 17)
 #define BRK_CURR_THR_4A				(0x6 << 17)
 #define BRK_CURR_THR_8A				(0x7 << 17)
-#define BRK_CURR_THR				BRK_CURR_THR_0A2
+#define BRK_CURR_THR				BRK_CURR_THR_0A5
 
 /* BRK TIME (Brake Time) */
 #define BRK_TIME_10MS				(0x0 << 13)
@@ -344,7 +345,7 @@
 #define ALIGN_SLOW_RAMP_2KA				(0xD << 25)
 #define ALIGN_SLOW_RAMP_5KA				(0xE << 25)
 #define ALIGN_SLOW_RAMP_NO_LIMIT		(0xF << 25)
-#define ALIGN_SLOW_RAMP_RATE			ALIGN_SLOW_RAMP_250A
+#define ALIGN_SLOW_RAMP_RATE			ALIGN_SLOW_RAMP_25A
 
 /* ALIGN TIME (Align Time */
 #define ALIGN_TIME_10MS					(0x0 << 21)
@@ -393,7 +394,7 @@
 #define IPD_CLK_FREQ_2KHZ		(0x5 << 14)
 #define IPD_CLK_FREQ_5KHZ		(0x6 << 14)
 #define IPD_CLK_FREQ_10KHZ		(0x7 << 14)
-#define IPD_CLK_FREQ			IPD_CLK_FREQ_50HZ
+#define IPD_CLK_FREQ			IPD_CLK_FREQ_100HZ
 
 /* IPD_CURR_THR (Initial Position Detection Threshold */
 #define IPD_CURR_0A25			(0x00 << 9)
@@ -414,7 +415,7 @@
 #define IPD_CURR_6A667			(0x0F << 9)
 #define IPD_CURR_7A333			(0x10 << 9)
 #define IPD_CURR_8A				(0x11 << 9)
-#define IPD_CURR_THR			IPD_CURR_1A
+#define IPD_CURR_THR			IPD_CURR_0A25
 
 /* IPD RLS MODE (Initial Position Detection Release Mode) */
 #define IPD_RLS_BRAKE			(0x0 << 8)
@@ -498,7 +499,7 @@
 #define OL_ACC_A1_1KHZ		(0xD << 23)
 #define OL_ACC_A1_5KHZ		(0xE << 23)
 #define OL_ACC_A1_10KHZ		(0xF << 23)
-#define OL_ACC_A1			OL_ACC_A1_10HZ
+#define OL_ACC_A1			OL_ACC_A1_25HZ
 
 /* OL ACC A2 (Open Loop Acceleration Coefficient A2) */
 #define OL_ACC_A2_0HZ		(0x0 << 19)
@@ -608,7 +609,7 @@
 #define SLOW_FIRST_CYC_FREQ_40PER		(0xD << 4)
 #define SLOW_FIRST_CYC_FREQ_45PER		(0xE << 4)
 #define SLOW_FIRST_CYC_FREQ_50PER		(0xF << 4)
-#define SLOW_FIRST_CYC_FREQ				SLOW_FIRST_CYC_FREQ_5PER
+#define SLOW_FIRST_CYC_FREQ				SLOW_FIRST_CYC_FREQ_10PER
 
 /* FIRST CYCLE FREQ SEL (First Cycle in Open Loop Start-up) */
 #define FIRST_CYCLE_FREQ_SEL_0HZ		(0x0 << 3)
@@ -670,7 +671,7 @@
 #define CL_ACC_60KHZ			(0x1D << 25)
 #define CL_ACC_70KHZ			(0x1E << 25)
 #define CL_ACC_NO_LIMIT			(0x1F << 25)
-#define CL_ACC					CL_ACC_60HZ
+#define CL_ACC					CL_ACC_20HZ
 
 /* CL DEC CONFIG (Closed Loop Deceleration Configuration) */
 #define CL_DEC_CONFIG_BY_DEC	(0x0 << 24)
@@ -724,7 +725,7 @@
 #define PWM_FREQ_OUT_50KHZ	(0x8 << 15)
 #define PWM_FREQ_OUT_55KHZ	(0x9 << 15)
 #define PWM_FREQ_OUT_60KHZ	(0xA << 15)
-#define PWM_FREQ_OUT		PWM_FREQ_OUT_25KHZ
+#define PWM_FREQ_OUT		PWM_FREQ_OUT_10KHZ
 
 /* PWM MODE (PWM Modulation) */
 #define PWM_CONTINUOUS_SPACE_MODE		(0x0 << 14)
@@ -1910,7 +1911,7 @@
 #define LOCK_ILIMIT_DEG_200MS				(0xD << 11)
 #define LOCK_ILIMIT_DEG_500MS				(0xE << 11)
 #define LOCK_ILIMIT_DEG_1S					(0xF << 11)
-#define LOCK_ILIMIT_DEG						LOCK_ILIMIT_DEG_5MS
+#define LOCK_ILIMIT_DEG						LOCK_ILIMIT_DEG_50MS
 
 /* LCK RETRY (Lock Deetection Retry Time) */
 #define LCK_RETRY_0S3						(0x0 << 7)
@@ -1929,7 +1930,7 @@
 #define LCK_RETRY_12S						(0xD << 7)
 #define LCK_RETRY_13S						(0xE << 7)
 #define LCK_RETRY_14S						(0xF << 7)
-#define LCK_RETRY							LCK_RETRY_0S5
+#define LCK_RETRY							LCK_RETRY_2S
 
 /* MTR LCK MODE (Motor Lock Mode) */
 #define MTR_LCK_MODE_0						(0x0 << 3)
@@ -2000,7 +2001,7 @@
 #define ABNORMAL_BEMF_THR_65PER				(0x5 << 22)
 #define ABNORMAL_BEMF_THR_67PER5			(0x6 << 22)
 #define ABNORMAL_BEMF_THR_70PER				(0x7 << 22)
-#define ABNORMAL_BEMF_THR					ABNORMAL_BEMF_THR_65PER
+#define ABNORMAL_BEMF_THR					ABNORMAL_BEMF_THR_70PER
 
 /* NO MTR THR (No Motor Lock Threshold) */
 #define NO_MTR_THR_0A075					(0x0 << 19)
@@ -2010,7 +2011,7 @@
 #define NO_MTR_THR_0A5						(0x5 << 19)
 #define NO_MTR_THR_0A75						(0x6 << 19)
 #define NO_MTR_THR_1A						(0x7 << 19)
-#define NO_MTR_THR							NO_MTR_THR_0A1
+#define NO_MTR_THR							NO_MTR_THR_0A075
 
 /* HW LOCK ILIMIT MODE (Hardware Lock Detection Current Mode) */
 #define HW_LOCK_ILIMIT_MODE_0				(0x0 << 15)
@@ -2481,7 +2482,7 @@
 #define AUTO_HANDOFF_MIN_BEMF_1000MV						(0x5 << 17)
 #define AUTO_HANDOFF_MIN_BEMF_1250MV						(0x6 << 17)
 #define AUTO_HANDOFF_MIN_BEMF_2500MV						(0x7 << 17)
-#define AUTO_HANDOFF_MIN_BEMF								AUTO_HANDOFF_MIN_BEMF_250MV
+#define AUTO_HANDOFF_MIN_BEMF								AUTO_HANDOFF_MIN_BEMF_100MV
 
 /* BRAKE CURRENT PERSIST */
 #define BRAKE_CURRENT_PERSIST_50MS							(0x0 << 15)
@@ -2495,7 +2496,7 @@
 #define MPET_IPD_CURRENT_LIMIT_0A5							(0x1 << 13)
 #define MPET_IPD_CURRENT_LIMIT_1A							(0x2 << 13)
 #define MPET_IPD_CURRENT_LIMIT_2A							(0x3 << 13)
-#define MPET_IPD_CURRENT_LIMIT								MPET_IPD_CURRENT_LIMIT_1A
+#define MPET_IPD_CURRENT_LIMIT								MPET_IPD_CURRENT_LIMIT_2A
 
 /* MPET IPD FREQ */
 #define MPET_IPD_FREQ_1										(0x0 << 11)
@@ -2513,14 +2514,14 @@
 #define MPET_OPEN_LOOP_CURRENT_REF_6A						(0x5 < 8)
 #define MPET_OPEN_LOOP_CURRENT_REF_7A						(0x6 < 8)
 #define MPET_OPEN_LOOP_CURRENT_REF_8A						(0x7 < 8)
-#define MPET_OPEN_LOOP_CURRENT_REF							MPET_OPEN_LOOP_CURRENT_REF_2A
+#define MPET_OPEN_LOOP_CURRENT_REF							MPET_OPEN_LOOP_CURRENT_REF_4A
 
 /* MPET OPEN LOOP SPEED REF*/
 #define MPET_OPEN_LOOP_SPEED_REF_15PER						(0x0 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_25PER						(0x1 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_35PER						(0x2 << 6)
 #define MPET_OPEN_LOOP_SPEED_REF_50PER						(0x3 << 6)
-#define MPET_OPEN_LOOP_SPEED_REF							MPET_OPEN_LOOP_SPEED_REF_15PER
+#define MPET_OPEN_LOOP_SPEED_REF							MPET_OPEN_LOOP_SPEED_REF_25PER
 
 /* MPET OPEN LOOP SLEW RATE */
 #define MPET_OPEN_LOOP_SLEW_RATE_0HZ1						(0x0 << 3)
@@ -2583,12 +2584,12 @@
 /* MPET IPD SELECT */
 #define MPET_IPD_SELECT_NORMAL				(0x0 << 2)
 #define MPET_IPD_SELECT_SPECIFIC			(0x1 << 2)
-#define MPET_IPD_SELECT						MPET_IPD_SELECT_NORMAL
+#define MPET_IPD_SELECT						MPET_IPD_SELECT_SPECIFIC
 
 /* MPET KE MEAS PARAMETER SELECT */
 #define MPET_KE_MEAS_PARAMETER_SELECT_NORMAL			(0x0 << 1)
 #define MPET_KE_MEAS_PARAMETER_SELECT_SPECIFIC			(0x1 << 1)
-#define MPET_KE_MEAS_PARAMETER_SELECT					MPET_KE_MEAS_PARAMETER_SELECT_NORMAL
+#define MPET_KE_MEAS_PARAMETER_SELECT					MPET_KE_MEAS_PARAMETER_SELECT_SPECIFIC
 
 /* IPD HIGH RESOLUTION EN */
 #define IPD_HIGH_RESOLUTION_ENABLE			0x1
@@ -2624,7 +2625,7 @@
 /* MPET MECH */
 #define MPET_MECH_ENABLE					(0x1 << 1)
 #define MPET_MECH_DISABLE					(0x0 << 1)
-#define MPET_MECH							MPET_MECH_ENABLE
+#define MPET_MECH							MPET_MECH_DISABLE
 
 /* MPET WRITE SHADOW */
 #define MPET_WRITE_SHADOW_ENABLE			0x1
