@@ -12,6 +12,10 @@
 
 #include "spi.h"
 #include "lcd.h"
+#include "math.h"
 #include <stdint.h>
+
+void LSM6DS3TR_C_Init();
+void LSM6DS3TR_C_Routine();
 
 #endif /* INC_LSM6DS3TR_C_H_ */

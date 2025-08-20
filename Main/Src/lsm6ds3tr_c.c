@@ -19,7 +19,7 @@ uint8_t LSM6DS3TR_C_ReadReg(uint8_t reg_addr) {
 	return rx_byte;
 }
 
-void LSM6DS3TR_C_Init_SPI(void) {
+void LSM6DS3TR_C_Init(void) {
 	// 1. WHO_AM_I 레지스터 읽어서 장치 확인
 	while (1) {
 		uint8_t who_am_i = LSM6DS3TR_C_ReadReg(LSM6DS3TR_C_WHO_AM_I_REG);

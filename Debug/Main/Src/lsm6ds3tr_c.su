@@ -1,2 +1,2 @@
 ../Main/Src/lsm6ds3tr_c.c:10:9:LSM6DS3TR_C_ReadReg	24	static
-../Main/Src/lsm6ds3tr_c.c:22:6:LSM6DS3TR_C_Init_SPI	16	static
+../Main/Src/lsm6ds3tr_c.c:22:6:LSM6DS3TR_C_Init	16	static

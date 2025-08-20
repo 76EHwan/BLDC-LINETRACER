@@ -68,6 +68,8 @@ void Error_Handler(void);
 #define E3_GPIO_Port GPIOE
 #define KEY_Pin GPIO_PIN_13
 #define KEY_GPIO_Port GPIOC
+#define Sensor_EN_Pin GPIO_PIN_2
+#define Sensor_EN_GPIO_Port GPIOB
 #define MARK_L_Pin GPIO_PIN_8
 #define MARK_L_GPIO_Port GPIOE
 #define LCD_CS_Pin GPIO_PIN_11

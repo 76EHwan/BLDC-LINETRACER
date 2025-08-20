@@ -34,6 +34,7 @@
 #include "lcd.h"
 #include "init.h"
 #include "mcf8316c.h"
+#include "lsm6ds3tr_c.h"
 #include "sdcard.h"
 /* USER CODE END Includes */
 
@@ -201,6 +202,7 @@ int main(void)
 //	__HAL_TIM_SetCompare(&htim1,TIM_CHANNEL_1,10);
 	HAL_GPIO_WritePin(E3_GPIO_Port, MARK_L_Pin | MARK_R_Pin | E3_Pin,
 			GPIO_PIN_SET);
+//	HAL_GPIO_WritePin(Sensor_EN_GPIO_Port, Sensor_EN_Pin, GPIO_PIN_SET);
 //	HAL_TIM_PWM_Start(&htim15, TIM_CHANNEL_1);
 //	__HAL_TIM_SetCompare(&htim15,TIM_CHANNEL_1, 5);
 	LCD_Test();
@@ -218,8 +220,9 @@ int main(void)
 	HAL_GPIO_WritePin(E3_GPIO_Port, MARK_L_Pin | MARK_R_Pin | E3_Pin,
 			GPIO_PIN_RESET);
 
+//	HAL_GPIO_WritePin(Sensor_EN_GPIO_Port, Sensor_EN_Pin, GPIO_PIN_RESET);
 //  자이로 센서 테스트
-//  LSM6DS3TR_C_Init_SPI();
+//	LSM6DS3TR_C_Init();
 
 //  모터 드라이버 테스트
 //	MCF8316C_Init();
@@ -245,7 +248,7 @@ int main(void)
 //
 //		sprintf((char *)&text,"Tick: %d ms",HAL_GetTick());
 //		LCD_ShowString(4, 74, 160, 16, 16,text);
-		HAL_Delay(500);
+//		HAL_Delay(500);
 		Init();
 	}
   /* USER CODE END 3 */
