@@ -237,7 +237,7 @@ void LPTIM4_IRQHandler(void)
 void LPTIM5_IRQHandler(void)
 {
   /* USER CODE BEGIN LPTIM5_IRQn 0 */
-	ADC_Battery_LPTIM5_IRQ();
+	Drive_LPTIM5_IRQ();
 
   /* USER CODE END LPTIM5_IRQn 0 */
   HAL_LPTIM_IRQHandler(&hlptim5);

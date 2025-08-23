@@ -47,13 +47,14 @@ Main/Src/init.o: ../Main/Src/init.c \
  C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Drivers/BSP/ST7735/st7735_reg.h \
  ../Inc/tim.h ../Inc/main.h \
  C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/sensor.h \
- C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/motor.h \
  C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/init.h \
+ ../Inc/adc.h \
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/motor.h \
  ../Inc/lptim.h \
  C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/mcf8316c.h \
  ../Inc/i2c.h \
- C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/drive.h \
- C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/switch.h
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/switch.h \
+ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/drive.h
 C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/init.h:
 C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Drivers/BSP/ST7735/lcd.h:
 ../Inc/main.h:
@@ -104,10 +105,11 @@ C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Drivers/BSP/ST7735/st7735_r
 ../Inc/tim.h:
 ../Inc/main.h:
 C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/sensor.h:
-C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/motor.h:
 C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/init.h:
+../Inc/adc.h:
+C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/motor.h:
 ../Inc/lptim.h:
 C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/mcf8316c.h:
 ../Inc/i2c.h:
-C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/drive.h:
 C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/switch.h:
+C:/Users/kth59/OneDrive/Desktop/WEACT/WEACT\ 743\ V2/Main/Inc/drive.h:

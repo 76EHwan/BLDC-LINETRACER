@@ -55,15 +55,28 @@
 #include "mcf8316c.h"
 
 typedef struct {
-	uint16_t enc_pst;
 	float_t mps;
-	float_t err_rps;
-	uint32_t max_freq;
+	float_t rps;
 } motor_t;
 
+extern uint16_t encoder_tick_past_l;
+extern uint16_t encoder_tick_past_r;
+extern int32_t encoder_tick_err_l;
+extern int32_t encoder_tick_err_r;
+extern float_t encoder_rotor_per_sec_l;
+extern float_t encoder_rotor_per_sec_r;
+extern float_t err_p_l;
+extern float_t err_p_r;
+extern float_t err_i_l;
+extern float_t err_i_r;
+extern float_t gain_p;
+extern float_t gain_i;
+extern float_t iq_ref_l;
+extern float_t iq_ref_r;
+extern uint32_t duty_l;
+extern uint32_t duty_r;
+
 extern motor_t motor[2];
-
-
 
 void Motor_Init();
 

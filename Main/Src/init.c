@@ -59,8 +59,9 @@ void Init() {
 //	static uint8_t cnt_r = 0;
 	while(HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) == GPIO_PIN_SET);
 	while (1) {
-		cnt_l = ((hlptim1.Instance->CNT + 128) / 256 + beforeMenu) % maxMenu;
+		cnt_l = ((hlptim1.Instance->CNT + 512) / 1024 + beforeMenu) % maxMenu;
 //		cnt_r = ((hlptim2.Instance->CNT + 1024) / 2048) % 2;
+
 		Custom_LCD_Printf(0, 0, "Main Menu", hlptim1.Instance->CNT);
 		for (uint8_t i = 0; i < maxMenu; i++) {
 			Set_Color(cnt_l, i);

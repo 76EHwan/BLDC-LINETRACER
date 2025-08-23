@@ -5,30 +5,9 @@
  *      Author: kth59
  */
 
-#include "init.h"
-#include "adc.h"
 #include "sensor.h"
-#include "motor.h"
-#include "lcd.h"
-#include "tim.h"
-#include "lptim.h"
-#include "math.h"
-#include "switch.h"
 
-#define NUM_ADC_CHANNELS 14
-
-#define ADC_SENSOR_CHANNEL	(&hadc1)
-#define ADC_BATTERY_CHANNEL	(&hadc2)
-#define ADC_MARKER_CHANNEL	(&hadc3)
-
-#define ADC_SENSOR_TIM		(&hlptim3)
-#define ADC_BATTERY_TIM		(&hlptim5)
-
-#define VARIANCE			0.4f
-#define PDF_COEFF			(1.f / VARIANCE / M_SQRTPI / M_SQRT2)
-#define PDF_EXP(x)			(-powf(x,2.f) / (2.f * powf(VARIANCE, 2.f)))
-
-sensor_t sensor = { { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, 0, 0.f, 0.f, 100, 0.f };
+sensor_t sensor = { { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, 0, 0.f, 0.f, 50, 0.f };
 
 menu_t sensorMenu[] = { { "1.S Raw   ", Sensor_Test_Raw }, { "2.S Norm  ",
 		Sensor_Test_Normalized }, { "3.S State ", Sensor_Test_State }, {
@@ -37,7 +16,7 @@ menu_t sensorMenu[] = { { "1.S Raw   ", Sensor_Test_Raw }, { "2.S Norm  ",
 				Sensor_Test_Voltage }, { "8.OUT     ", } };
 
 float_t positionWeight[14] = { -1.3f, -1.1f, -0.9f, -0.7f, -0.5f, -0.3f, -0.1f,
-		0.1f, 0.3f, 0.5f, 0.7f, 0.9f, 1.1f, 1.3f };
+		0.1f, 0.3f, 0.5f, 0.7f, 0.9f, 1.1f, 0.f };
 
 bool is_sensor_start = false;
 bool is_marker_start = false;
@@ -88,8 +67,7 @@ void Sensor_Start() {
 	is_sensor_start = true;
 	is_marker_start = true;
 	HAL_LPTIM_Counter_Start_IT(ADC_SENSOR_TIM, 0);
-	HAL_TIM_PWM_Start(&htim15, TIM_CHANNEL_1);
-	htim15.Instance->CCR1 = 0;
+	HAL_Delay(10);
 
 //	if (HAL_ADC_Start_DMA(ADC_SENSOR_CHANNEL, (uint32_t*) adc_dma_buffer,
 //			NUM_ADC_CHANNELS) != HAL_OK) {
@@ -136,7 +114,7 @@ void Sensor_LPTIM3_IRQ() {
 	pos_sum1 -= pos_weight * normalize;
 	pos_sum2 -= normalize;
 
-	raw = Sensor_ADC_Read(ADC_SENSOR_CHANNEL) >> 4;
+	raw = Sensor_ADC_Read(ADC_SENSOR_CHANNEL);
 
 	if (raw > *(sensor.whiteMax + i))
 		normalize = 0xff;
@@ -193,13 +171,6 @@ void Marker_LPTIM3_IRQ() {
 	sensor.state = (sensor.state & ~(0x01 << (i + 14)))
 			| ((normalize > sensor.threshold) << (i + 14));
 
-
-	HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin,
-			(sensor.state >> 14) & 0x01);
-	HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin,
-			(sensor.state >> 15) & 0x01);
-	htim15.Instance->CCR1 = (sensor.state & (0x03 << 14)) ? 5 : 0;
-
 	*(sensor.normalized + i + 14) = normalize;
 	*(sensor.raw + i + 14) = raw;
 
@@ -239,23 +210,25 @@ void Sensor_Test_Raw() {
 
 void Sensor_Calibration() {
 	Sensor_Start();
-	uint8_t i = 0;
+	static uint8_t i = 0;
 	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) != GPIO_PIN_SET) {
-		Sensor_Printf("Cali WhiteMax", sensor.whiteMax);
 		*(sensor.whiteMax + i) = (*(sensor.raw + i) > *(sensor.whiteMax + i)) ?
 				*(sensor.raw + i) : *(sensor.whiteMax + i);
 		i = (i + 1) & 0x0F;
+		if(!i) Sensor_Printf("Cali WhiteMax", sensor.whiteMax);
 	}
-	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) == GPIO_PIN_SET)
-		Custom_LCD_Clear();
+	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) == GPIO_PIN_SET) Custom_LCD_Clear();
+
 	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) != GPIO_PIN_SET) {
-		Sensor_Printf("Cali BlackMax", sensor.blackMax);
 		*(sensor.blackMax + i) =
 				(*(sensor.raw + i) > *(sensor.blackMax + i)) ?
 						*(sensor.raw + i) : *(sensor.blackMax + i);
 		i = (i + 1) & 0x0F;
+		if(!i) Sensor_Printf("Cali BlackMax", sensor.blackMax);
 	}
+
 	Sensor_Stop();
+
 	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) == GPIO_PIN_SET)
 		Custom_LCD_Clear();
 

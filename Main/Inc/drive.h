@@ -8,8 +8,16 @@
 #ifndef MAIN_INC_DRIVE_H_
 #define MAIN_INC_DRIVE_H_
 
+#define DRIVE_TIM	&hlptim5
+#define DRIVE_PSC	0
+
 #include "main.h"
+#include "sensor.h"
 #include "motor.h"
+#include "mcf8316c.h"
+#include "math.h"
+
+void Drive_LPTIM5_IRQ(void);
 
 void Drive_First(void);
 void Drive_Second(void);

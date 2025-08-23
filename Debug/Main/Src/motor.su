@@ -1,8 +1,8 @@
 ../Main/Src/motor.c:12:6:Motor_Init	8	static
-../Main/Src/motor.c:30:6:Motor_Test_Menu	16	static
-../Main/Src/motor.c:60:6:Motor_Start	8	static
-../Main/Src/motor.c:77:6:Encoder_Start	8	static
-../Main/Src/motor.c:82:6:Motor_Stop	8	static
-../Main/Src/motor.c:96:6:Encoder_Stop	8	static
-../Main/Src/motor.c:101:6:Motor_LPTIM4_IRQ	48	static
-../Main/Src/motor.c:132:6:Motor_Test_Encoder	8	static
+../Main/Src/motor.c:31:6:Motor_Test_Menu	16	static
+../Main/Src/motor.c:61:6:Motor_Start	8	static
+../Main/Src/motor.c:83:6:Encoder_Start	8	static
+../Main/Src/motor.c:88:6:Motor_Stop	8	static
+../Main/Src/motor.c:106:6:Encoder_Stop	8	static
+../Main/Src/motor.c:128:6:Motor_LPTIM4_IRQ	16	static
+../Main/Src/motor.c:178:6:Motor_Test_Encoder	8	static

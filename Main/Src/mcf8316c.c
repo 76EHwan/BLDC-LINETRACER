@@ -289,9 +289,12 @@ void MCF8316C_Set_EEPROM() {
 			err_array |= 0x1 << 3;
 		}
 
-		uint32_t CLOSED_LOOP2_DATA = (j) ? CLOSED_LOOP2_DATA_R : CLOSED_LOOP2_DATA_L;
-		uint32_t CLOSED_LOOP3_DATA = (j) ? CLOSED_LOOP3_DATA_R : CLOSED_LOOP3_DATA_L;
-		uint32_t CLOSED_LOOP4_DATA = (j) ? CLOSED_LOOP4_DATA_R : CLOSED_LOOP4_DATA_L;
+		uint32_t CLOSED_LOOP2_DATA =
+				(j) ? CLOSED_LOOP2_DATA_R : CLOSED_LOOP2_DATA_L;
+		uint32_t CLOSED_LOOP3_DATA =
+				(j) ? CLOSED_LOOP3_DATA_R : CLOSED_LOOP3_DATA_L;
+		uint32_t CLOSED_LOOP4_DATA =
+				(j) ? CLOSED_LOOP4_DATA_R : CLOSED_LOOP4_DATA_L;
 
 		for (i = 0; i < 4; i++) {
 			tx_buffer[i] = (CLOSED_LOOP2_DATA >> (8 * i)) & 0xFF;
@@ -556,18 +559,6 @@ void MCF8316C_Get_Voltage() {
 		;
 }
 
-// mcf8316c.c
-
-// mcf8316c.c
-
-// mcf8316c.c
-
-/*
- * @brief MPET를 실행하여 모터 파라미터를 측정하고 결과를 섀도우 레지스터에 기록합니다.
- * @note  이 함수는 EEPROM에 저장하지 않습니다. 모터가 완전히 멈춘 후
- * MCF8316C_Save_Parameters_To_EEPROM() 함수를 호출해야 합니다.
- */
-
 void MCF8316C_MPET() {
 	uint8_t tx_buffer32[4];
 	uint8_t rx_buffer32[4];
@@ -651,17 +642,17 @@ void MCF8316C_MPET() {
 			sizeof(rx_buffer32));
 	if (status == HAL_OK) {
 		Custom_LCD_Printf(0, 7, "Read Success!");
-		Custom_LCD_Printf(0, 8, "I%02x%02xP%02x%02x", rx_buffer32[3], rx_buffer32[2],
-				rx_buffer32[1], rx_buffer32[0]);
+		Custom_LCD_Printf(0, 8, "I%02x%02xP%02x%02x", rx_buffer32[3],
+				rx_buffer32[2], rx_buffer32[1], rx_buffer32[0]);
 	} else {
 		Custom_LCD_Printf(0, 7, "I2C Read Fail!");
 	}
 	status = Receive_Reg(hi2c, MCF8316C_SPEED_PI_ADDR, rx_buffer32,
-				sizeof(rx_buffer32));
+			sizeof(rx_buffer32));
 	if (status == HAL_OK) {
 		Custom_LCD_Printf(0, 7, "Read Success!");
-		Custom_LCD_Printf(0, 9, "I%02x%02xP%02x%02x", rx_buffer32[3], rx_buffer32[2],
-				rx_buffer32[1], rx_buffer32[0]);
+		Custom_LCD_Printf(0, 9, "I%02x%02xP%02x%02x", rx_buffer32[3],
+				rx_buffer32[2], rx_buffer32[1], rx_buffer32[0]);
 	} else {
 		Custom_LCD_Printf(0, 7, "I2C Read Fail!");
 	}
@@ -679,33 +670,113 @@ void MCF8316C_MPET() {
 
 void MCF8316C_PID_CONTROL() {
 	uint8_t rx_buffer[2];
-	I2C_HandleTypeDef *hi2c = MCF8316C_I2C_RIGHT_CHANNEL;
+	uint8_t rx_buffer2[4];
+	I2C_HandleTypeDef *hi2c = MCF8316C_I2C_LEFT_CHANNEL;
+//	I2C_HandleTypeDef *hi2c = MCF8316C_I2C_RIGHT_CHANNEL;
 
 	Receive_Set(hi2c, sizeof(rx_buffer));
 
-	HAL_TIM_PWM_Start(MOTOR_R_TIM, MOTOR_R_CHANNEL);
-	__HAL_TIM_SET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL, 0);
+//	HAL_TIM_PWM_Start(MOTOR_L_TIM, MOTOR_L_CHANNEL);
+//	__HAL_TIM_SET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL, 0);
 
-	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin,
-			GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(Motor_R_Brake_GPIO_Port, Motor_R_Brake_Pin,
-			GPIO_PIN_RESET);
+//	HAL_TIM_PWM_Start(MOTOR_R_TIM, MOTOR_R_CHANNEL);
+//	__HAL_TIM_SET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL, 0);
+
+//	HAL_GPIO_WritePin(Motor_L_Driveoff_GPIO_Port, Motor_L_Driveoff_Pin,
+//			GPIO_PIN_RESET);
+//	HAL_GPIO_WritePin(Motor_L_Brake_GPIO_Port, Motor_L_Brake_Pin,
+//			GPIO_PIN_RESET);
+
+//	HAL_GPIO_WritePin(Motor_R_Driveoff_GPIO_Port, Motor_R_Driveoff_Pin,
+//			GPIO_PIN_RESET);
+//	HAL_GPIO_WritePin(Motor_R_Brake_GPIO_Port, Motor_R_Brake_Pin,
+//			GPIO_PIN_RESET);
+
+	Motor_Start();
+	Encoder_Start();
+
 	HAL_Delay(10);
-	__HAL_TIM_SET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL,
-			__HAL_TIM_GET_AUTORELOAD(MOTOR_R_TIM)/50);
+
+	motor[ML].mps = 2.f;
+	motor[MR].mps = 2.f;
 
 	while (!HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin)) {
-		Receive_Reg(hi2c, MCF8316C_DRIVER_STATE_ADDR,
-				rx_buffer, sizeof(rx_buffer));
+		Receive_Reg(hi2c, MCF8316C_DRIVER_STATE_ADDR, rx_buffer,
+				sizeof(rx_buffer));
 		Custom_LCD_Printf(0, 0, "%02x%02x", rx_buffer[1], rx_buffer[0]);
+		Receive_Reg(hi2c, DRIVER_FAULT_ADDR, rx_buffer2, sizeof(rx_buffer2));
+		Custom_LCD_Printf(0, 2, "%02x%02x%02x%02x", rx_buffer2[3],
+				rx_buffer2[2], rx_buffer2[1], rx_buffer2[0]);
+		Receive_Reg(hi2c, CONTROLLER_FAULT_ADDR, rx_buffer2,
+				sizeof(rx_buffer2));
+		Custom_LCD_Printf(0, 3, "%02x%02x%02x%02x", rx_buffer2[3],
+				rx_buffer2[2], rx_buffer2[1], rx_buffer2[0]);
 
-		if (HAL_GPIO_ReadPin(Motor_R_nFAULT_GPIO_Port, Motor_R_nFAULT_Pin))
-			HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_SET);
-		HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin,
-				HAL_GPIO_ReadPin(Motor_R_nFAULT_GPIO_Port, Motor_R_nFAULT_Pin));
+		if (HAL_GPIO_ReadPin(Motor_L_nFAULT_GPIO_Port, Motor_L_nFAULT_Pin))
+			HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin,
+				HAL_GPIO_ReadPin(Motor_L_nFAULT_GPIO_Port, Motor_L_nFAULT_Pin));
+//		if (HAL_GPIO_ReadPin(Motor_R_nFAULT_GPIO_Port, Motor_R_nFAULT_Pin))
+//			HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_SET);
+//		HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin,
+//				HAL_GPIO_ReadPin(Motor_R_nFAULT_GPIO_Port, Motor_R_nFAULT_Pin));
+
+		Custom_LCD_Printf(0, 4, "terr:%5d", encoder_tick_err_l);
+		Custom_LCD_Printf(0, 5, "errP:%.6f", err_p_l);
+		Custom_LCD_Printf(0, 6, "errI:%.6f", err_i_l);
+		Custom_LCD_Printf(0, 7, "%.6f", iq_ref_l);
+		Custom_LCD_Printf(0, 8, "%5d", __HAL_TIM_GET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL));
 	}
 	Motor_Stop();
+	Encoder_Stop();
 	HAL_Delay(10);
+	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin));
+}
+
+void MCF8316C_SPEED() {
+	Motor_Start();
+
+	HAL_Delay(10);
+
+	while (!HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin)) {
+		motor[ML].mps = 1.f;
+		motor[MR].mps = 1.f;
+		HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_RESET);
+		Custom_LCD_Printf(0, 0, "%5d", __HAL_TIM_GET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL));
+		Custom_LCD_Printf(0, 1, "%5d", __HAL_TIM_GET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL));
+
+		HAL_Delay(2000);
+
+		motor[ML].mps = 0.f;
+		motor[MR].mps = 0.f;
+		HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_RESET);
+		Custom_LCD_Printf(0, 0, "%5d", __HAL_TIM_GET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL));
+		Custom_LCD_Printf(0, 1, "%5d", __HAL_TIM_GET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL));
+
+		HAL_Delay(1000);
+
+		motor[ML].mps = -1.f;
+		motor[MR].mps = -1.f;
+		HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_SET);
+		Custom_LCD_Printf(0, 0, "%5d", __HAL_TIM_GET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL));
+		Custom_LCD_Printf(0, 1, "%5d", __HAL_TIM_GET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL));
+
+		HAL_Delay(2000);
+
+		motor[ML].mps = 0.f;
+		motor[MR].mps = 0.f;
+		HAL_GPIO_WritePin(MARK_L_GPIO_Port, MARK_L_Pin, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(MARK_R_GPIO_Port, MARK_R_Pin, GPIO_PIN_RESET);
+		Custom_LCD_Printf(0, 0, "%5d", __HAL_TIM_GET_COMPARE(MOTOR_L_TIM, MOTOR_L_CHANNEL));
+		Custom_LCD_Printf(0, 1, "%5d", __HAL_TIM_GET_COMPARE(MOTOR_R_TIM, MOTOR_R_CHANNEL));
+
+		HAL_Delay(1000);
+
+	}
+	Motor_Stop();
 	while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin))
 		;
 }
