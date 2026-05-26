@@ -5,7 +5,7 @@
 ## 하드웨어 참조 링크
 * [WeAct Studio AliExpress Store](https://weactstudio.ko.aliexpress.com/store/910567080?spm=a2g0o.detail.0.0.55c9v8gBv8gB7I)
 
-## 🛠 주요 하드웨어 구성
+## 주요 하드웨어 구성
 * **MCU**: STM32H743VIT6 (고성능 ARM Cortex-M7)
 * **모터 드라이버**: MCF8316C (BLDC Sensorless FOC 전용 IC)
 * **IMU 센서**: LSM6DS3TR-C (6축 가속도 및 자이로 센서)
