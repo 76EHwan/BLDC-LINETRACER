@@ -2,7 +2,7 @@
 
 이 프로젝트는 WeAct Studio의 STM32H743VIT6 보드를 활용하여 제작된 BLDC 모터 기반 라인트레이서(Line Tracer)입니다. 고성능 MCU와 전용 BLDC 모터 드라이버를 결합하여 정밀하고 빠른 주행을 목표로 하며, 센서 어레이를 통한 라인 인식과 상태 머신(State Machine)을 이용한 교차로 및 마크 판별 알고리즘이 적용되어 있습니다.
 
-## 🛒 하드웨어 참조 링크
+## 하드웨어 참조 링크
 * [WeAct Studio AliExpress Store](https://weactstudio.ko.aliexpress.com/store/910567080?spm=a2g0o.detail.0.0.55c9v8gBv8gB7I)
 
 ## 🛠 주요 하드웨어 구성
@@ -14,7 +14,7 @@
 
 ---
 
-## 🚀 주행 알고리즘 및 제어 (Driving Algorithm)
+## 주행 알고리즘 및 제어 (Driving Algorithm)
 
 주행의 핵심 로직은 `drive.c`에 구현되어 있으며, 하드웨어 타이머와 비례 제어를 통해 실시간으로 조향을 수행합니다.
 
@@ -41,7 +41,7 @@
 
 ---
 
-## ⚙️ 모터 드라이버 (MCF8316C) 설정
+## 모터 드라이버 (MCF8316C) 설정
 
 이 라인트레이서는 일반적인 DC 모터가 아닌 BLDC 모터를 채택하여 응답성과 효율을 극대화했습니다. FOC 제어의 초기 개발 난이도를 줄이기 위해 텍사스 인스트루먼트(TI)사의 **MCF8316C** Sensorless FOC 모터 드라이버를 사용하여 제어합니다.
 
@@ -54,7 +54,7 @@
 
 ---
 
-## 💡 기타 고성능 처리 최적화
+## 기타 고성능 처리 최적화
 ### 1. DWT (Data Watchpoint and Trace) 기반 마이크로초 지연
 * 고속 주행 시 센서 데이터 샘플링 및 통신 타이밍의 정밀도를 보장하기 위해 Cortex-M7 코어의 **DWT 사이클 카운터(`DWT->CYCCNT`)**를 활성화하였습니다 (`custom_delay.c`).
 * 표준 내장 함수인 `HAL_Delay()`가 제공하는 밀리초($ms$) 단위를 넘어, 하드웨어 클럭 사이클을 직접 카운트함으로써 **마이크로초($\mu s$) 단위의 극정밀 블로킹 지연**을 구현해 제어 타이밍 오차를 최소화합니다.
@@ -63,7 +63,7 @@
 * 프로세서 성능을 극대화하기 위해 **I-Cache 및 D-Cache를 활성화**(`CPU_CACHE_Enable`) 하였습니다.
 * **MPU(Memory Protection Unit)** 설정을 통해 QSPI Flash 영역의 메모리 접근 권한을 제한하고 캐시 정책(Cacheable WT)을 최적화하여 시스템 안정성을 높였습니다.
 
-## 📂 핵심 코드 구조
+## 핵심 코드 구조
 * `Src/main.c`: 시스템 클럭 구성, MPU/캐시 활성화, 필수 주변장치 및 하드웨어 초기화 진입점.
 * `Main/Src/drive.c`: 타이머 기반의 조향 제어 로직, 마크 인식 상태 머신, 단계별 주행 루틴(`Drive_First`) 포함.
 * * `Main/Src/custom_delay.c`: DWT를 이용한 마이크로초($\mu s$) 단위 정밀 지연 함수 구현.
