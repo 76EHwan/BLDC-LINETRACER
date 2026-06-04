@@ -1,0 +1,20 @@
+# STM32CubeIDE Build outputs
+Debug/
+Release/
+**/*.o
+**/*.d
+**/*.su
+**/*.elf
+**/*.map
+**/*.hex
+**/*.bin
+**/*.list
+
+# IDE specific settings (선택 사항: 협업 시 제외 권장)
+.metadata/
+.settings/
+*.launch
+
+# OS specific files
+.DS_Store
+Thumbs.db
