@@ -7,17 +7,14 @@
 
 #include "main.h"
 #include "menu.h"
-#include "user_init.h"
 #include "st7789_lcd.h"
 #include "bootloader.h"
 #include "button.h"
+#include "w25qxx.h"
 #include "sensor.h"
 //#include "motor.h"
 //#include "drive.h"
 
-// 현재 화면에 표시할 메뉴를 가리키는 전역 포인터
-
-// 서브 메뉴로 상태를 전환하는 함수들
 __STATIC_INLINE void GoTo_Sensor_Menu(void);
 
 __STATIC_INLINE void GoTo_Motor_Menu(void);
@@ -25,7 +22,6 @@ __STATIC_INLINE void GoTo_Motor_Menu(void);
 __STATIC_INLINE void GoTo_Drive_Menu(void);
 
 __STATIC_INLINE void GoTo_Param_Menu(void);
-
 
 MenuItem_t main_menu_items[] = { { .name = "Boot Load", .pfnActionCallback =
 		Boot_Loading }, { .name = "Sensor Menu", .pfnActionCallback =
@@ -35,9 +31,11 @@ MenuItem_t main_menu_items[] = { { .name = "Boot Load", .pfnActionCallback =
 		GoTo_Param_Menu }, };
 
 MenuItem_t sensor_menu_items[] = { { .name = "Calibration", .pfnActionCallback =
-Sensor_Calibration }, { .name = "Raw", .pfnActionCallback = Sensor_Raw_Printf }, { .name = "Normalized",
-		.pfnActionCallback = NULL }, { .name = "State", .pfnActionCallback =
-NULL }, { .name = "Update Thres", .pfnActionCallback = NULL }, };
+		Sensor_Calibration }, { .name = "Raw", .pfnActionCallback =
+		Sensor_Raw_Printf },
+		{ .name = "Normalized", .pfnActionCallback = NULL }, { .name = "State",
+				.pfnActionCallback =
+				NULL }, { .name = "Update Thres", .pfnActionCallback = NULL }, };
 
 MenuItem_t motor_menu_items[] = { { .name = "Driver Setup", .pfnActionCallback =
 NULL }, { .name = "Update Setup", .pfnActionCallback = NULL }, { .name =
@@ -57,10 +55,10 @@ NULL }, { .name = "Save MicroSD", .pfnActionCallback =
 NULL }, };
 
 MenuItem_t param_menu_items[] = { { .name = "LED Test", .pfnActionCallback =
-		LED_Test }, { .name = "LCD Test", .pfnActionCallback = LCD7789_Test }, { .name =
-		"Flash Test", .pfnActionCallback = W25QXX_Test }, { .name = "SD Card Test",
-		.pfnActionCallback =
-		NULL }, };
+		LED_Test }, { .name = "LCD Test", .pfnActionCallback = LCD7789_Test }, {
+		.name = "Flash Test", .pfnActionCallback = W25QXX_Test }, { .name =
+		"SD Card Test", .pfnActionCallback =
+NULL }, };
 
 MenuContext_t main_menu = { .category_name = "Main Menu", .pMenuItems =
 		main_menu_items, .item_count = 5, .prev_index = 0, .cursor_index = 0 };
@@ -76,7 +74,6 @@ MenuContext_t drive_menu = { .category_name = "Drive Menu", .pMenuItems =
 
 MenuContext_t param_menu = { .category_name = "Param Menu", .pMenuItems =
 		param_menu_items, .item_count = 4, .prev_index = 0, .cursor_index = 0 };
-
 
 MenuContext_t *current_menu = &main_menu;
 
@@ -106,10 +103,10 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 						0 : (pCtx->cursor_index + 1);
 		break;
 	case INPUT_CMD_U_SINGLE:
-			pCtx->cursor_index =
-					(pCtx->cursor_index == 0) ?
-							(pCtx->item_count - 1) : (pCtx->cursor_index - 1);
-			break;
+		pCtx->cursor_index =
+				(pCtx->cursor_index == 0) ?
+						(pCtx->item_count - 1) : (pCtx->cursor_index - 1);
+		break;
 
 	case INPUT_CMD_L_SINGLE:
 		if (current_menu != &main_menu) {
@@ -120,7 +117,8 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 		break;
 
 	case INPUT_CMD_R_SINGLE:
-		while (HAL_GPIO_ReadPin(btn_r.port, btn_r.pin) == btn_k.active_state);
+		while (HAL_GPIO_ReadPin(btn_r.port, btn_r.pin) == btn_k.active_state)
+			;
 		LCD_Clear();
 		uint8_t selected = pCtx->cursor_index;
 		if (pCtx->pMenuItems[selected].pfnActionCallback != NULL) {

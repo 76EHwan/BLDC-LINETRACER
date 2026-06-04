@@ -1,4 +1,6 @@
 #include "w25qxx.h"
+#include "st7789_lcd.h"
+#include "button.h"
 #include <math.h>
 
 #define delay(ms) HAL_Delay(ms-1)
@@ -102,8 +104,8 @@ uint8_t W25Qx_Get_Parameter(W25Qx_Parameter *Para) {
 	uint32_t size;
 
 	Para->PAGE_SIZE = 256;
-	Para->SUBSECTOR_SIZE = 4096;
-	Para->SECTOR_SIZE = 0x10000;
+	Para->W25Qx_SUBSECTOR_SIZE = 4096;
+	Para->W25Qx_SECTOR_SIZE = 0x10000;
 
 	W25Qx_Read_ID(&id);
 	device_id = id & 0xff;
@@ -112,10 +114,10 @@ uint8_t W25Qx_Get_Parameter(W25Qx_Parameter *Para) {
 
 	size = (uint32_t) powf(2, (device_id - x25Q80)) * 1024 * 1024;
 
-	Para->FLASH_Id = id;
-	Para->FLASH_Size = size;
-	Para->SUBSECTOR_COUNT = Para->FLASH_Size / Para->SUBSECTOR_SIZE;
-	Para->SECTOR_COUNT = Para->FLASH_Size / Para->SECTOR_SIZE;
+	Para->W25Qx_Id = id;
+	Para->W25Qx_Size = size;
+	Para->W25Qx_SUBSECTOR_COUNT = Para->W25Qx_Size / Para->W25Qx_SUBSECTOR_SIZE;
+	Para->W25Qx_SECTOR_COUNT = Para->W25Qx_Size / Para->W25Qx_SECTOR_SIZE;
 
 	return W25Qx_OK;
 }
@@ -280,4 +282,25 @@ uint8_t W25Qx_Erase_Chip(void) {
 		//delay(1);
 	}
 	return W25Qx_OK;
+}
+
+#define TEST_ADDRESS 0x000000
+
+void W25QXX_Test(void) {
+	W25Qx_Init();
+	uint16_t id;
+	W25Qx_Read_ID(&id);
+	LCD_Printf(0, 0, "%04X", id);
+	char build_time_str[32];
+	char read_buffer[32];
+	sprintf(build_time_str, "%s %s", __DATE__, __TIME__);
+	uint16_t data_length = strlen(build_time_str) + 1;
+	W25Qx_Erase_Block(0);
+	W25Qx_Write((uint8_t*) build_time_str, TEST_ADDRESS, data_length);
+	memset(read_buffer, 0, sizeof(read_buffer));
+	W25Qx_Read((uint8_t*) read_buffer, TEST_ADDRESS, data_length);
+	LCD_Printf(0, 1, "Last Update:");
+	LCD_Printf(0, 2, "%s", read_buffer);
+	while(Button_Get_Input() != INPUT_CMD_K_DOUBLE);
+	LCD_Clear();
 }

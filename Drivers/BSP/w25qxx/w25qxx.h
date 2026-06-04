@@ -128,12 +128,12 @@
 
 typedef struct
 {
-	uint32_t FLASH_Id;
-	uint32_t FLASH_Size;
-	uint32_t SECTOR_COUNT;
-	uint32_t SECTOR_SIZE;
-	uint32_t SUBSECTOR_COUNT;
-	uint32_t SUBSECTOR_SIZE;
+	uint32_t W25Qx_Id;
+	uint32_t W25Qx_Size;
+	uint32_t W25Qx_SECTOR_COUNT;
+	uint32_t W25Qx_SECTOR_SIZE;
+	uint32_t W25Qx_SUBSECTOR_COUNT;
+	uint32_t W25Qx_SUBSECTOR_SIZE;
 	uint32_t PAGE_SIZE;
 }W25Qx_Parameter;
 extern W25Qx_Parameter W25Qx_Para;
@@ -149,28 +149,8 @@ uint8_t W25Qx_Erase_Block(uint32_t Address);
 uint8_t W25Qx_Erase_Chip(void);
 
 uint8_t W25Qx_Get_Parameter(W25Qx_Parameter *Para);
-/**
-  * @}
-  */
 
-/** @defgroup W25QXXXX_Exported_Functions
-  * @{
-  */
-/**
-  * @}
-  */
-
-/**
-  * @}
-  */
-
-/**
-  * @}
-  */
-
-/**
-  * @}
-  */
+void W25QXX_Test(void);
 
 #ifdef __cplusplus
 }

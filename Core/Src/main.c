@@ -27,15 +27,13 @@
 /* USER CODE BEGIN Includes */
 #include "st7789_lcd.h"
 #include <string.h>
-#include "w25qxx.h"
 #include "hid_bootloader.h"
 #include "usb_device.h"
-#include "SDcard.h"
 #include "user_init.h"
-#include "button.h"
+#include "buzzer.h"
 #include "bootloader.h"
 #include "menu.h"
-#include "buzzer.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -150,8 +148,8 @@ int main(void) {
 	MX_TIM2_Init();
 	MX_TIM6_Init();
 	/* USER CODE BEGIN 2 */
-	Button_init();
-	Buzzer_Init();
+
+
 	Buzzer_Start();
 	LCD7789_Test();
 	Buzzer_Stop();

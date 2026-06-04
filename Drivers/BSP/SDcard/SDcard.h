@@ -22,5 +22,6 @@ FRESULT SDCard_Mount(void);
 void SDCard_Unmount(void);
 FRESULT SDCard_Write(const char* filename, const char* data);
 FRESULT SDCard_Read(const char* filename, char* buffer, UINT bufSize);
+void SDCard_Test(void);
 
 #endif /* BSP_SDCARD_SDCARD_H_ */
