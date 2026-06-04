@@ -77,9 +77,8 @@ MenuContext_t param_menu = { .category_name = "Param Menu", .pMenuItems =
 
 MenuContext_t *current_menu = &main_menu;
 
-/* 구조체 복사를 방지하기 위해 포인터로 넘겨받습니다. */
 __STATIC_INLINE void Show_Menu(MenuContext_t *pCtx) {
-	LCD_Printf(0, 0, "%-16s", pCtx->category_name); // -16s 로 공백 채움
+	LCD_Printf(0, 0, "%-16s", pCtx->category_name);
 	LCD_Printf(0, 1, "----------------");
 
 	for (uint8_t i = 0; i < pCtx->item_count; i++) {
@@ -88,7 +87,6 @@ __STATIC_INLINE void Show_Menu(MenuContext_t *pCtx) {
 		} else {
 			LCD_Set_Color(WHITE, BLACK);
 		}
-		// "%-12s" 를 사용하여 짧은 글자 뒤에 공백을 강제로 넣어줍니다.
 		LCD_Printf(0, 2 + i, "%X. %-12s", i + 1, pCtx->pMenuItems[i].name);
 	}
 	LCD_Set_Color(WHITE, BLACK);
@@ -131,16 +129,9 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 	}
 }
 
-/* 메인 루틴에서 지속적으로 호출될 함수 (이름도 ProcessLoop으로 더 명확하게 변경) */
 void Menu_ProcessLoop(void) {
-	// 1. 버튼 입력 확인 및 상태 전환
-	// (이 함수 내부에서 current_menu가 다른 메뉴로 바뀔 수 있습니다)
 	Select_Menu(current_menu);
-
-	// 2. 항상 '최신' 상태의 current_menu를 렌더링
 	Show_Menu(current_menu);
-
-	// 3. 과거 상태 업데이트
 	current_menu->prev_index = current_menu->cursor_index;
 }
 

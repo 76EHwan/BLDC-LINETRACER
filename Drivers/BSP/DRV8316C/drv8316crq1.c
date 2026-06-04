@@ -4,8 +4,7 @@
  * Created on: Nov 10, 2025
  * Author: kth59
  */
-
-#include "../DRV8316C/drv8316crq1.h"
+#include "drv8316crq1.h"
 
 #ifdef FOC_CONTROL
 

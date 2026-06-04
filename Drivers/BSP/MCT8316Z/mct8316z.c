@@ -4,7 +4,7 @@
  *  Created on: 2026. 4. 16.
  *      Author: kth59
  */
-
+#include "main.h"
 #include "mct8316z.h"
 
 #ifdef SENSOR_TRAP_CONTROL

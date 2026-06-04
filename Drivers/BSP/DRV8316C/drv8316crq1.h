@@ -145,7 +145,6 @@ extern "C" {
 #define DRV_CTRL4_OCP_MODE_RETRY 	(1 << DRV_CTRL4_OCP_MODE_BASE) // OCP Auto Retry
 #define DRV_CTRL4_OCP_MODE_REPORT	(2 << DRV_CTRL4_OCP_MODE_BASE) // OCP Report Only
 #define DRV_CTRL4_OCP_MODE_DISABLED (3 << DRV_CTRL4_OCP_MODE_BASE) // OCP Disabled
-#define DRV_CTRL5_
 
 /* Control Register 5 (Offset = 7h) */
 #define DRV_CTRL5_ILIM_RECIR_BASE	(6)
