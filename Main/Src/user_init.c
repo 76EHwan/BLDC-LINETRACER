@@ -8,6 +8,8 @@
 #include "rng.h"
 #include "button.h"
 #include "buzzer.h"
+#include "drv8316crq1.h"
+#include "mct8316z.h"
 
 #include "user_init.h"
 

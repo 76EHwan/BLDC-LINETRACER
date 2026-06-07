@@ -1,8 +1,8 @@
 /*
  * mct8316z.h
  *
- *  Created on: 2026. 4. 16.
- *      Author: kth59
+ * Created on: 2026. 4. 16.
+ * Author: kth59
  */
 
 #include "user_init.h"
@@ -144,8 +144,6 @@
 #define MCT_CTRL4_OCP_MODE_BASE         (0U)
 #define MCT_CTRL4_OCP_MODE_LATCH        (0U << MCT_CTRL4_OCP_MODE_BASE)
 #define MCT_CTRL4_OCP_MODE_RETRY        (1U << MCT_CTRL4_OCP_MODE_BASE)
-#define MCT_CTRL4_OCP_MODE_REPORT       (2U << MCT_CTRL4_OCP_MODE_BASE)
-#define MCT_CTRL4_OCP_MODE_DISABLED     (3U << MCT_CTRL4_OCP_MODE_BASE)
 
 /*=======================================================================*/
 /* Control Register 5 (Offset = 7h)                                      */

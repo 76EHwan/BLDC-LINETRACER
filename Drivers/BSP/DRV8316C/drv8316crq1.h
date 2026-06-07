@@ -211,19 +211,18 @@ typedef enum {
 	REG_FAULT_CTRL10
 } DRV8316C_REG_Typedef;
 
-typedef struct
-{
-    SPI_HandleTypeDef* hspi;       // Pointer to the SPI peripheral handle
-    GPIO_TypeDef* nCS_Port;   // GPIO Port for nCS (Chip Select) pin
-    uint16_t           nCS_Pin;    // nCS pin number
-    GPIO_TypeDef* nSLEEP_Port; // GPIO Port for nSLEEP pin
-    uint16_t           nSLEEP_Pin;   // nSLEEP pin number
+typedef struct {
+	SPI_HandleTypeDef *hspi;       // Pointer to the SPI peripheral handle
+	GPIO_TypeDef *nCS_Port;   // GPIO Port for nCS (Chip Select) pin
+	uint16_t nCS_Pin;    // nCS pin number
+	GPIO_TypeDef *nSLEEP_Port; // GPIO Port for nSLEEP pin
+	uint16_t nSLEEP_Pin;   // nSLEEP pin number
 
-    GPIO_TypeDef* DRVOFF_Port;
-    uint16_t DRVOFF_Pin;
+	GPIO_TypeDef *DRVOFF_Port;
+	uint16_t DRVOFF_Pin;
 
-    GPIO_TypeDef* nFAULT_Port;
-    uint16_t nFAULT_Pin;
+	GPIO_TypeDef *nFAULT_Port;
+	uint16_t nFAULT_Pin;
 
 } DRV8316C_Handle_t;
 
@@ -238,38 +237,42 @@ extern DRV8316C_Handle_t DRV8316C_R;
  * @brief  Initializes the DRV8316C handle.
  */
 
-void DRV8316C_Init(DRV8316C_Handle_t *hdrv, SPI_HandleTypeDef *hspi, GPIO_TypeDef *nCS_Port, uint16_t nCS_Pin,
-		 GPIO_TypeDef *nFAULT_Port, uint16_t nFAULT_Pin,  GPIO_TypeDef *DRVOFF_Port, uint16_t DRVOFF_Pin);
+void DRV8316C_Init(DRV8316C_Handle_t *hdrv, SPI_HandleTypeDef *hspi,
+		GPIO_TypeDef *nCS_Port, uint16_t nCS_Pin, GPIO_TypeDef *nSLEEP_Port,
+		uint16_t nSLEEP_Pin, GPIO_TypeDef *nFAULT_Port, uint16_t nFAULT_Pin,
+		GPIO_TypeDef *DRVOFF_Port, uint16_t DRVOFF_Pin);
 
 /**
  * @brief  Writes 8 bits of data to a specific DRV8316C register.
  */
-HAL_StatusTypeDef DRV8316C_WriteRegister(DRV8316C_Handle_t* hdrv, uint8_t regAddr, uint8_t data);
+HAL_StatusTypeDef DRV8316C_WriteRegister(DRV8316C_Handle_t *hdrv,
+		uint8_t regAddr, uint8_t data);
 
 /**
  * @brief  Reads 8 bits of data from a specific DRV8316C register.
  */
-HAL_StatusTypeDef DRV8316C_ReadRegister(DRV8316C_Handle_t* hdrv, uint8_t regAddr, uint8_t* pData);
+HAL_StatusTypeDef DRV8316C_ReadRegister(DRV8316C_Handle_t *hdrv,
+		uint8_t regAddr, uint8_t *pData);
 
 /**
  * @brief  Activates the DRV8316C driver (sets nSLEEP pin High).
  */
-HAL_StatusTypeDef DRV8316C_UnlockRegister(DRV8316C_Handle_t* hdrv);
+HAL_StatusTypeDef DRV8316C_UnlockRegister(DRV8316C_Handle_t *hdrv);
 
 /**
  * @brief  Deactivates the DRV8316C driver (sets nSLEEP pin Low).
  */
-HAL_StatusTypeDef DRV8316C_LockRegister(DRV8316C_Handle_t* hdrv);
+HAL_StatusTypeDef DRV8316C_LockRegister(DRV8316C_Handle_t *hdrv);
 
 /**
  * @brief  Applies a common default configuration to the DRV8316C.
  */
-HAL_StatusTypeDef DRV8316C_ApplyDefaultConfig(DRV8316C_Handle_t* hdrv);
+HAL_StatusTypeDef DRV8316C_ApplyDefaultConfig(DRV8316C_Handle_t *hdrv);
 
 /**
  * @brief  Clears all fault flags (using CLR_FLT bit in CTRL_2).
  */
-HAL_StatusTypeDef DRV8316C_ClearFaults(DRV8316C_Handle_t* hdrv);
+HAL_StatusTypeDef DRV8316C_ClearFaults(DRV8316C_Handle_t *hdrv);
 
 /**
  * @brief  Verifies if the default configuration matches the actual register values.

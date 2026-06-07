@@ -10,6 +10,7 @@
 
 #include "st7789_lcd.h"
 
+
 void User_Init(void);
 
 
@@ -20,8 +21,14 @@ void User_Init(void);
 
 #define FOC_CONTROL
 //#define SENSOR_TRAP_CONTROL
+
 #if defined(FOC_CONTROL) & defined(SENSOR_TRAP_CONTROL)
 error "FOC & SENSOT TRAP Both Crashed."
+#endif
+
+#if !defined(FOC_CONTROL) & !defined(SENSOR_TRAP_CONTROL)
+error "Undefined FOC & SENSOT TRAP."
+
 #endif
 
 #endif /* USER_INIT_H_ */

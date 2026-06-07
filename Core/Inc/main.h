@@ -183,6 +183,14 @@ void LED_Test();
 #define ENC_IN2_R_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
+#define MTR_FGOUT_L_GPIO_Port MTR_ADC_SOA_L_GPIO_Port
+#define MTR_FGOUT_L_Pin MTR_ADC_SOA_L_Pin
+#define MTR_BRAKE_L_GPIO_Port MTR_ADC_SOC_L_GPIO_Port
+#define MTR_BRAKE_L_Pin MTR_ADC_SOC_L_Pin
+#define MTR_FGOUT_R_GPIO_Port MTR_ADC_SOA_R_GPIO_Port
+#define MTR_FGOUT_R_Pin MTR_ADC_SOA_R_Pin
+#define MTR_BRAKE_R_GPIO_Port MTR_ADC_SOC_R_GPIO_Port
+#define MTR_BRAKE_R_Pin MTR_ADC_SOC_R_Pin
 
 /* USER CODE END Private defines */
 
