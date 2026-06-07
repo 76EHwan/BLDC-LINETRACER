@@ -5,6 +5,8 @@
  *      Author: kth59
  */
 
+#include "user_init.h"
+
 #ifndef BSP_MCT8316Z_MCT8316Z_H_
 #define BSP_MCT8316Z_MCT8316Z_H_
 

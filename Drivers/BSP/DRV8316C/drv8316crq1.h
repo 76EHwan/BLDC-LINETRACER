@@ -4,13 +4,10 @@
  * Created on: Nov 10, 2025
  * Author: kth59
  */
+#include "user_init.h"
 
 #ifndef DEVICES_INC_DRV8316CRQ1_H_
 #define DEVICES_INC_DRV8316CRQ1_H_
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #ifdef FOC_CONTROL
 

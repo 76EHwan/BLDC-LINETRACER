@@ -6,8 +6,8 @@
  */
 #include "sensor.h"
 #include "main.h"
+#include "user_init.h"
 #include "button.h"
-#include "st7789_lcd.h"
 #include <math.h>
 #include "cmsis_gcc.h"  // 또는 arm_acle.h
 

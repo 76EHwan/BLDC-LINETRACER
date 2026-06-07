@@ -4,7 +4,7 @@
 #include "main.h"
 #include "st7789.h"
 #include <stdio.h>
-#include "SDcard.h"
+#include "ff.h"
 
 #define WHITE            0xFFFF
 #define BLACK            0x0000

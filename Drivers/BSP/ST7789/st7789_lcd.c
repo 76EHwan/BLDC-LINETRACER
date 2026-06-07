@@ -4,6 +4,7 @@
 #include "tim.h"
 #include "rng.h"
 #include "font.h"
+#include "SDcard.h"
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -11,7 +12,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define TFT135x240  // 또는 TFT240x240 으로 변경하여 사용 가능
+#define TFT135x240
 
 #define LCD_RST_SET
 #define LCD_RST_RESET

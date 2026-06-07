@@ -7,7 +7,7 @@
 
 #include "main.h"
 #include "menu.h"
-#include "st7789_lcd.h"
+#include "user_init.h"
 #include "bootloader.h"
 #include "button.h"
 #include "w25qxx.h"

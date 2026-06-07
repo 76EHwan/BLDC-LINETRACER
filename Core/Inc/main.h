@@ -42,7 +42,6 @@ extern "C" {
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
-extern uint8_t sdcard_err;
 
 /* USER CODE END EC */
 
@@ -53,13 +52,6 @@ extern uint8_t sdcard_err;
 #define LED_OFF		HAL_GPIO_WritePin(E3_GPIO_Port, E3_Pin, GPIO_PIN_RESET)
 #define LED_TOGGLE	HAL_GPIO_TogglePin(E3_GPIO_Port, E3_Pin)
 
-#define TEST_DISPLAY "/display"
-#define LCD_Printf LCD7789_Printf
-#define LCD_Clear LCD7789_Clear
-#define LCD_Set_Color LCD7789_Set_Color
-
-#define FOC_CONTROL
-//#define SENSOR_TRAP_CONTROL
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/

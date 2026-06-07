@@ -8,12 +8,13 @@
 #ifndef BSP_SDCARD_SDCARD_H_
 #define BSP_SDCARD_SDCARD_H_
 
-#include "fatfs.h"
+#include "ff.h"
 #include <string.h>
 
 void SDCard_Test(void);
 
-extern FATFS fs;
+extern uint8_t sdcard_err;
+
 
 // =====================
 // SD카드 마운트

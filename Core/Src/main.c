@@ -25,12 +25,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "st7789_lcd.h"
-#include <string.h>
+#include "user_init.h"
 #include "hid_bootloader.h"
 #include "usb_device.h"
-#include "user_init.h"
-#include "buzzer.h"
 #include "bootloader.h"
 #include "menu.h"
 
@@ -51,7 +48,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint8_t sdcard_err = 1;
 
 /* BDMA 영역(RAM_D3)에 ADC3 수신 버퍼 강제 할당 */
 __attribute__((section(".ram_d3"), aligned(32)))  uint16_t adc3_buffer[3];
@@ -148,11 +144,7 @@ int main(void) {
 	MX_TIM2_Init();
 	MX_TIM6_Init();
 	/* USER CODE BEGIN 2 */
-
-
-	Buzzer_Start();
-	LCD7789_Test();
-	Buzzer_Stop();
+	User_Init();
 
 	LED_ON;
 

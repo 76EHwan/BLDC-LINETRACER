@@ -7,11 +7,11 @@
 
 #include "bootloader.h"
 #include "main.h"
+#include "user_init.h"
 #include "stm32h7xx_hal.h"
 #include "usb_device.h"
 #include "usbd_core.h"
 #include "button.h"
-#include "st7789_lcd.h"
 
 #define SYSTEM_MEMORY_BASE  0x1FF09800UL
 #define BOOTLOADER_FLAG     0xDEADBEEFUL

@@ -1,7 +1,9 @@
 #include "SDcard.h"
+#include "fatfs.h"
 #include "st7789_lcd.h"
 
-extern FATFS SDFatFS;
+uint8_t sdcard_err = 1;
+
 FIL file;
 
 // =====================

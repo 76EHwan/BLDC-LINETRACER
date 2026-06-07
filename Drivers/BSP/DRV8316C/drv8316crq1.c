@@ -177,13 +177,13 @@ HAL_StatusTypeDef DRV8316C_ApplyDefaultConfig(DRV8316C_Handle_t *hdrv) {
 
 	// [CTRL 4] OCP(과전류 보호) 설정을 "REPORT ONLY"로 변경
 	reg_val = DRV_CTRL4_OCP_MODE_REPORT | DRV_CTRL4_OCP_LVL_24A
-			| DRV_CTRL4_OCP_DEG_0_6us;
+			| DRV_CTRL4_OCP_DEG_0_6US;
 	status = DRV8316C_WriteRegister(hdrv, DRV_REG_CTRL_4, reg_val);
 	if (status != HAL_OK)
 		return status;
 
 	// [CTRL 5] 전류 센싱 게인 설정 (0.6V/A) + ASR/AAR 켜기
-	reg_val = DRV_CTRL5_CSA_GAIN_0_6;
+	reg_val = DRV_CTRL5_CSA_GAIN_0_6VA;
 	status = DRV8316C_WriteRegister(hdrv, DRV_REG_CTRL_5, reg_val);
 	if (status != HAL_OK)
 		return status;
@@ -226,13 +226,13 @@ DRV8316C_REG_Typedef DRV8316C_VerifyConfig(DRV8316C_Handle_t *hdrv) {
 
 	// CTRL4 확인
 	expected_val = DRV_CTRL4_OCP_MODE_REPORT | DRV_CTRL4_OCP_LVL_24A
-			| DRV_CTRL4_OCP_DEG_0_6us;
+			| DRV_CTRL4_OCP_DEG_0_6US;
 	status = DRV8316C_ReadRegister(hdrv, DRV_REG_CTRL_4, &read_val);
 	if (status != HAL_OK || read_val != expected_val)
 		return REG_FAULT_CTRL4;
 
 	// CTRL5 확인
-	expected_val = DRV_CTRL5_CSA_GAIN_0_6;
+	expected_val = DRV_CTRL5_CSA_GAIN_0_6VA;
 	status = DRV8316C_ReadRegister(hdrv, DRV_REG_CTRL_5, &read_val);
 	if (status != HAL_OK || read_val != expected_val)
 		return REG_FAULT_CTRL5;

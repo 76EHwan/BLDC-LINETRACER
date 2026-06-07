@@ -6,16 +6,15 @@
  */
 #include "main.h"
 #include "rng.h"
-
-#include "user_init.h"
-#include "st7789_lcd.h"
-#include "w25qxx.h"
-#include "SDcard.h"
 #include "button.h"
 #include "buzzer.h"
+
+#include "user_init.h"
 
 void User_Init() {
 	Button_init();
 	Buzzer_Init();
-
+	Buzzer_Start();
+	LCD7789_Test();
+	Buzzer_Stop();
 }
