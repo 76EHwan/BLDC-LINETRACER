@@ -18,7 +18,7 @@
 
 #define MCT8316Z_SPI    &hspi2
 #define MCT8316Z_L_TIM  &htim3
-#define MCT8316Z_R_TIM  &htim4
+#define MCT8316Z_R_TIM  &htim8
 
 /* Macros for manual nCS pin control */
 #define MCT8316Z_CS_LOW(hdrv)      HAL_GPIO_WritePin((hdrv)->nCS_Port, (hdrv)->nCS_Pin, GPIO_PIN_RESET)
@@ -307,6 +307,7 @@ HAL_StatusTypeDef MCT8316Z_LockRegister(MCT8316Z_Handle_t *hdrv);
 HAL_StatusTypeDef MCT8316Z_ApplyDefaultConfig(MCT8316Z_Handle_t *hdrv);
 HAL_StatusTypeDef MCT8316Z_ClearFaults(MCT8316Z_Handle_t *hdrv);
 MCT8316Z_REG_Typedef MCT8316Z_VerifyConfig(MCT8316Z_Handle_t *hdrv);
+
 void MX_MCT8316Z_Init(void);
 
 #endif /* SENSOR_TRAP_CONTROL */

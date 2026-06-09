@@ -15,8 +15,15 @@
 
 void User_Init() {
 	Button_init();
-	Buzzer_Init();
-	Buzzer_Start();
+#ifdef FOC_CONTROL
+	MX_DRV8316C_Init();
+#endif
+
+#ifdef SENSOR_TRAP_CONTROL
+	MX_MCT8316Z_Init();
+#endif
+//	Buzzer_Init();
+//	Buzzer_Start();
 	LCD7789_Test();
-	Buzzer_Stop();
+//	Buzzer_Stop();
 }

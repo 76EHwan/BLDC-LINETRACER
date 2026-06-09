@@ -50,7 +50,7 @@
 /* USER CODE BEGIN PV */
 
 /* BDMA 영역(RAM_D3)에 ADC3 수신 버퍼 강제 할당 */
-__attribute__((section(".ram_d3"), aligned(32)))  uint16_t adc3_buffer[3];
+__attribute__((section(".ram_d3"), aligned(32)))     uint16_t adc3_buffer[3];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -94,10 +94,8 @@ int main(void) {
 
 	/* Enable I-Cache---------------------------------------------------------*/
 	SCB_EnableICache();
-
 	/* Enable D-Cache---------------------------------------------------------*/
 	SCB_EnableDCache();
-
 	/* MCU Configuration--------------------------------------------------------*/
 
 	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
@@ -146,7 +144,7 @@ int main(void) {
 	/* USER CODE BEGIN 2 */
 	User_Init();
 
-	LED_ON;
+	LED_OFF;
 
 	/* USER CODE END 2 */
 

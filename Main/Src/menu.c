@@ -12,7 +12,7 @@
 #include "button.h"
 #include "w25qxx.h"
 #include "sensor.h"
-//#include "motor.h"
+#include "motor.h"
 //#include "drive.h"
 
 __STATIC_INLINE void GoTo_Sensor_Menu(void);
@@ -38,9 +38,9 @@ MenuItem_t sensor_menu_items[] = { { .name = "Calibration", .pfnActionCallback =
 				NULL }, { .name = "Update Thres", .pfnActionCallback = NULL }, };
 
 MenuItem_t motor_menu_items[] = { { .name = "Driver Setup", .pfnActionCallback =
-NULL }, { .name = "Update Setup", .pfnActionCallback = NULL }, { .name =
-		"Simple PWM", .pfnActionCallback = NULL }, { .name = "Simple 6-STEP",
-		.pfnActionCallback = NULL }, { .name = "Simple FOC",
+		MTR_Read_Register }, { .name = "Update Setup", .pfnActionCallback =
+		NULL }, { .name = "Simple PWM", .pfnActionCallback = NULL }, { .name =
+		"Simple 6-STEP", .pfnActionCallback = NULL }, { .name = "Simple FOC",
 		.pfnActionCallback = NULL }, { .name = "Update PI", .pfnActionCallback =
 NULL }, };
 

@@ -20,16 +20,16 @@
 #define DRV8316C_R_TIM &htim4
 
 /* Macros for manual nCS pin control */
-#define DRV8316C_CS_LOW(hdrv)     	HAL_GPIO_WritePin((hdrv)->nCS_Port, (hdrv)->nCS_Pin, GPIO_PIN_RESET)
-#define DRV8316C_CS_HIGH(hdrv)    	HAL_GPIO_WritePin((hdrv)->nCS_Port, (hdrv)->nCS_Pin, GPIO_PIN_SET)
+#define DRV8316C_CS_LOW(hdrv)      HAL_GPIO_WritePin((hdrv)->nCS_Port, (hdrv)->nCS_Pin, GPIO_PIN_RESET)
+#define DRV8316C_CS_HIGH(hdrv)     HAL_GPIO_WritePin((hdrv)->nCS_Port, (hdrv)->nCS_Pin, GPIO_PIN_SET)
 
 /* Macros for manual nSLEEP pin control */
-#define DRV8316C_WAKEUP			  	HAL_GPIO_WritePin(MTR_nSLEEP_GPIO_Port, MTR_nSLEEP_Pin, GPIO_PIN_SET)
-#define DRV8316C_SLEEP			  	HAL_GPIO_WritePin(MTR_nSLEEP_GPIO_Port, MTR_nSLEEP_Pin, GPIO_PIN_RESET)
+#define DRV8316C_WAKEUP(hdrv)      HAL_GPIO_WritePin((hdrv)->nSLEEP_Port, (hdrv)->nSLEEP_Pin, GPIO_PIN_SET)
+#define DRV8316C_SLEEP(hdrv)       HAL_GPIO_WritePin((hdrv)->nSLEEP_Port, (hdrv)->nSLEEP_Pin, GPIO_PIN_RESET)
 
 /* Macros for manual DRVOFF pin control */
-#define DRV8316C_DRVOFF_LOW(hdrv)	HAL_GPIO_WritePin((hdrv)->DRVOFF_Port, (hdrv)->DRVOFF_Pin, GPIO_PIN_RESET)
-#define DRV8316C_DRVOFF_HIGH(hdrv)	HAL_GPIO_WritePin((hdrv)->DRVOFF_Port, (hdrv)->DRVOFF_Pin, GPIO_PIN_SET)
+#define DRV8316C_DRVOFF_LOW(hdrv)  HAL_GPIO_WritePin((hdrv)->DRVOFF_Port, (hdrv)->DRVOFF_Pin, GPIO_PIN_RESET)
+#define DRV8316C_DRVOFF_HIGH(hdrv) HAL_GPIO_WritePin((hdrv)->DRVOFF_Port, (hdrv)->DRVOFF_Pin, GPIO_PIN_SET)
 
 /*=======================================================================*/
 /* SPI Frame Definition */

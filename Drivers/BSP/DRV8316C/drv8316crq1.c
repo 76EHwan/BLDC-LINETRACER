@@ -5,6 +5,7 @@
  * Author: kth59
  */
 #include "drv8316crq1.h"
+#include "dac.h"
 
 #ifdef FOC_CONTROL
 
@@ -263,6 +264,9 @@ void MX_DRV8316C_Init() {
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(MTR_PWM_R_GPIO_Port, &GPIO_InitStruct);
 
+	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 0xFFF);
+	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
+
 	/* --- Left motor driver --- */
 	DRV8316C_Init(&DRV8316C_L, &hspi2,
 	MTR_CS_L_GPIO_Port, MTR_CS_L_Pin,
@@ -278,9 +282,8 @@ void MX_DRV8316C_Init() {
 	MTR_DRVOFF_R_GPIO_Port, MTR_DRVOFF_R_Pin);
 
 	/* Wake Left driver */
-	HAL_GPIO_WritePin(DRV8316C_L.nSLEEP_Port, DRV8316C_L.nSLEEP_Pin,
-			GPIO_PIN_SET);
-	HAL_Delay(1U);
+	DRV8316C_WAKEUP(&DRV8316C_L);
+	HAL_Delay(5);
 
 	/* Apply configuration to left driver */
 	DRV8316C_UnlockRegister(&DRV8316C_L);
@@ -289,9 +292,8 @@ void MX_DRV8316C_Init() {
 	DRV8316C_LockRegister(&DRV8316C_L);
 
 	/* Wake Right driver */
-	HAL_GPIO_WritePin(DRV8316C_R.nSLEEP_Port, DRV8316C_R.nSLEEP_Pin,
-			GPIO_PIN_SET);
-	HAL_Delay(1U);
+	DRV8316C_WAKEUP(&DRV8316C_R);
+	HAL_Delay(5);
 
 	/* Apply configuration to right driver */
 	DRV8316C_UnlockRegister(&DRV8316C_R);

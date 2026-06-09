@@ -5,7 +5,9 @@
  * Author: kth59
  */
 #include "main.h"
+#include "dac.h"
 #include "mct8316z.h"
+
 
 #ifdef SENSOR_TRAP_CONTROL
 
@@ -281,6 +283,9 @@ void MX_MCT8316Z_Init(void) {
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(MTR_BRAKE_R_GPIO_Port, &GPIO_InitStruct);
 
+	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 1800);
+	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
+
 	/* --- Left motor driver --- */
 	MCT8316Z_Init(&MCT8316Z_L, MCT8316Z_SPI,
 	MTR_CS_L_GPIO_Port, MTR_CS_L_Pin,
@@ -294,6 +299,7 @@ void MX_MCT8316Z_Init(void) {
 	MTR_nSLEEP_R_GPIO_Port, MTR_nSLEEP_R_Pin,
 	MTR_nFAULT_R_GPIO_Port, MTR_nFAULT_R_Pin,
 	MTR_DRVOFF_R_GPIO_Port, MTR_DRVOFF_R_Pin);
+
 
 	/* Wake both drivers*/
 	MCT8316Z_WAKEUP(&MCT8316Z_L);
