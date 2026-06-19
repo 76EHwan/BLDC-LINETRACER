@@ -9,5 +9,6 @@
 #define INC_MOTOR_H_
 
 void MTR_Read_Register(void);
+void MTR_Simple_Control(void);
 
 #endif /* INC_MOTOR_H_ */

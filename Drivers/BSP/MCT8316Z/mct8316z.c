@@ -126,7 +126,7 @@ HAL_StatusTypeDef MCT8316Z_ApplyDefaultConfig(MCT8316Z_Handle_t *hdrv) {
 	uint8_t reg_val;
 
 	/* CTRL2: SDO push-pull, slew 125V/us, Sync Digital mode, clear faults */
-	reg_val = MCT_CTRL2_SDO_MODE_PP | MCT_CTRL2_SLEW_125V_US
+	reg_val = MCT_CTRL2_SDO_MODE_PP | MCT_CTRL2_SLEW_25V_US
 			| MCT_CTRL2_PWM_MODE_SYN_DIGITAL | MCT_CTRL2_CLR_FLT_BIT;
 	status = MCT8316Z_WriteRegister(hdrv, MCT_REG_CTRL_2, reg_val);
 	if (status != HAL_OK)
@@ -139,15 +139,15 @@ HAL_StatusTypeDef MCT8316Z_ApplyDefaultConfig(MCT8316Z_Handle_t *hdrv) {
 		return status;
 
 	/* CTRL4: OCP latched, 24A threshold, 0.6us deglitch */
-	reg_val = MCT_CTRL4_OCP_MODE_LATCH | MCT_CTRL4_OCP_LVL_24A
+	reg_val = MCT_CTRL4_OCP_MODE_RETRY | MCT_CTRL4_OCP_LVL_24A
 			| MCT_CTRL4_OCP_DEG_0_6US;
 	status = MCT8316Z_WriteRegister(hdrv, MCT_REG_CTRL_4, reg_val);
 	if (status != HAL_OK)
 		return status;
 
 	/* CTRL5: CSA gain 0.6V/A, ASR/AAR disabled */
-	reg_val = MCT_CTRL5_CSA_GAIN_0_6VA | MCT_CTRL5_EN_ASR_DIS
-			| MCT_CTRL5_EN_AAR_DIS;
+	reg_val = MCT_CTRL5_CSA_GAIN_0_6VA | MCT_CTRL5_EN_ASR_EN
+			| MCT_CTRL5_EN_AAR_EN;
 	status = MCT8316Z_WriteRegister(hdrv, MCT_REG_CTRL_5, reg_val);
 	if (status != HAL_OK)
 		return status;
@@ -167,14 +167,14 @@ HAL_StatusTypeDef MCT8316Z_ApplyDefaultConfig(MCT8316Z_Handle_t *hdrv) {
 		return status;
 
 	/* CTRL8: FG output 1x, motor lock retry 500ms, tdet 500ms, report-only */
-	reg_val = MCT_CTRL8_FGOUT_SEL_1X | MCT_CTRL8_MTR_LOCK_RETRY_500MS
-			| MCT_CTRL8_MTR_LOCK_TDET_500MS | MCT_CTRL8_MTR_LOCK_MODE_REPORT;
+	reg_val = MCT_CTRL8_FGOUT_SEL_3X | MCT_CTRL8_MTR_LOCK_RETRY_500MS
+			| MCT_CTRL8_MTR_LOCK_TDET_300MS | MCT_CTRL8_MTR_LOCK_MODE_RETRY;
 	status = MCT8316Z_WriteRegister(hdrv, MCT_REG_CTRL_8, reg_val);
 	if (status != HAL_OK)
 		return status;
 
 	/* CTRL9: No commutation advance */
-	reg_val = MCT_CTRL9_MTR_ADVANCE_LVL_0DEG;
+	reg_val = MCT_CTRL9_MTR_ADVANCE_LVL_30DEG;
 	status = MCT8316Z_WriteRegister(hdrv, MCT_REG_CTRL_9, reg_val);
 
 	return status;
@@ -184,7 +184,7 @@ HAL_StatusTypeDef MCT8316Z_ClearFaults(MCT8316Z_Handle_t *hdrv) {
 	MCT8316Z_WAKEUP(hdrv);
 	HAL_Delay(1U);
 
-	uint8_t reg_val = MCT_CTRL2_SDO_MODE_PP | MCT_CTRL2_SLEW_125V_US
+	uint8_t reg_val = MCT_CTRL2_SDO_MODE_PP | MCT_CTRL2_SLEW_25V_US
 			| MCT_CTRL2_PWM_MODE_SYN_DIGITAL | MCT_CTRL2_CLR_FLT_BIT;
 
 	return MCT8316Z_WriteRegister(hdrv, MCT_REG_CTRL_2, reg_val);
@@ -211,7 +211,7 @@ MCT8316Z_REG_Typedef MCT8316Z_VerifyConfig(MCT8316Z_Handle_t *hdrv) {
 		return MCT_REG_FAULT_CTRL3;
 
 	/* --- CTRL4 --- */
-	expected = MCT_CTRL4_OCP_MODE_LATCH | MCT_CTRL4_OCP_LVL_24A
+	expected = MCT_CTRL4_OCP_MODE_RETRY | MCT_CTRL4_OCP_LVL_24A
 			| MCT_CTRL4_OCP_DEG_0_6US;
 	status = MCT8316Z_ReadRegister(hdrv, MCT_REG_CTRL_4, &read_val);
 	if (status != HAL_OK || read_val != expected)
@@ -246,7 +246,7 @@ MCT8316Z_REG_Typedef MCT8316Z_VerifyConfig(MCT8316Z_Handle_t *hdrv) {
 		return MCT_REG_FAULT_CTRL8;
 
 	/* --- CTRL9 --- */
-	expected = MCT_CTRL9_MTR_ADVANCE_LVL_0DEG;
+	expected = MCT_CTRL9_MTR_ADVANCE_LVL_15DEG;
 	status = MCT8316Z_ReadRegister(hdrv, MCT_REG_CTRL_9, &read_val);
 	if (status != HAL_OK || read_val != expected)
 		return MCT_REG_FAULT_CTRL9;
@@ -268,6 +268,7 @@ void MX_MCT8316Z_Init(void) {
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_WritePin(MTR_BRAKE_L_GPIO_Port, MTR_BRAKE_L_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_Init(MTR_BRAKE_L_GPIO_Port, &GPIO_InitStruct);
 
 	GPIO_InitStruct.Pin = MTR_FGOUT_R_Pin;
@@ -281,9 +282,10 @@ void MX_MCT8316Z_Init(void) {
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_WritePin(MTR_BRAKE_R_GPIO_Port, MTR_BRAKE_R_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_Init(MTR_BRAKE_R_GPIO_Port, &GPIO_InitStruct);
 
-	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 1800);
+	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 1550);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
 
 	/* --- Left motor driver --- */

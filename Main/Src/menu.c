@@ -39,7 +39,7 @@ MenuItem_t sensor_menu_items[] = { { .name = "Calibration", .pfnActionCallback =
 
 MenuItem_t motor_menu_items[] = { { .name = "Driver Setup", .pfnActionCallback =
 		MTR_Read_Register }, { .name = "Update Setup", .pfnActionCallback =
-		NULL }, { .name = "Simple PWM", .pfnActionCallback = NULL }, { .name =
+		NULL }, { .name = "Simple PWM", .pfnActionCallback = MTR_Simple_Control }, { .name =
 		"Simple 6-STEP", .pfnActionCallback = NULL }, { .name = "Simple FOC",
 		.pfnActionCallback = NULL }, { .name = "Update PI", .pfnActionCallback =
 NULL }, };

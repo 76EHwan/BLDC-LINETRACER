@@ -22,8 +22,8 @@ void User_Init() {
 #ifdef SENSOR_TRAP_CONTROL
 	MX_MCT8316Z_Init();
 #endif
-//	Buzzer_Init();
-//	Buzzer_Start();
+	Buzzer_Init();
+	Buzzer_Start();
 	LCD7789_Test();
-//	Buzzer_Stop();
+	Buzzer_Stop();
 }
