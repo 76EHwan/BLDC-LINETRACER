@@ -22,9 +22,6 @@
 
 /* USER CODE BEGIN 0 */
 
-uint16_t pADC1_data[3];
-uint16_t pADC2_data[3];
-
 /* USER CODE END 0 */
 
 ADC_HandleTypeDef hadc1;
@@ -531,12 +528,5 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
 }
 
 /* USER CODE BEGIN 1 */
-void ADC1_DMA_Start(){
-	HAL_ADC_Start_DMA(&hadc1, (uint32_t *)pADC1_data, 3);
-}
-
-void ADC2_DMA_Start(){
-	HAL_ADC_Start_DMA(&hadc2, (uint32_t *)pADC2_data, 3);
-}
 
 	/* USER CODE END 1 */

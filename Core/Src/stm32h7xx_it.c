@@ -25,6 +25,7 @@
 /* USER CODE BEGIN Includes */
 #include "adc.h"
 #include "tim.h"
+#include "foc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
