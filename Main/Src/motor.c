@@ -53,6 +53,7 @@
 
 void MTR_Start() {
 #ifdef FOC_CONTROL
+
 	DRV8316C_FOC_PWM_EN();
 
 	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);

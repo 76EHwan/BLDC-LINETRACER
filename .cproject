@@ -66,6 +66,10 @@
 									<listOptionValue builtIn="false" value="../Drivers/BSP/DRV8316C"/>
 									<listOptionValue builtIn="false" value="../Drivers/BSP/MCT8316Z"/>
 									<listOptionValue builtIn="false" value="../Drivers/CMSIS/DSP"/>
+									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/ARM_CMSIS/CMSIS/Core/Include/"/>
+									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/ARM_CMSIS/CMSIS/Core_A/Include/"/>
+									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/ARM_CMSIS/CMSIS/DSP/PrivateInclude/"/>
+									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/ARM_CMSIS/CMSIS/DSP/Include/"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.1827217048" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>

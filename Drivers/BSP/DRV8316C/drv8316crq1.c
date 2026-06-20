@@ -253,15 +253,26 @@ DRV8316C_REG_Typedef DRV8316C_VerifyConfig(DRV8316C_Handle_t *hdrv) {
 
 void MX_DRV8316C_Init() {
 	TIM_OC_InitTypeDef sConfigOC = { 0 };
+	TIM_MasterConfigTypeDef sMasterConfig = { 0 };
+	TIM_OC_InitTypeDef sConfigOC4 = { 0 }; // CH4 트리거 설정을 위한 구조체 추가
+
 	sConfigOC.OCMode = TIM_OCMODE_PWM1;
-	sConfigOC.Pulse = 0; // 초기 Duty Ratio 0% (안전)
+	sConfigOC.Pulse = 0;
 	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
 	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
 
-	/* --- Left Motor (TIM3) 25kHz PWM 강제 설정 및 시작 --- */
-	htim3.Init.Prescaler = 0;             // PSC = 0
-	htim3.Init.Period = 9600 - 1;         // ARR = 9599 (240MHz 클럭 기준 25kHz)
+	/* --- Left Motor (TIM3) 설정 --- */
+	htim3.Init.Prescaler = 0;
+	htim3.Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED1;
+	htim3.Init.Period = 4800; // 25kHz 중앙 정렬 유지
 	if (HAL_TIM_PWM_Init(&htim3) != HAL_OK) {
+		Error_Handler();
+	}
+
+	// [변경] TRGO 출력을 UPDATE가 아닌 CH4 비교 매칭(OC4REF)으로 설정
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_OC4REF;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK) {
 		Error_Handler();
 	}
 
@@ -269,14 +280,25 @@ void MX_DRV8316C_Init() {
 	HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2);
 	HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_3);
 
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
+	// [추가] TIM3 CH4 트리거 전용 채널 설정 (꼭대기 4800 직전인 4790에서 트리거)
+	sConfigOC4.OCMode = TIM_OCMODE_PWM2;
+	sConfigOC4.Pulse = 4790;
+	sConfigOC4.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC4.OCFastMode = TIM_OCFAST_DISABLE;
+	if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC4, TIM_CHANNEL_4) != HAL_OK) {
+		Error_Handler();
+	}
 
-	/* --- Right Motor (TIM4) 25kHz PWM 강제 설정 및 시작 --- */
-	htim4.Init.Prescaler = 0;             // PSC = 0
-	htim4.Init.Period = 9600 - 1;         // ARR = 9599 (240MHz 클럭 기준 25kHz)
+	/* --- Right Motor (TIM4) 설정 --- */
+	htim4.Init.Prescaler = 0;
+	htim4.Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED1;
+	htim4.Init.Period = 4800; // 25kHz 중앙 정렬 유지
 	if (HAL_TIM_PWM_Init(&htim4) != HAL_OK) {
+		Error_Handler();
+	}
+
+	// [변경] TIM4 역시 TRGO 출력을 CH4 비교 매칭(OC4REF)으로 설정
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK) {
 		Error_Handler();
 	}
 
@@ -284,6 +306,33 @@ void MX_DRV8316C_Init() {
 	HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_2);
 	HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_3);
 
+	// [추가] TIM4 CH4 트리거 전용 채널 설정 (동일하게 4790 세팅)
+	if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC4, TIM_CHANNEL_4) != HAL_OK) {
+		Error_Handler();
+	}
+
+	/* --- 타이머 채널 가동 및 180도 위상 인터리빙 하드웨어 고정 --- */
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4); // TIM3 CH4 가동
+
+	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
+	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4); // TIM4 CH4 가동
+
+	// [추가] 두 타이머를 완벽히 180도 정렬하여 동시 기동
+	TIM3->CR1 &= ~TIM_CR1_CEN;
+	TIM4->CR1 &= ~TIM_CR1_CEN;
+
+	__HAL_TIM_SET_COUNTER(&htim3, 0);       // 왼쪽 모터는 카운터 바닥(0)에서 업카운팅 시작
+	__HAL_TIM_SET_COUNTER(&htim4, 4800);    // 오른쪽 모터는 카운터 꼭대기(4800)에서 다운카운팅 시작
+
+	TIM3->CR1 |= TIM_CR1_CEN;
+	TIM4->CR1 |= TIM_CR1_CEN;
+
+	/* --- 기존 GPIO, DAC 및 DRV8316C 레지스터 설정 (유지) --- */
 	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
 
 	GPIO_InitStruct.Pin = MTR_PWM_L_Pin;
@@ -299,35 +348,29 @@ void MX_DRV8316C_Init() {
 	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 0xFFF);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
 
-	/* --- Left motor driver --- */
 	DRV8316C_Init(&DRV8316C_L, &hspi2,
 	MTR_CS_L_GPIO_Port, MTR_CS_L_Pin,
 	MTR_nSLEEP_L_GPIO_Port, MTR_nSLEEP_L_Pin,
 	MTR_nFAULT_L_GPIO_Port, MTR_nFAULT_L_Pin,
 	MTR_DRVOFF_L_GPIO_Port, MTR_DRVOFF_L_Pin);
 
-	/* --- Right motor driver --- */
 	DRV8316C_Init(&DRV8316C_R, &hspi2,
 	MTR_CS_R_GPIO_Port, MTR_CS_R_Pin,
 	MTR_nSLEEP_R_GPIO_Port, MTR_nSLEEP_R_Pin,
 	MTR_nFAULT_R_GPIO_Port, MTR_nFAULT_R_Pin,
 	MTR_DRVOFF_R_GPIO_Port, MTR_DRVOFF_R_Pin);
 
-	/* Wake Left driver */
 	DRV8316C_WAKEUP(&DRV8316C_L);
 	HAL_Delay(5);
 
-	/* Apply configuration to left driver */
 	DRV8316C_UnlockRegister(&DRV8316C_L);
 	DRV8316C_ApplyDefaultConfig(&DRV8316C_L);
 	DRV8316C_VerifyConfig(&DRV8316C_L);
 	DRV8316C_LockRegister(&DRV8316C_L);
 
-	/* Wake Right driver */
 	DRV8316C_WAKEUP(&DRV8316C_R);
 	HAL_Delay(5);
 
-	/* Apply configuration to right driver */
 	DRV8316C_UnlockRegister(&DRV8316C_R);
 	DRV8316C_ApplyDefaultConfig(&DRV8316C_R);
 	DRV8316C_VerifyConfig(&DRV8316C_R);
