@@ -166,8 +166,8 @@ HAL_StatusTypeDef DRV8316C_ApplyDefaultConfig(DRV8316C_Handle_t *hdrv) {
 	HAL_StatusTypeDef status;
 	uint8_t reg_val;
 
-	// [CTRL 2] ê¸°ë³¸ ì¤ì : SDO Push-Pull, Slew Rate 125V/us, PWM 3x Mode, Clear Fault
-	reg_val = DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_125V_us
+	// [CTRL 2] ê¸°ë³¸ ì¤ì : SDO Push-Pull, Slew Rate 25V/us, PWM 3x Mode, Clear Fault
+	reg_val = DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_25V_us
 			| DRV_CTRL2_PWM_MODE_3X | DRV_CTRL2_CLR_FLT_BIT;
 	status = DRV8316C_WriteRegister(hdrv, DRV_REG_CTRL_2, reg_val);
 	if (status != HAL_OK)
@@ -204,7 +204,7 @@ HAL_StatusTypeDef DRV8316C_ClearFaults(DRV8316C_Handle_t *hdrv) {
 	HAL_GPIO_WritePin(hdrv->nSLEEP_Port, hdrv->nSLEEP_Pin, GPIO_PIN_SET);
 	// ë ì§ì¤í°ë¥¼ íµí Clear
 	return DRV8316C_WriteRegister(hdrv, DRV_REG_CTRL_2,
-			DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_125V_us
+			DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_25V_us
 					| DRV_CTRL2_PWM_MODE_3X | DRV_CTRL2_CLR_FLT_BIT);
 }
 
@@ -214,7 +214,7 @@ DRV8316C_REG_Typedef DRV8316C_VerifyConfig(DRV8316C_Handle_t *hdrv) {
 	uint8_t expected_val = 0;
 
 	// CTRL2 íì¸
-	expected_val = DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_125V_us
+	expected_val = DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_25V_us
 			| DRV_CTRL2_PWM_MODE_3X;
 	status = DRV8316C_ReadRegister(hdrv, DRV_REG_CTRL_2, &read_val);
 	if (status != HAL_OK)
@@ -272,7 +272,8 @@ void MX_DRV8316C_Init() {
 	// [변경] TRGO 출력을 UPDATE가 아닌 CH4 비교 매칭(OC4REF)으로 설정
 	sMasterConfig.MasterOutputTrigger = TIM_TRGO_OC4REF;
 	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-	if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK) {
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig)
+			!= HAL_OK) {
 		Error_Handler();
 	}
 
@@ -285,7 +286,8 @@ void MX_DRV8316C_Init() {
 	sConfigOC4.Pulse = 4790;
 	sConfigOC4.OCPolarity = TIM_OCPOLARITY_HIGH;
 	sConfigOC4.OCFastMode = TIM_OCFAST_DISABLE;
-	if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC4, TIM_CHANNEL_4) != HAL_OK) {
+	if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC4, TIM_CHANNEL_4)
+			!= HAL_OK) {
 		Error_Handler();
 	}
 
@@ -298,7 +300,8 @@ void MX_DRV8316C_Init() {
 	}
 
 	// [변경] TIM4 역시 TRGO 출력을 CH4 비교 매칭(OC4REF)으로 설정
-	if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK) {
+	if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig)
+			!= HAL_OK) {
 		Error_Handler();
 	}
 
@@ -307,7 +310,8 @@ void MX_DRV8316C_Init() {
 	HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_3);
 
 	// [추가] TIM4 CH4 트리거 전용 채널 설정 (동일하게 4790 세팅)
-	if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC4, TIM_CHANNEL_4) != HAL_OK) {
+	if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC4, TIM_CHANNEL_4)
+			!= HAL_OK) {
 		Error_Handler();
 	}
 
@@ -360,8 +364,11 @@ void MX_DRV8316C_Init() {
 	MTR_nFAULT_R_GPIO_Port, MTR_nFAULT_R_Pin,
 	MTR_DRVOFF_R_GPIO_Port, MTR_DRVOFF_R_Pin);
 
+	DRV8316C_FOC_PWM_DIS();
+
 	DRV8316C_WAKEUP(&DRV8316C_L);
-	HAL_Delay(5);
+
+	HAL_Delay(1);
 
 	DRV8316C_UnlockRegister(&DRV8316C_L);
 	DRV8316C_ApplyDefaultConfig(&DRV8316C_L);
@@ -369,7 +376,7 @@ void MX_DRV8316C_Init() {
 	DRV8316C_LockRegister(&DRV8316C_L);
 
 	DRV8316C_WAKEUP(&DRV8316C_R);
-	HAL_Delay(5);
+	HAL_Delay(1);
 
 	DRV8316C_UnlockRegister(&DRV8316C_R);
 	DRV8316C_ApplyDefaultConfig(&DRV8316C_R);

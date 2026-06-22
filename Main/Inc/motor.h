@@ -10,5 +10,6 @@
 
 void MTR_Read_Register(void);
 void MTR_Simple_Control(void);
+void MTR_Update_Setup(void);
 
 #endif /* INC_MOTOR_H_ */

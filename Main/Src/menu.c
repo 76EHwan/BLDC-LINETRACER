@@ -35,13 +35,15 @@ MenuItem_t sensor_menu_items[] = { { .name = "Calibration", .pfnActionCallback =
 		Sensor_Raw_Printf },
 		{ .name = "Normalized", .pfnActionCallback = NULL }, { .name = "State",
 				.pfnActionCallback =
-				NULL }, { .name = "Update Thres", .pfnActionCallback = NULL }, };
+				NULL }, { .name = "Update Thres", .pfnActionCallback = NULL }, {
+				.name = "IMU Test", .pfnActionCallback = IMU_Test }, };
 
 MenuItem_t motor_menu_items[] = { { .name = "Driver Setup", .pfnActionCallback =
 		MTR_Read_Register }, { .name = "Update Setup", .pfnActionCallback =
-		NULL }, { .name = "Simple PWM", .pfnActionCallback = MTR_Simple_Control }, { .name =
-		"Simple 6-STEP", .pfnActionCallback = NULL }, { .name = "Simple FOC",
-		.pfnActionCallback = NULL }, { .name = "Update PI", .pfnActionCallback =
+		MTR_Update_Setup }, { .name = "Simple PWM", .pfnActionCallback =
+		MTR_Simple_Control }, { .name = "Simple 6-STEP", .pfnActionCallback =
+		NULL }, { .name = "Simple FOC", .pfnActionCallback = NULL }, { .name =
+		"Update PI", .pfnActionCallback =
 NULL }, };
 
 MenuItem_t drive_menu_items[] = { { .name = "1st Drive", .pfnActionCallback =
@@ -64,7 +66,7 @@ MenuContext_t main_menu = { .category_name = "Main Menu", .pMenuItems =
 		main_menu_items, .item_count = 5, .prev_index = 0, .cursor_index = 0 };
 
 MenuContext_t sensor_menu = { .category_name = "Sensor Menu", .pMenuItems =
-		sensor_menu_items, .item_count = 5, .prev_index = 0, .cursor_index = 0 };
+		sensor_menu_items, .item_count = 6, .prev_index = 0, .cursor_index = 0 };
 
 MenuContext_t motor_menu = { .category_name = "Motor Menu", .pMenuItems =
 		motor_menu_items, .item_count = 6, .prev_index = 0, .cursor_index = 0 };

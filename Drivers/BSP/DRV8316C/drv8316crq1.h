@@ -31,8 +31,8 @@
 #define DRV8316C_DRVOFF_LOW(hdrv)  	HAL_GPIO_WritePin((hdrv)->DRVOFF_Port, (hdrv)->DRVOFF_Pin, GPIO_PIN_RESET)
 #define DRV8316C_DRVOFF_HIGH(hdrv) 	HAL_GPIO_WritePin((hdrv)->DRVOFF_Port, (hdrv)->DRVOFF_Pin, GPIO_PIN_SET)
 
-#define DRV8316C_FOC_PWM_EN()		HAL_GPIO_WritePin(MTR_PWM_W_R_GPIO_Port, MTR_PWM_INLX_Pin, GPIO_PIN_SET);
-#define DRV8316C_FOC_PWM_DIS()		HAL_GPIO_WritePin(MTR_PWM_W_R_GPIO_Port, MTR_PWM_INLX_Pin, GPIO_PIN_SET);
+#define DRV8316C_FOC_PWM_EN()		HAL_GPIO_WritePin(MTR_PWM_INLX_GPIO_Port, MTR_PWM_INLX_Pin, GPIO_PIN_SET);
+#define DRV8316C_FOC_PWM_DIS()		HAL_GPIO_WritePin(MTR_PWM_INLX_GPIO_Port, MTR_PWM_INLX_Pin, GPIO_PIN_RESET);
 
 /*=======================================================================*/
 /* SPI Frame Definition */

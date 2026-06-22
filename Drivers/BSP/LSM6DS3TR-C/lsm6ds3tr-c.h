@@ -13,6 +13,8 @@
 #include "main.h"
 #include <string.h>
 
+#define IMU_I2C	&hi2c1
+
 // I2C Device Address (7-bit address 0x6A << 1 = 0xD4)
 // 만약 SDO/SA0 핀이 VDD에 연결되어 있다면 0xD6을 사용하세요.
 #define LSM6DS3_ADDR        0xD4
