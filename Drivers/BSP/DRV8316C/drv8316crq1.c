@@ -187,7 +187,8 @@ HAL_StatusTypeDef DRV8316C_ApplyDefaultConfig(DRV8316C_Handle_t *hdrv) {
 		return status;
 
 	// [CTRL 5] ì ë¥ ì¼ì± ê²ì¸ ì¤ì  (0.6V/A) + ASR/AAR ì¼ê¸°
-	reg_val = DRV_CTRL5_CSA_GAIN_0_6VA;
+	reg_val = DRV_CTRL5_CSA_GAIN_0_15VA | DRV_CTRL5_EN_AAR_DIS
+			| DRV_CTRL5_EN_ASR_DIS;
 	status = DRV8316C_WriteRegister(hdrv, DRV_REG_CTRL_5, reg_val);
 	if (status != HAL_OK)
 		return status;
@@ -236,7 +237,8 @@ DRV8316C_REG_Typedef DRV8316C_VerifyConfig(DRV8316C_Handle_t *hdrv) {
 		return REG_FAULT_CTRL4;
 
 	// CTRL5 íì¸
-	expected_val = DRV_CTRL5_CSA_GAIN_0_6VA;
+	expected_val = DRV_CTRL5_CSA_GAIN_0_15VA | DRV_CTRL5_EN_AAR_DIS
+			| DRV_CTRL5_EN_ASR_DIS;
 	status = DRV8316C_ReadRegister(hdrv, DRV_REG_CTRL_5, &read_val);
 	if (status != HAL_OK || read_val != expected_val)
 		return REG_FAULT_CTRL5;
@@ -251,88 +253,73 @@ DRV8316C_REG_Typedef DRV8316C_VerifyConfig(DRV8316C_Handle_t *hdrv) {
 	return REG_OK;
 }
 
-void MX_DRV8316C_Init() {
+/**
+ * @brief  Hall sensor(XOR) 모드 잔재를 제거하고 해당 타이머를 3x PWM 모드로 전환.
+ *         CubeMX가 HallSensor_Init으로 잡은 SMCR(slave reset) / CR2(TI1S XOR) /
+ *         CCMRx·CCER(input capture)를 모두 클리어한 뒤 PWM으로 재구성한다.
+ */
+static void MTR_TIM_HallToPWM(TIM_HandleTypeDef *htim) {
 	TIM_OC_InitTypeDef sConfigOC = { 0 };
+	TIM_OC_InitTypeDef sConfigOC4 = { 0 };
 	TIM_MasterConfigTypeDef sMasterConfig = { 0 };
-	TIM_OC_InitTypeDef sConfigOC4 = { 0 }; // CH4 트리거 설정을 위한 구조체 추가
+
+	__HAL_TIM_DISABLE(htim);
+	htim->Instance->SMCR = 0;             // slave reset mode + trigger 선택 통째 제거
+	htim->Instance->CR2 &= ~TIM_CR2_TI1S;  // CH1·2·3 XOR 입력 해제
+	htim->Instance->CCMR1 = 0;             // CC1S/CC2S input capture 잔재 제거
+	htim->Instance->CCMR2 = 0;
+	htim->Instance->CCER = 0;              // 채널 enable·polarity 잔재 제거
+
+	htim->Init.Prescaler = 0;
+	htim->Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED1;
+	htim->Init.Period = 4800;
+	htim->Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim->Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	if (HAL_TIM_PWM_Init(htim) != HAL_OK) {
+		Error_Handler();
+	}
+
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_OC4REF;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(htim, &sMasterConfig) != HAL_OK) {
+		Error_Handler();
+	}
 
 	sConfigOC.OCMode = TIM_OCMODE_PWM1;
 	sConfigOC.Pulse = 0;
 	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
 	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+	HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, TIM_CHANNEL_1);
+	HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, TIM_CHANNEL_2);
+	HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, TIM_CHANNEL_3);
 
-	/* --- Left Motor (TIM3) 설정 --- */
-	htim3.Init.Prescaler = 0;
-	htim3.Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED1;
-	htim3.Init.Period = 4800; // 25kHz 중앙 정렬 유지
-	if (HAL_TIM_PWM_Init(&htim3) != HAL_OK) {
-		Error_Handler();
-	}
-
-	// [변경] TRGO 출력을 UPDATE가 아닌 CH4 비교 매칭(OC4REF)으로 설정
-	sMasterConfig.MasterOutputTrigger = TIM_TRGO_OC4REF;
-	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-	if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig)
-			!= HAL_OK) {
-		Error_Handler();
-	}
-
-	HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1);
-	HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2);
-	HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_3);
-
-	// [추가] TIM3 CH4 트리거 전용 채널 설정 (꼭대기 4800 직전인 4790에서 트리거)
 	sConfigOC4.OCMode = TIM_OCMODE_PWM2;
-	sConfigOC4.Pulse = 4790;
+	sConfigOC4.Pulse = 4800-10;
 	sConfigOC4.OCPolarity = TIM_OCPOLARITY_HIGH;
 	sConfigOC4.OCFastMode = TIM_OCFAST_DISABLE;
-	if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC4, TIM_CHANNEL_4)
-			!= HAL_OK) {
+	if (HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC4, TIM_CHANNEL_4) != HAL_OK) {
 		Error_Handler();
 	}
+}
 
-	/* --- Right Motor (TIM4) 설정 --- */
-	htim4.Init.Prescaler = 0;
-	htim4.Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED1;
-	htim4.Init.Period = 4800; // 25kHz 중앙 정렬 유지
-	if (HAL_TIM_PWM_Init(&htim4) != HAL_OK) {
-		Error_Handler();
-	}
+void MX_DRV8316C_Init() {
+	MTR_TIM_HallToPWM(&htim3);
+	MTR_TIM_HallToPWM(&htim4);
 
-	// [변경] TIM4 역시 TRGO 출력을 CH4 비교 매칭(OC4REF)으로 설정
-	if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig)
-			!= HAL_OK) {
-		Error_Handler();
-	}
-
-	HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1);
-	HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_2);
-	HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_3);
-
-	// [추가] TIM4 CH4 트리거 전용 채널 설정 (동일하게 4790 세팅)
-	if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC4, TIM_CHANNEL_4)
-			!= HAL_OK) {
-		Error_Handler();
-	}
-
-	/* --- 타이머 채널 가동 및 180도 위상 인터리빙 하드웨어 고정 --- */
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4); // TIM3 CH4 가동
-
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
 	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
 	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
-	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4); // TIM4 CH4 가동
+	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
 
-	// [추가] 두 타이머를 완벽히 180도 정렬하여 동시 기동
+	/* 180도 위상 인터리빙 동시 기동 */
 	TIM3->CR1 &= ~TIM_CR1_CEN;
 	TIM4->CR1 &= ~TIM_CR1_CEN;
-
-	__HAL_TIM_SET_COUNTER(&htim3, 0);       // 왼쪽 모터는 카운터 바닥(0)에서 업카운팅 시작
-	__HAL_TIM_SET_COUNTER(&htim4, 4800);    // 오른쪽 모터는 카운터 꼭대기(4800)에서 다운카운팅 시작
-
+	__HAL_TIM_SET_COUNTER(&htim3, 0);
+	__HAL_TIM_SET_COUNTER(&htim4, 4800);
 	TIM3->CR1 |= TIM_CR1_CEN;
 	TIM4->CR1 |= TIM_CR1_CEN;
 

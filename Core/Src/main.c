@@ -50,7 +50,7 @@
 /* USER CODE BEGIN PV */
 
 /* BDMA 영역(RAM_D3)에 ADC3 수신 버퍼 강제 할당 */
-__attribute__((section(".ram_d3"), aligned(32)))     uint16_t adc3_buffer[3];
+__attribute__((section(".ram_d3"), aligned(32))) uint16_t adc3_buffer[3];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/

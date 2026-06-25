@@ -150,9 +150,9 @@
 #define DRV_CTRL5_ILIM_RECIR_BASE	(6)
 #define DRV_CTRL5_ILIM_RECIR_BRAKE	(0 << DRV_CTRL5_ILIM_RECIR_BASE) // Current recirculation FETs (Brake Mode)
 #define DRV_CTRL5_ILIM_RECIR_COAST	(1 << DRV_CTRL5_ILIM_RECIR_BASE) // Current recirculation diodes (Coast Mode)
-#define DRV_CTRL5_EN_ARR_BASE		(3)
-#define DRV_CTRL5_EN_AAR_DIS    	(0 << DRV_CTRL5_EN_ARR_BASE) // Asynchronous Rectification Disable
-#define DRV_CTRL5_EN_AAR_EN	    	(1 << DRV_CTRL5_EN_ARR_BASE) // Asynchronous Rectification Enable
+#define DRV_CTRL5_EN_AAR_BASE		(3)
+#define DRV_CTRL5_EN_AAR_DIS    	(0 << DRV_CTRL5_EN_AAR_BASE) // Asynchronous Rectification Disable
+#define DRV_CTRL5_EN_AAR_EN	    	(1 << DRV_CTRL5_EN_AAR_BASE) // Asynchronous Rectification Enable
 #define DRV_CTRL5_EN_ASR_BASE		(2)
 #define DRV_CTRL5_EN_ASR_DIS    	(0 << DRV_CTRL5_EN_ASR_BASE) // Synchronous Rectification Disable
 #define DRV_CTRL5_EN_ASR_EN	    	(1 << DRV_CTRL5_EN_ASR_BASE) // Synchronous Rectification Enable

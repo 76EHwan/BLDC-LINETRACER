@@ -13,12 +13,16 @@
 #include "lsm6ds3tr-c.h"
 
 #include "user_init.h"
+#include "foc.h"
 
 void User_Init() {
 	Button_init();
 	LSM6DS3_Init();
 #ifdef FOC_CONTROL
 	MX_DRV8316C_Init();
+	FOC_Init_Motor(&foc_L, TIM3);
+	FOC_Init_Motor(&foc_R, TIM4);
+
 #endif
 
 #ifdef SENSOR_TRAP_CONTROL
