@@ -20,8 +20,8 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_TypeDef *TIMx) {
     hfoc->TIMx       = TIMx;
     hfoc->is_running = 0;
 
-    hfoc->offset_a = (float32_t)(UINT16_MAX / 2);
-    hfoc->offset_c = (float32_t)(UINT16_MAX / 2);
+    hfoc->offset_a = 33500;
+    hfoc->offset_c = 33500;
 
     hfoc->target_Id = 0.0f;
     hfoc->target_Iq = 0.0f;

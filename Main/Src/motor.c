@@ -2,6 +2,7 @@
 #include "button.h"
 #include "motor.h"
 #include "foc.h"
+#include "lptim.h"
 #include "math.h"
 
 #ifdef FOC_CONTROL
@@ -408,16 +409,18 @@ void MTR_Simple_FOC() {
 		foc_R.omega_e = omega;
 
 		LCD_Printf(0, 0, "w:%6.1f Iq:%.2f", omega, foc_L.target_Iq);
-		LCD_Printf(0, 1, "thL:%.2f", foc_L.theta_e);
-		LCD_Printf(0, 2, "thR:%.2f", foc_R.theta_e);
-		LCD_Printf(0, 3, "IdL:%.3f", foc_L.I_d);
-		LCD_Printf(0, 4, "IqL:%.3f", foc_L.I_q);
-		LCD_Printf(0, 5, "IdR:%.3f", foc_R.I_d);
-		LCD_Printf(0, 6, "IqR:%.3f", foc_R.I_q);
-		LCD_Printf(0, 7, "IaL:%.3f", foc_L.I_a);
-		LCD_Printf(0, 8, "IbL:%.3f", foc_L.I_b);
-		LCD_Printf(0, 9, "r1:%5d %5d", adc1_dma_buf[1], adc1_dma_buf[2]);
-		LCD_Printf(0, 10, "r2:%5d %5d", adc2_dma_buf[1], adc2_dma_buf[2]);
+		LCD_Printf(0, 1, "thL:%6.2f", foc_L.theta_e);
+		LCD_Printf(0, 2, "thR:%6.2f", foc_R.theta_e);
+		LCD_Printf(0, 3, "IdL:%6.3f", foc_L.I_d);
+		LCD_Printf(0, 4, "IqL:%6.3f", foc_L.I_q);
+		LCD_Printf(0, 5, "IdR:%6.3f", foc_R.I_d);
+		LCD_Printf(0, 6, "IqR:%6.3f", foc_R.I_q);
+		LCD_Printf(0, 7, "IaL:%6.3f", foc_L.I_a);
+		LCD_Printf(0, 8, "IbL:%6.3f", foc_L.I_b);
+		LCD_Printf(0, 9, "IaR:%6.3f", foc_R.I_a);
+		LCD_Printf(0, 10, "IbR:%6.3f", foc_R.I_b);
+		LCD_Printf(0, 11, "r1:%5d %5d", adc1_dma_buf[1], adc1_dma_buf[2]);
+		LCD_Printf(0, 12, "r2:%5d %5d", adc2_dma_buf[1], adc2_dma_buf[2]);
 
 	}
 #endif
@@ -440,4 +443,23 @@ void MTR_Update_Setup() {
 	HAL_Delay(1000);
 	MTR_FOC_PWM_EN()
 	;
+}
+
+void Encoder_Start(){
+	HAL_LPTIM_Encoder_Start(&hlptim1, UINT16_MAX);
+	HAL_LPTIM_Encoder_Start(&hlptim2, UINT16_MAX);
+}
+
+void Encoder_Stop(){
+	HAL_LPTIM_Encoder_Stop(&hlptim1);
+	HAL_LPTIM_Encoder_Stop(&hlptim2);
+}
+
+
+void MTR_Encoder_Test() {
+	Encoder_Start();
+	while(1){
+		LCD_Printf(0, 0, "%5d", hlptim1.Instance->CNT);
+		LCD_Printf(0, 1, "%5d", hlptim2.Instance->CNT);
+	}
 }
