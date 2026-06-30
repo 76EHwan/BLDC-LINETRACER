@@ -45,7 +45,8 @@ MenuItem_t motor_menu_items[] = { { .name = "Driver Setup", .pfnActionCallback =
 NULL }, { .name = "Simple FOC", .pfnActionCallback = MTR_Simple_FOC }, { .name =
 		"Update PI", .pfnActionCallback =
 NULL }, { .name = "Encoder", .pfnActionCallback =
-		MTR_Encoder_Test },  };
+		MTR_Encoder_Test }, { .name = "Encoder FOC", .pfnActionCallback =
+				MTR_Speed_FOC },  };
 
 MenuItem_t drive_menu_items[] = { { .name = "1st Drive", .pfnActionCallback =
 NULL }, { .name = "2nd Drive", .pfnActionCallback = NULL }, { .name =
@@ -70,7 +71,7 @@ MenuContext_t sensor_menu = { .category_name = "Sensor Menu", .pMenuItems =
 		sensor_menu_items, .item_count = 6, .prev_index = 0, .cursor_index = 0 };
 
 MenuContext_t motor_menu = { .category_name = "Motor Menu", .pMenuItems =
-		motor_menu_items, .item_count = 7, .prev_index = 0, .cursor_index = 0 };
+		motor_menu_items, .item_count = 8, .prev_index = 0, .cursor_index = 0 };
 
 MenuContext_t drive_menu = { .category_name = "Drive Menu", .pMenuItems =
 		drive_menu_items, .item_count = 8, .prev_index = 0, .cursor_index = 0 };

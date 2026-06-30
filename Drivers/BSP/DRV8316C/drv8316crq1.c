@@ -187,7 +187,7 @@ HAL_StatusTypeDef DRV8316C_ApplyDefaultConfig(DRV8316C_Handle_t *hdrv) {
 		return status;
 
 	// [CTRL 5] ì ë¥ ì¼ì± ê²ì¸ ì¤ì  (0.6V/A) + ASR/AAR ì¼ê¸°
-	reg_val = DRV_CTRL5_CSA_GAIN_0_6VA | DRV_CTRL5_EN_AAR_DIS
+	reg_val = DRV_CTRL5_CSA_GAIN_0_15VA | DRV_CTRL5_EN_AAR_DIS
 			| DRV_CTRL5_EN_ASR_DIS;
 	status = DRV8316C_WriteRegister(hdrv, DRV_REG_CTRL_5, reg_val);
 	if (status != HAL_OK)
@@ -237,7 +237,7 @@ DRV8316C_REG_Typedef DRV8316C_VerifyConfig(DRV8316C_Handle_t *hdrv) {
 		return REG_FAULT_CTRL4;
 
 	// CTRL5 íì¸
-	expected_val = DRV_CTRL5_CSA_GAIN_0_6VA | DRV_CTRL5_EN_AAR_DIS
+	expected_val = DRV_CTRL5_CSA_GAIN_0_15VA | DRV_CTRL5_EN_AAR_DIS
 			| DRV_CTRL5_EN_ASR_DIS;
 	status = DRV8316C_ReadRegister(hdrv, DRV_REG_CTRL_5, &read_val);
 	if (status != HAL_OK || read_val != expected_val)
@@ -279,7 +279,7 @@ static void MTR_TIM_HallToPWM(TIM_HandleTypeDef *htim) {
 		Error_Handler();
 	}
 
-	sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_OC4REF;
 	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
 	if (HAL_TIMEx_MasterConfigSynchronization(htim, &sMasterConfig) != HAL_OK) {
 		Error_Handler();

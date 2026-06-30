@@ -445,21 +445,201 @@ void MTR_Update_Setup() {
 	;
 }
 
-void Encoder_Start(){
+void Encoder_Start() {
 	HAL_LPTIM_Encoder_Start(&hlptim1, UINT16_MAX);
 	HAL_LPTIM_Encoder_Start(&hlptim2, UINT16_MAX);
 }
 
-void Encoder_Stop(){
+void Encoder_Stop() {
 	HAL_LPTIM_Encoder_Stop(&hlptim1);
 	HAL_LPTIM_Encoder_Stop(&hlptim2);
 }
 
-
 void MTR_Encoder_Test() {
+
 	Encoder_Start();
-	while(1){
+	FOC_Init_Motor(&foc_L, TIM3, ADC2, LPTIM2);
+	FOC_Init_Motor(&foc_R, TIM4, ADC1, LPTIM1);
+
+	FOC_ADC_Start();
+	HAL_Delay(10);
+	MTR_Start();
+
+	while (1) {
 		LCD_Printf(0, 0, "%5d", hlptim1.Instance->CNT);
 		LCD_Printf(0, 1, "%5d", hlptim2.Instance->CNT);
+		LCD_Printf(0, 2, "%6.3f", foc_L.theta_e);
+		LCD_Printf(0, 3, "%6.3f", foc_R.theta_e);
+	}
+}
+
+void MTR_Speed_FOC() {
+	UserInput_t bt = INPUT_CMD_NONE;
+
+	FOC_Init_Motor(&foc_L, TIM3, ADC2, LPTIM2);
+	FOC_Init_Motor(&foc_R, TIM4, ADC1, LPTIM1);
+//	foc_R.enc_dir = -1;
+
+	Encoder_Start();
+	FOC_ADC_Start();
+	HAL_Delay(10);
+	MTR_Start();
+	HAL_Delay(10);
+
+	LCD_Printf(0, 0, "SOx Offset...");
+
+	FOC_Calibrate_Offset(&foc_L, adc2_dma_buf);
+	FOC_Calibrate_Offset(&foc_R, adc1_dma_buf);
+
+	LCD_Printf(0, 0, "Align L...");
+	FOC_Calibrate_Encoder_Offset(&foc_L);
+	LCD_Printf(0, 0, "Align R...");
+	FOC_Calibrate_Encoder_Offset(&foc_R);
+	LCD_Clear();
+
+	foc_L.target_Id = 0.0f;
+	foc_R.target_Id = 0.0f;
+	foc_L.foc_svpwm_en = 1;
+	foc_R.foc_svpwm_en = 1;
+	foc_L.is_running = 1;
+	foc_R.is_running = 1;
+
+	foc_L.enc_prev_cnt = (uint16_t) foc_L.LPTIMx->CNT;
+	foc_R.enc_prev_cnt = (uint16_t) foc_R.LPTIMx->CNT;
+	foc_L.spd_integ = 0.0f;
+	foc_R.spd_integ = 0.0f;
+	foc_L.target_omega = 0.0f;
+	foc_R.target_omega = 0.0f;
+
+	HAL_TIM_Base_Start_IT(&htim13);
+	foc_L.speed_loop_en = 1;
+	foc_R.speed_loop_en = 1;
+
+	static float omega = 0.0f;
+
+	// 튜닝 대상 커서: 0=Iq_Kp 1=Iq_Ki 2=Spd_Kp 3=Spd_Ki
+	uint8_t sel = 0;
+	// 각 게인의 증감 스텝 (값 스케일이 다르니 따로)
+	const float step_iq_kp = 0.05f;
+	const float step_iq_ki = 0.005f;
+	const float step_spd_kp = 0.1f;
+	const float step_spd_ki = 0.1f;
+
+	// 좌우 동일 게인으로 묶어서 조절 (양쪽 같이 바뀜)
+	while (1) {
+		bt = Button_Get_Input();
+
+		switch (bt) {
+		case INPUT_CMD_R_SINGLE:
+		case INPUT_CMD_R_HOLD:
+			omega += 5.0f;
+			if (omega > 500.0f)
+				omega = 500.0f;
+			break;
+		case INPUT_CMD_L_SINGLE:
+		case INPUT_CMD_L_HOLD:
+			omega -= 5.0f;
+			if (omega < -500.0f)
+				omega = -500.0f;
+			break;
+
+		case INPUT_CMD_K_SINGLE:          // 커서 이동
+			sel = (sel + 1) % 4;
+			break;
+
+		case INPUT_CMD_U_SINGLE:
+		case INPUT_CMD_U_HOLD:            // 선택 게인 증가
+			switch (sel) {
+			case 0:
+				foc_L.pid_iq.Kp += step_iq_kp;
+				foc_R.pid_iq.Kp += step_iq_kp;
+				arm_pid_init_f32(&foc_L.pid_iq, 0);
+				arm_pid_init_f32(&foc_R.pid_iq, 0);
+				break;
+			case 1:
+				foc_L.pid_iq.Ki += step_iq_ki;
+				foc_R.pid_iq.Ki += step_iq_ki;
+				arm_pid_init_f32(&foc_L.pid_iq, 0);
+				arm_pid_init_f32(&foc_R.pid_iq, 0);
+				break;
+			case 2:
+				foc_L.spd_Kp += step_spd_kp;
+				foc_R.spd_Kp += step_spd_kp;
+				break;
+			case 3:
+				foc_L.spd_Ki += step_spd_ki;
+				foc_R.spd_Ki += step_spd_ki;
+				break;
+			}
+			break;
+
+		case INPUT_CMD_D_SINGLE:
+		case INPUT_CMD_D_HOLD:            // 선택 게인 감소 (0 하한)
+			switch (sel) {
+			case 0:
+				foc_L.pid_iq.Kp -= step_iq_kp;
+				if (foc_L.pid_iq.Kp < 0.0f)
+					foc_L.pid_iq.Kp = 0.0f;
+				foc_R.pid_iq.Kp = foc_L.pid_iq.Kp;
+				arm_pid_init_f32(&foc_L.pid_iq, 0);
+				arm_pid_init_f32(&foc_R.pid_iq, 0);
+				break;
+			case 1:
+				foc_L.pid_iq.Ki -= step_iq_ki;
+				if (foc_L.pid_iq.Ki < 0.0f)
+					foc_L.pid_iq.Ki = 0.0f;
+				foc_R.pid_iq.Ki = foc_L.pid_iq.Ki;
+				arm_pid_init_f32(&foc_L.pid_iq, 0);
+				arm_pid_init_f32(&foc_R.pid_iq, 0);
+				break;
+			case 2:
+				foc_L.spd_Kp -= step_spd_kp;
+				if (foc_L.spd_Kp < 0.0f)
+					foc_L.spd_Kp = 0.0f;
+				foc_R.spd_Kp = foc_L.spd_Kp;
+				break;
+			case 3:
+				foc_L.spd_Ki -= step_spd_ki;
+				if (foc_L.spd_Ki < 0.0f)
+					foc_L.spd_Ki = 0.0f;
+				foc_R.spd_Ki = foc_L.spd_Ki;
+				break;
+			}
+			break;
+
+		case INPUT_CMD_K_HOLD:            // 종료
+			foc_L.speed_loop_en = 0;
+			foc_R.speed_loop_en = 0;
+			HAL_TIM_Base_Stop_IT(&htim13);
+			foc_L.is_running = 0;
+			foc_R.is_running = 0;
+			foc_L.foc_svpwm_en = 0;
+			foc_R.foc_svpwm_en = 0;
+			foc_L.target_Iq = 0.0f;
+			foc_R.target_Iq = 0.0f;
+			MTR_Stop();
+			Encoder_Stop();
+			LCD_Clear();
+			return;
+
+		default:
+			break;
+		}
+
+		foc_L.target_omega = omega;
+		foc_R.target_omega = omega;
+
+		// 커서 표시: 선택된 항목 앞에 '>'
+		LCD_Printf(0, 0, "%cIqKp:%6.3f", sel == 0 ? '>' : ' ', foc_L.pid_iq.Kp);
+		LCD_Printf(0, 1, "%cIqKi:%6.3f", sel == 1 ? '>' : ' ', foc_L.pid_iq.Ki);
+		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ', foc_L.spd_Kp);
+		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ', foc_L.spd_Ki);
+		LCD_Printf(0, 5, "ref:%6.1f", omega);
+		LCD_Printf(0, 6, "wL :%6.1f", foc_L.omega_e_meas);
+		LCD_Printf(0, 7, "wR :%6.1f", foc_R.omega_e_meas);
+		LCD_Printf(0, 8, "IqL:%6.3f", foc_L.target_Iq);
+		LCD_Printf(0, 9, "IqcL:%6.3f", foc_L.I_q);
+		LCD_Printf(0, 10, "IqR:%6.3f", foc_R.target_Iq);
+		LCD_Printf(0, 11, "IqcR:%6.3f", foc_R.I_q);
 	}
 }
