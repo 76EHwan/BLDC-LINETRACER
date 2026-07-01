@@ -160,7 +160,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		Menu_ProcessLoop(current_menu);
+		Menu_ProcessLoop();
 	}
   /* USER CODE END 3 */
 }

@@ -14,8 +14,6 @@ static uint8_t foc_tick_L = 0;
 static uint8_t foc_tick_R = 0;
 
 // 속도 루프 파라미터
-#define SPD_DEFAULT_KP   0.1f
-#define SPD_DEFAULT_KI   0.0f
 #define SPD_DT           0.001f      // 1kHz
 #define SPD_IQ_LIMIT     3.0f        // Iq 지령 상한 (A)
 
@@ -53,14 +51,14 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_TypeDef *TIMx, ADC_TypeDef *ADCx, LP
     hfoc->theta_e   = 0.0f;
 
     // 전류 PID 게인 설정 (실제 모터 특성에 맞게 Kp, Ki 튜닝 필요)
-    hfoc->pid_id.Kp = 0.1f;
+    hfoc->pid_id.Kp = 0.4f;
     hfoc->pid_id.Ki = 0.01f;
-    hfoc->pid_id.Kd = 0.0f;
+    hfoc->pid_id.Kd = 0.f;
     arm_pid_init_f32(&hfoc->pid_id, 1);
 
-    hfoc->pid_iq.Kp = 0.1f;
+    hfoc->pid_iq.Kp = 0.4f;
     hfoc->pid_iq.Ki = 0.01f;
-    hfoc->pid_iq.Kd = 0.0f;
+    hfoc->pid_iq.Kd = 0.f;
     arm_pid_init_f32(&hfoc->pid_iq, 1);
 
     // 속도 루프 + 방향 보정 초기화
@@ -69,8 +67,8 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_TypeDef *TIMx, ADC_TypeDef *ADCx, LP
     hfoc->enc_prev_cnt = (uint16_t)hfoc->LPTIMx->CNT;
     hfoc->speed_loop_en = 0;
     hfoc->enc_dir = +1;          // 기본 정방향. 반전 필요 시 호출부에서 -1로 덮어씀
-    hfoc->spd_Kp = SPD_DEFAULT_KP;
-    hfoc->spd_Ki = SPD_DEFAULT_KI;
+    hfoc->spd_Kp = 0.05f;
+    hfoc->spd_Ki = 2.5f;
     hfoc->spd_integ = 0.0f;
     hfoc->iq_limit = SPD_IQ_LIMIT;
 }
@@ -138,7 +136,7 @@ void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc) {
 }
 
 // 5. 실시간 LPTIM 엔코더 전기각 갱신 함수 (방향 보정 적용)
-static void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc) {
+void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc) {
     float32_t cnt = FOC_Enc_Cnt(hfoc);
 
     float32_t theta_m = (cnt / ENCODER_RESOLUTION) * (2.0f * M_PI);
