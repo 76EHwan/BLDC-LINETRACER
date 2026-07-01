@@ -166,8 +166,8 @@ HAL_StatusTypeDef DRV8316C_ApplyDefaultConfig(DRV8316C_Handle_t *hdrv) {
 	HAL_StatusTypeDef status;
 	uint8_t reg_val;
 
-	// [CTRL 2] ê¸°ë³¸ ì¤ì : SDO Push-Pull, Slew Rate 125V/us, PWM 3x Mode, Clear Fault
-	reg_val = DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_125V_us
+	// [CTRL 2] ê¸°ë³¸ ì¤ì : SDO Push-Pull, Slew Rate 25V/us, PWM 3x Mode, Clear Fault
+	reg_val = DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_25V_us
 			| DRV_CTRL2_PWM_MODE_3X | DRV_CTRL2_CLR_FLT_BIT;
 	status = DRV8316C_WriteRegister(hdrv, DRV_REG_CTRL_2, reg_val);
 	if (status != HAL_OK)
@@ -187,7 +187,8 @@ HAL_StatusTypeDef DRV8316C_ApplyDefaultConfig(DRV8316C_Handle_t *hdrv) {
 		return status;
 
 	// [CTRL 5] ì ë¥ ì¼ì± ê²ì¸ ì¤ì  (0.6V/A) + ASR/AAR ì¼ê¸°
-	reg_val = DRV_CTRL5_CSA_GAIN_0_6VA;
+	reg_val = DRV_CTRL5_CSA_GAIN_0_15VA | DRV_CTRL5_EN_AAR_DIS
+			| DRV_CTRL5_EN_ASR_DIS;
 	status = DRV8316C_WriteRegister(hdrv, DRV_REG_CTRL_5, reg_val);
 	if (status != HAL_OK)
 		return status;
@@ -204,7 +205,7 @@ HAL_StatusTypeDef DRV8316C_ClearFaults(DRV8316C_Handle_t *hdrv) {
 	HAL_GPIO_WritePin(hdrv->nSLEEP_Port, hdrv->nSLEEP_Pin, GPIO_PIN_SET);
 	// ë ì§ì¤í°ë¥¼ íµí Clear
 	return DRV8316C_WriteRegister(hdrv, DRV_REG_CTRL_2,
-			DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_125V_us
+			DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_25V_us
 					| DRV_CTRL2_PWM_MODE_3X | DRV_CTRL2_CLR_FLT_BIT);
 }
 
@@ -214,7 +215,7 @@ DRV8316C_REG_Typedef DRV8316C_VerifyConfig(DRV8316C_Handle_t *hdrv) {
 	uint8_t expected_val = 0;
 
 	// CTRL2 íì¸
-	expected_val = DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_125V_us
+	expected_val = DRV_CTRL2_SDO_MODE_PP | DRV_CTRL2_SLEW_25V_us
 			| DRV_CTRL2_PWM_MODE_3X;
 	status = DRV8316C_ReadRegister(hdrv, DRV_REG_CTRL_2, &read_val);
 	if (status != HAL_OK)
@@ -236,7 +237,8 @@ DRV8316C_REG_Typedef DRV8316C_VerifyConfig(DRV8316C_Handle_t *hdrv) {
 		return REG_FAULT_CTRL4;
 
 	// CTRL5 íì¸
-	expected_val = DRV_CTRL5_CSA_GAIN_0_6VA;
+	expected_val = DRV_CTRL5_CSA_GAIN_0_15VA | DRV_CTRL5_EN_AAR_DIS
+			| DRV_CTRL5_EN_ASR_DIS;
 	status = DRV8316C_ReadRegister(hdrv, DRV_REG_CTRL_5, &read_val);
 	if (status != HAL_OK || read_val != expected_val)
 		return REG_FAULT_CTRL5;
@@ -251,39 +253,77 @@ DRV8316C_REG_Typedef DRV8316C_VerifyConfig(DRV8316C_Handle_t *hdrv) {
 	return REG_OK;
 }
 
-void MX_DRV8316C_Init() {
+/**
+ * @brief  Hall sensor(XOR) 모드 잔재를 제거하고 해당 타이머를 3x PWM 모드로 전환.
+ *         CubeMX가 HallSensor_Init으로 잡은 SMCR(slave reset) / CR2(TI1S XOR) /
+ *         CCMRx·CCER(input capture)를 모두 클리어한 뒤 PWM으로 재구성한다.
+ */
+static void MTR_TIM_HallToPWM(TIM_HandleTypeDef *htim) {
 	TIM_OC_InitTypeDef sConfigOC = { 0 };
-	sConfigOC.OCMode = TIM_OCMODE_PWM1;
-	sConfigOC.Pulse = 0; // 초기 Duty Ratio 0% (안전)
-	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+	TIM_OC_InitTypeDef sConfigOC4 = { 0 };
+	TIM_MasterConfigTypeDef sMasterConfig = { 0 };
 
-	/* --- Left Motor (TIM3) 25kHz PWM 강제 설정 및 시작 --- */
-	htim3.Init.Prescaler = 0;             // PSC = 0
-	htim3.Init.Period = 9600 - 1;         // ARR = 9599 (240MHz 클럭 기준 25kHz)
-	if (HAL_TIM_PWM_Init(&htim3) != HAL_OK) {
+	__HAL_TIM_DISABLE(htim);
+	htim->Instance->SMCR = 0;             // slave reset mode + trigger 선택 통째 제거
+	htim->Instance->CR2 &= ~TIM_CR2_TI1S;  // CH1·2·3 XOR 입력 해제
+	htim->Instance->CCMR1 = 0;             // CC1S/CC2S input capture 잔재 제거
+	htim->Instance->CCMR2 = 0;
+	htim->Instance->CCER = 0;              // 채널 enable·polarity 잔재 제거
+
+	htim->Init.Prescaler = 0;
+	htim->Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED1;
+	htim->Init.Period = 4800;
+	htim->Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim->Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	if (HAL_TIM_PWM_Init(htim) != HAL_OK) {
 		Error_Handler();
 	}
 
-	HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1);
-	HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2);
-	HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_3);
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_OC4REF;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	if (HAL_TIMEx_MasterConfigSynchronization(htim, &sMasterConfig) != HAL_OK) {
+		Error_Handler();
+	}
+
+	sConfigOC.OCMode = TIM_OCMODE_PWM1;
+	sConfigOC.Pulse = 0;
+	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+	HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, TIM_CHANNEL_1);
+	HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, TIM_CHANNEL_2);
+	HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC, TIM_CHANNEL_3);
+
+	sConfigOC4.OCMode = TIM_OCMODE_PWM2;
+	sConfigOC4.Pulse = 4800-10;
+	sConfigOC4.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC4.OCFastMode = TIM_OCFAST_DISABLE;
+	if (HAL_TIM_PWM_ConfigChannel(htim, &sConfigOC4, TIM_CHANNEL_4) != HAL_OK) {
+		Error_Handler();
+	}
+}
+
+void MX_DRV8316C_Init() {
+	MTR_TIM_HallToPWM(&htim3);
+	MTR_TIM_HallToPWM(&htim4);
 
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
 	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
+	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
+	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
 
-	/* --- Right Motor (TIM4) 25kHz PWM 강제 설정 및 시작 --- */
-	htim4.Init.Prescaler = 0;             // PSC = 0
-	htim4.Init.Period = 9600 - 1;         // ARR = 9599 (240MHz 클럭 기준 25kHz)
-	if (HAL_TIM_PWM_Init(&htim4) != HAL_OK) {
-		Error_Handler();
-	}
+	/* 180도 위상 인터리빙 동시 기동 */
+	TIM3->CR1 &= ~TIM_CR1_CEN;
+	TIM4->CR1 &= ~TIM_CR1_CEN;
+	__HAL_TIM_SET_COUNTER(&htim3, 0);
+	__HAL_TIM_SET_COUNTER(&htim4, 4800);
+	TIM3->CR1 |= TIM_CR1_CEN;
+	TIM4->CR1 |= TIM_CR1_CEN;
 
-	HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1);
-	HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_2);
-	HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_3);
-
+	/* --- 기존 GPIO, DAC 및 DRV8316C 레지스터 설정 (유지) --- */
 	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
 
 	GPIO_InitStruct.Pin = MTR_PWM_L_Pin;
@@ -299,35 +339,32 @@ void MX_DRV8316C_Init() {
 	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 0xFFF);
 	HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
 
-	/* --- Left motor driver --- */
 	DRV8316C_Init(&DRV8316C_L, &hspi2,
 	MTR_CS_L_GPIO_Port, MTR_CS_L_Pin,
 	MTR_nSLEEP_L_GPIO_Port, MTR_nSLEEP_L_Pin,
 	MTR_nFAULT_L_GPIO_Port, MTR_nFAULT_L_Pin,
 	MTR_DRVOFF_L_GPIO_Port, MTR_DRVOFF_L_Pin);
 
-	/* --- Right motor driver --- */
 	DRV8316C_Init(&DRV8316C_R, &hspi2,
 	MTR_CS_R_GPIO_Port, MTR_CS_R_Pin,
 	MTR_nSLEEP_R_GPIO_Port, MTR_nSLEEP_R_Pin,
 	MTR_nFAULT_R_GPIO_Port, MTR_nFAULT_R_Pin,
 	MTR_DRVOFF_R_GPIO_Port, MTR_DRVOFF_R_Pin);
 
-	/* Wake Left driver */
-	DRV8316C_WAKEUP(&DRV8316C_L);
-	HAL_Delay(5);
+	DRV8316C_FOC_PWM_DIS();
 
-	/* Apply configuration to left driver */
+	DRV8316C_WAKEUP(&DRV8316C_L);
+
+	HAL_Delay(1);
+
 	DRV8316C_UnlockRegister(&DRV8316C_L);
 	DRV8316C_ApplyDefaultConfig(&DRV8316C_L);
 	DRV8316C_VerifyConfig(&DRV8316C_L);
 	DRV8316C_LockRegister(&DRV8316C_L);
 
-	/* Wake Right driver */
 	DRV8316C_WAKEUP(&DRV8316C_R);
-	HAL_Delay(5);
+	HAL_Delay(1);
 
-	/* Apply configuration to right driver */
 	DRV8316C_UnlockRegister(&DRV8316C_R);
 	DRV8316C_ApplyDefaultConfig(&DRV8316C_R);
 	DRV8316C_VerifyConfig(&DRV8316C_R);

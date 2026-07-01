@@ -10,9 +10,7 @@
 
 #include "st7789_lcd.h"
 
-
 void User_Init(void);
-
 
 #define TEST_DISPLAY "/display"
 #define LCD_Printf LCD7789_Printf

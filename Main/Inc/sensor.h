@@ -46,4 +46,7 @@ void ADC3_IRQ_Handler(void);
 void  Sensor_Line_LUT_Init(void);
 float Sensor_Line_Estimate(void);
 
+void IMU_Test(void);
+
+
 #endif /* INC_SENSOR_H_ */

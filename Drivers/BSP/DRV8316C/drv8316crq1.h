@@ -31,8 +31,8 @@
 #define DRV8316C_DRVOFF_LOW(hdrv)  	HAL_GPIO_WritePin((hdrv)->DRVOFF_Port, (hdrv)->DRVOFF_Pin, GPIO_PIN_RESET)
 #define DRV8316C_DRVOFF_HIGH(hdrv) 	HAL_GPIO_WritePin((hdrv)->DRVOFF_Port, (hdrv)->DRVOFF_Pin, GPIO_PIN_SET)
 
-#define DRV8316C_FOC_PWM_EN()		HAL_GPIO_WritePin(MTR_PWM_W_R_GPIO_Port, MTR_PWM_INLX_Pin, GPIO_PIN_SET);
-#define DRV8316C_FOC_PWM_DIS()		HAL_GPIO_WritePin(MTR_PWM_W_R_GPIO_Port, MTR_PWM_INLX_Pin, GPIO_PIN_SET);
+#define DRV8316C_FOC_PWM_EN()		HAL_GPIO_WritePin(MTR_PWM_INLX_GPIO_Port, MTR_PWM_INLX_Pin, GPIO_PIN_SET);
+#define DRV8316C_FOC_PWM_DIS()		HAL_GPIO_WritePin(MTR_PWM_INLX_GPIO_Port, MTR_PWM_INLX_Pin, GPIO_PIN_RESET);
 
 /*=======================================================================*/
 /* SPI Frame Definition */
@@ -150,9 +150,9 @@
 #define DRV_CTRL5_ILIM_RECIR_BASE	(6)
 #define DRV_CTRL5_ILIM_RECIR_BRAKE	(0 << DRV_CTRL5_ILIM_RECIR_BASE) // Current recirculation FETs (Brake Mode)
 #define DRV_CTRL5_ILIM_RECIR_COAST	(1 << DRV_CTRL5_ILIM_RECIR_BASE) // Current recirculation diodes (Coast Mode)
-#define DRV_CTRL5_EN_ARR_BASE		(3)
-#define DRV_CTRL5_EN_AAR_DIS    	(0 << DRV_CTRL5_EN_ARR_BASE) // Asynchronous Rectification Disable
-#define DRV_CTRL5_EN_AAR_EN	    	(1 << DRV_CTRL5_EN_ARR_BASE) // Asynchronous Rectification Enable
+#define DRV_CTRL5_EN_AAR_BASE		(3)
+#define DRV_CTRL5_EN_AAR_DIS    	(0 << DRV_CTRL5_EN_AAR_BASE) // Asynchronous Rectification Disable
+#define DRV_CTRL5_EN_AAR_EN	    	(1 << DRV_CTRL5_EN_AAR_BASE) // Asynchronous Rectification Enable
 #define DRV_CTRL5_EN_ASR_BASE		(2)
 #define DRV_CTRL5_EN_ASR_DIS    	(0 << DRV_CTRL5_EN_ASR_BASE) // Synchronous Rectification Disable
 #define DRV_CTRL5_EN_ASR_EN	    	(1 << DRV_CTRL5_EN_ASR_BASE) // Synchronous Rectification Enable

@@ -45,12 +45,12 @@ ST7789_Object_t st7789_pObj;
 
 /* SPI4 BDMA 전용 D3 메모리 버퍼 (캐시 불가 영역) */
 #define SPI_DMA_BUF_SIZE 1024
-__attribute__((section(".non_cacheable_d3")))      uint8_t spi4_tx_buf[SPI_DMA_BUF_SIZE];
-__attribute__((section(".non_cacheable_d3")))      uint8_t spi4_rx_buf[SPI_DMA_BUF_SIZE];
+__attribute__((section(".ram_d3"), aligned(32))) uint8_t spi4_tx_buf[SPI_DMA_BUF_SIZE];
+__attribute__((section(".ram_d3"), aligned(32))) uint8_t spi4_rx_buf[SPI_DMA_BUF_SIZE];
 
 /* SD 카드 파일 읽기 전용 버퍼 (D2 캐시 불가 영역에 강제 할당) */
-__attribute__((section(".non_cacheable_d2")))  uint8_t sd_row_buffer[240 * 3];
-__attribute__((section(".non_cacheable_d2")))  uint16_t sd_lcd_buffer[240];
+__attribute__((section(".ram_d2_nocache"), aligned(32))) uint8_t sd_row_buffer[240 * 3];
+__attribute__((section(".ram_d2_nocache"), aligned(32))) uint16_t sd_lcd_buffer[240];
 
 void LCD7789_Test(void) {
 
@@ -479,9 +479,9 @@ void LCD7789_Clear() {
 	LCD7789_Light(900, 250);
 }
 
-static __attribute__((section(".non_cacheable_d2"))) DIR dir;
-static __attribute__((section(".non_cacheable_d2"))) FILINFO fno;
-static __attribute__((section(".non_cacheable_d2"))) FIL file;
+static __attribute__((section(".ram_d2_nocache"), aligned(32))) DIR dir;
+static __attribute__((section(".ram_d2_nocache"), aligned(32))) FILINFO fno;
+static __attribute__((section(".ram_d2_nocache"), aligned(32))) FIL file;
 
 void LCD7789_Display_Random_BMP_From_SD(const TCHAR *address) {
 	FRESULT res;

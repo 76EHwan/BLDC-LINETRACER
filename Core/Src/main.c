@@ -50,7 +50,7 @@
 /* USER CODE BEGIN PV */
 
 /* BDMA 영역(RAM_D3)에 ADC3 수신 버퍼 강제 할당 */
-__attribute__((section(".ram_d3"), aligned(32)))     uint16_t adc3_buffer[3];
+__attribute__((section(".ram_d3"), aligned(32))) uint16_t adc3_buffer[3];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -144,6 +144,8 @@ int main(void)
   MX_TIM7_Init();
   MX_TIM2_Init();
   MX_TIM6_Init();
+  MX_TIM13_Init();
+  MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
 	User_Init();
 
@@ -158,7 +160,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		Menu_ProcessLoop(current_menu);
+		Menu_ProcessLoop();
 	}
   /* USER CODE END 3 */
 }

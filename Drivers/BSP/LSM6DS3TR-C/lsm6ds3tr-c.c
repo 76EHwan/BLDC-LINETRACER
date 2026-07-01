@@ -9,8 +9,6 @@
 
 #include "lsm6ds3tr-c.h"
 
-#define IMU_I2C	&hi2c1
-
 LSM6DS3_Data_t imu_data;
 
 /**

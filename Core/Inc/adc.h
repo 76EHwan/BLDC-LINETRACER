@@ -39,7 +39,8 @@ extern ADC_HandleTypeDef hadc2;
 extern ADC_HandleTypeDef hadc3;
 
 /* USER CODE BEGIN Private defines */
-
+extern uint16_t pADC1_data[3];
+extern uint16_t pADC2_data[3];
 /* USER CODE END Private defines */
 
 void MX_ADC1_Init(void);
@@ -47,9 +48,11 @@ void MX_ADC2_Init(void);
 void MX_ADC3_Init(void);
 
 /* USER CODE BEGIN Prototypes */
+
 __weak void ADC1_IRQ_Handler();
 __weak void ADC2_IRQ_Handler();
 __weak void ADC3_IRQ_Handler();
+
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus

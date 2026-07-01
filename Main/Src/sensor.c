@@ -9,6 +9,7 @@
 #include "user_init.h"
 #include "button.h"
 #include <math.h>
+#include "lsm6ds3tr-c.h"
 #include "cmsis_gcc.h"  // 또는 arm_acle.h
 
 #define SENSOR_TRIG_TIM &htim2
@@ -243,4 +244,16 @@ void Sensor_Raw_Printf() {
 	LCD_Clear();
 	Sensor_Stop();
 	Button_Wait_Release(&btn_k);
+}
+
+void IMU_Test() {
+	uint8_t chipID = 0x0;
+	HAL_I2C_Mem_Read(IMU_I2C, LSM6DS3_ADDR, REG_WHO_AM_I, I2C_MEMADD_SIZE_8BIT,
+			&chipID, 1, 100);
+	LCD_Printf(0, 0, "%x", chipID);
+	Gyro_Calibrate_Z_Only();
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
+		LSM6DS3_ReadGyro_Z_Only(&imu_data);
+		LCD_Printf(0, 1, "%3.3f", imu_data.Gyro_Z);
+	}
 }
