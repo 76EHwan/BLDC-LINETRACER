@@ -766,3 +766,8 @@ void MTR_Speed_FOC() {
 	}
 #endif
 }
+
+void Motor_Set_Speed(float mps_L, float mps_R){
+	foc_L.target_omega = mps_L * INV_TIRE_RADIUS;
+	foc_R.target_omega = mps_R * INV_TIRE_RADIUS;
+}
