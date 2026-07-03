@@ -1,7 +1,7 @@
 #ifndef __FOC_H
 #define __FOC_H
 
-#include "stm32h7xx_hal.h"
+#include "main.h"
 #include "arm_math.h"
 
 #define Speed_TIM_IRQ_Handler TIM13_IRQ_Handler
@@ -20,6 +20,8 @@
 // 공식: VREF / ADC_MAX / CSA_GAIN (또는 Shunt값에 따른 통합 계수)
 #define CURRENT_SCALE           (3.3f / 65536.0f / 0.15f)
 #define FOC_ADC_DMA_LENGTH      3           // DMA 버퍼 길이
+
+#define SPD_DT           0.0005f      // 2kHz
 
 // =========================================================
 // [FOC 제어 핸들 구조체]
@@ -69,6 +71,9 @@ typedef struct {
 	// 8. CMSIS-DSP PID 제어기 인스턴스
 	arm_pid_instance_f32 pid_id;
 	arm_pid_instance_f32 pid_iq;
+
+	float32_t omega_setpoint;
+	float32_t omega_ramp_rate;
 
 } FOC_Handle_t;
 

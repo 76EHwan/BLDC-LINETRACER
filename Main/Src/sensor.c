@@ -8,9 +8,8 @@
 #include "main.h"
 #include "user_init.h"
 #include "button.h"
-#include <math.h>
 #include "lsm6ds3tr-c.h"
-#include "cmsis_gcc.h"  // 또는 arm_acle.h
+#include "cmsis_gcc.h"
 
 #define SENSOR_TRIG_TIM &htim2
 
@@ -19,21 +18,19 @@
 #define SENSOR_PT_EN_FAST()   (SENSOR_PT_EN_GPIO_Port->BSRR = ((uint32_t)SENSOR_PT_EN_Pin << 16U))
 #define SENSOR_PT_DIS_FAST()  (SENSOR_PT_EN_GPIO_Port->BSRR = SENSOR_PT_EN_Pin)
 
-// === 라인 위치 추정 LUT/버퍼 ============================================
-#define LINE_N_SENSORS     16
-#define LINE_N_CANDIDATES  200
-#define LINE_X_MIN        (-1.1f)
-#define LINE_X_MAX        ( 1.1f)
-#define LINE_DX           ((LINE_X_MAX - LINE_X_MIN) / (LINE_N_CANDIDATES - 1))
+// === 라인 위치 추정 (weighted centroid) ================================
+#define LINE_N_SENSORS      16
+
+
+#define LINE_WEIGHT(n)      (uint8_t)(n)
+#define LINE_W_DEADBAND     30u     // 이하 weight는 배경 residual로 보고 무시
+#define LINE_LOST_SUM_MIN   200u    // weight 합이 이하면 라인 상실로 판단
 
 static const float line_sensor_pos[LINE_N_SENSORS] = { -1.0f, -13.0f / 15.0f,
 		-11.0f / 15.0f, -9.0f / 15.0f, -7.0f / 15.0f, -5.0f / 15.0f, -3.0f
 				/ 15.0f, -1.0f / 15.0f, 1.0f / 15.0f, 3.0f / 15.0f, 5.0f
 				/ 15.0f, 7.0f / 15.0f, 9.0f / 15.0f, 11.0f / 15.0f, 13.0f
 				/ 15.0f, 1.0f };
-
-static uint8_t line_mu_lut[LINE_N_CANDIDATES][LINE_N_SENSORS] __attribute__((aligned(4)));
-static int32_t line_sse_buf[LINE_N_CANDIDATES];
 
 extern uint16_t adc3_buffer[3];
 
@@ -90,65 +87,25 @@ __STATIC_INLINE void Sensor_Normalize(uint8_t idx) {
 	IR_Sensor.data.normalized[idx] = (result > 255U) ? 255U : (uint8_t) result;
 }
 
-// 거리 -> 예상 normalized 값 [0, 1]. 블로그 예제: max(1 - 3|d|, 0).
-// 실측 응답 곡선 있으면 이 함수만 교체. LUT 재초기화 필요.
-static float Sensor_Line_Mu(float d) {
-	float v = 1.0f - 3.0f * fabsf(d);
-	return v > 0.0f ? v : 0.0f;
-}
-
-void Sensor_Line_LUT_Init(void) {
-	for (int j = 0; j < LINE_N_CANDIDATES; j++) {
-		float x = LINE_X_MIN + j * LINE_DX;
-		for (int i = 0; i < LINE_N_SENSORS; i++) {
-			float v = Sensor_Line_Mu(x - line_sensor_pos[i]) * 255.0f;
-			line_mu_lut[j][i] = (uint8_t) (v + 0.5f);
-		}
-	}
-}
-
+// weighted centroid. weight = 라인에서 커지는 값, 위치를 weight로 가중 평균.
+// 라인 상실(weight 합 부족) 시 마지막 위치 유지.
 float Sensor_Line_Estimate(void) {
-	// volatile normalized snapshot (volatile read 횟수 축소 + 일관성)
-	uint32_t v_packed[LINE_N_SENSORS / 4];
-	// volatile snapshot을 4-byte word로 패킹
-	for (int i = 0; i < LINE_N_SENSORS / 4; i++) {
-		v_packed[i] = ((uint32_t) IR_Sensor.data.normalized[i * 4 + 0])
-				| ((uint32_t) IR_Sensor.data.normalized[i * 4 + 1] << 8)
-				| ((uint32_t) IR_Sensor.data.normalized[i * 4 + 2] << 16)
-				| ((uint32_t) IR_Sensor.data.normalized[i * 4 + 3] << 24);
-	}
+	float num = 0.0f;
+	uint32_t den = 0;
 
-	int best_j = 0;
-	uint32_t best_sad = UINT32_MAX;
-
-	for (int j = 0; j < LINE_N_CANDIDATES; j++) {
-		const uint32_t *row = (const uint32_t*) line_mu_lut[j];
-		uint32_t sad = 0;
-		sad = __USADA8(v_packed[0], row[0], sad);
-		sad = __USADA8(v_packed[1], row[1], sad);
-		sad = __USADA8(v_packed[2], row[2], sad);
-		sad = __USADA8(v_packed[3], row[3], sad);
-		line_sse_buf[j] = (int32_t) sad;
-		if (sad < best_sad) {
-			best_sad = sad;
-			best_j = j;
+	for (int i = 0; i < LINE_N_SENSORS; i++) {
+		uint8_t w = LINE_WEIGHT(IR_Sensor.data.normalized[i]);
+		if (w < LINE_W_DEADBAND) {
+			continue;
 		}
+		num += (float) w * line_sensor_pos[i];
+		den += w;
 	}
 
-	float x = LINE_X_MIN + best_j * LINE_DX;
-
-	// parabolic sub-pixel refinement
-	if (best_j > 0 && best_j < LINE_N_CANDIDATES - 1) {
-		int32_t lo = line_sse_buf[best_j - 1];
-		int32_t mid = best_sad;
-		int32_t hi = line_sse_buf[best_j + 1];
-		int32_t denom = lo - 2 * mid + hi;
-		if (denom > 0) {
-			float delta = 0.5f * (float) (lo - hi) / (float) denom;
-			x += delta * LINE_DX;
-		}
+	if (den < LINE_LOST_SUM_MIN) {
+		return IR_Sensor.data.line_position;   // 상실: 마지막 위치 hold
 	}
-	return x;
+	return num / (float) den;
 }
 
 void TIM7_IRQ_Handler() {
@@ -180,6 +137,11 @@ void ADC3_IRQ_Handler() {
 		Sensor_Normalize(idx);
 		Sensor_Normalize(LEFT_MARK_SENSOR_INDEX);
 		Sensor_Normalize(RIGHT_MARK_SENSOR_INDEX);
+
+		// state bit: 이 센서가 라인 위인지. weight(라인에서 큼) > threshold.
+		uint8_t w = LINE_WEIGHT(IR_Sensor.data.normalized[idx]);
+		IR_Sensor.data.state &= ~(1u << idx);
+		IR_Sensor.data.state |= ((uint32_t)(w > IR_Sensor.data.threshold) << idx);
 
 		if (idx == LINE_N_SENSORS - 1) {
 			IR_Sensor.data.line_position = Sensor_Line_Estimate();
@@ -223,7 +185,6 @@ void Sensor_Calibration() {
 		IR_Sensor.data.normalized_coef_bias[i] =
 				(range > 0) ? (uint16_t) ((255U << 8) / range) : 0;
 	}
-	Sensor_Line_LUT_Init();           // ← 추가
 	IR_Sensor.is_calibration = 1;
 	LCD_Clear();
 	Button_Wait_Release(&btn_k);
@@ -240,6 +201,16 @@ void Sensor_Raw_Printf() {
 		LCD_Printf(0, 10, "%02d", IR_Sensor.data.idx);
 		Sensor_Printf(i, IR_Sensor.data.raw);
 		i = (i + 1) % 18;
+		HAL_GPIO_WritePin(SENSOR_LED_L_GPIO_Port, SENSOR_LED_L_Pin, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(SENSOR_LED_R_GPIO_Port, SENSOR_LED_R_Pin, GPIO_PIN_RESET);
+
+		if(Button_Get_Input() == INPUT_CMD_L_HOLD) {
+			HAL_GPIO_WritePin(SENSOR_LED_L_GPIO_Port, SENSOR_LED_L_Pin, GPIO_PIN_SET);
+		}
+
+		if(Button_Get_Input() == INPUT_CMD_R_HOLD) {
+			HAL_GPIO_WritePin(SENSOR_LED_R_GPIO_Port, SENSOR_LED_R_Pin, GPIO_PIN_SET);
+		}
 	}
 	LCD_Clear();
 	Sensor_Stop();
@@ -247,13 +218,14 @@ void Sensor_Raw_Printf() {
 }
 
 void IMU_Test() {
-	uint8_t chipID = 0x0;
-	HAL_I2C_Mem_Read(IMU_I2C, LSM6DS3_ADDR, REG_WHO_AM_I, I2C_MEMADD_SIZE_8BIT,
-			&chipID, 1, 100);
-	LCD_Printf(0, 0, "%x", chipID);
-	Gyro_Calibrate_Z_Only();
-	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		LSM6DS3_ReadGyro_Z_Only(&imu_data);
-		LCD_Printf(0, 1, "%3.3f", imu_data.Gyro_Z);
+	for (uint16_t a = 0; a < 128; a++) {
+		if (HAL_I2C_IsDeviceReady(IMU_I2C, a << 1, 2, 10) == HAL_OK) {
+			LCD_Printf(0, 0, "found:%02x", a);
+			break;
+		}
+		LCD_Printf(0, 1, "Not fount 404");
+	}
+	while (1) {
+		LED_Test();
 	}
 }

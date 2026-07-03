@@ -50,7 +50,7 @@
 /* USER CODE BEGIN PV */
 
 /* BDMA 영역(RAM_D3)에 ADC3 수신 버퍼 강제 할당 */
-__attribute__((section(".ram_d3"), aligned(32))) uint16_t adc3_buffer[3];
+__attribute__((section(".ram_d3"), aligned(32)))    uint16_t adc3_buffer[3];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -69,7 +69,7 @@ void LED_Blink(uint32_t delay) {
 	HAL_GPIO_WritePin(E3_GPIO_Port, E3_Pin, GPIO_PIN_SET);
 	HAL_Delay(delay - 1);
 	HAL_GPIO_WritePin(E3_GPIO_Port, E3_Pin, GPIO_PIN_RESET);
-	HAL_Delay(500 - 1);
+	HAL_Delay(delay - 1);
 }
 
 void LED_Test() {
@@ -147,10 +147,12 @@ int main(void)
   MX_TIM13_Init();
   MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
+	HAL_GPIO_WritePin(SENSOR_LED_L_GPIO_Port, SENSOR_LED_L_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(SENSOR_LED_R_GPIO_Port, SENSOR_LED_R_Pin, GPIO_PIN_SET);
 	User_Init();
-
+	HAL_GPIO_WritePin(SENSOR_LED_L_GPIO_Port, SENSOR_LED_L_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(SENSOR_LED_R_GPIO_Port, SENSOR_LED_R_Pin, GPIO_PIN_RESET);
 	LED_OFF;
-
   /* USER CODE END 2 */
 
   /* Infinite loop */

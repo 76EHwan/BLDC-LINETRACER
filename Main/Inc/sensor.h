@@ -24,7 +24,7 @@ typedef struct {
 	uint16_t blackmax[NUM_SENSORS];
 	uint16_t normalized_coef_bias[NUM_SENSORS];
 	uint16_t normalized[NUM_SENSORS];
-	uint16_t state;
+	uint32_t state;
 	float_t line_position;
 	uint16_t threshold;
 } SensorDataTypeDef;

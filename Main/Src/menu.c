@@ -1,9 +1,10 @@
 /*
  * menu.c
  */
-
 #include "main.h"
+
 #include "menu.h"
+
 #include "user_init.h"
 #include "bootloader.h"
 #include "button.h"
@@ -25,6 +26,7 @@ typedef struct {
 	uint32_t func;         /* callback 주소 */
 	uint32_t reserved[6];  /* 32바이트 맞춤 */
 } LU_Record_t;
+
 _Static_assert(sizeof(LU_Record_t) == LU_SLOT_SIZE, "record must be 32 bytes");
 
 static void LastUsed_Execute(void);
