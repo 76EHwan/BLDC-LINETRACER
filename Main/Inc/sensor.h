@@ -35,7 +35,7 @@ typedef struct {
 } Sensor_TypeDef;
 
 extern volatile Sensor_TypeDef IR_Sensor;
-
+extern uint16_t adc3_buffer[3];
 
 void Sensor_Calibration();
 void Sensor_Raw_Printf();

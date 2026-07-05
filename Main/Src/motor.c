@@ -223,7 +223,9 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 	foc_R.enc_prev_cnt = (uint16_t) foc_R.LPTIMx->CNT;
 	// enc_dir은 위에서 이미 -1로 확정됨 (여기서 재대입하지 않음)
 
-	MTR_Start();
+	if (mode != FOC_MODE_SVPWM_NO_SPIN) {
+		MTR_Start();
+	}
 	if (mode == FOC_MODE_SPEED_LOOP) {
 		HAL_TIM_Base_Start_IT(&htim13);
 	}
@@ -706,14 +708,14 @@ void MTR_Speed_FOC() {
 		case INPUT_CMD_R_SINGLE:
 		case INPUT_CMD_R_HOLD:
 			omega += 25.0f;
-			if (omega > 1000.0f)
-				omega = 1000.0f;
+			if (omega > 2000.0f)
+				omega = 2000.0f;
 			break;
 		case INPUT_CMD_L_SINGLE:
 		case INPUT_CMD_L_HOLD:
 			omega -= 25.0f;
-			if (omega < -1000.0f)
-				omega = -1000.0f;
+			if (omega < -2000.0f)
+				omega = -2000.0f;
 			break;
 		case INPUT_CMD_K_SINGLE:
 			sel = (sel + 1) % 4;

@@ -10,7 +10,7 @@
 extern DAC_HandleTypeDef hdac1;
 extern TIM_HandleTypeDef htim6;
 
-static uint32_t dac_buf[2] = { 0, 750 };
+static uint32_t dac_buf[2] = { 0, 4096 >> 2 };
 
 void Buzzer_Init(void) {
 	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_12B_R, 0);
