@@ -19,7 +19,7 @@
 // 전류 센싱 스케일 팩터 (ADC Raw 값 -> 실제 전류 A 로 변환)
 // 공식: VREF / ADC_MAX / CSA_GAIN (또는 Shunt값에 따른 통합 계수)
 #define CURRENT_SCALE           (3.3f / 65536.0f / 0.15f)
-#define FOC_ADC_DMA_LENGTH      3           // DMA 버퍼 길이
+#define FOC_ADC_DMA_LENGTH      1           // DMA 버퍼 길이
 
 #define SPD_DT           0.0005f      // 2kHz
 
@@ -89,10 +89,10 @@ extern uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 void FOC_ADC_Start(void);
 void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_TypeDef *TIMx, ADC_TypeDef *ADCx,
 		LPTIM_TypeDef *LPTIMx);
-void FOC_Calibrate_Offset(FOC_Handle_t *hfoc, volatile uint16_t *adc_buf);
+void FOC_Calibrate_Offset(FOC_Handle_t *hfoc);
 void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc);
 void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc);
-void FOC_Execute_Loop(FOC_Handle_t *hfoc, volatile uint16_t *adc_buf);
+void FOC_Execute_Loop(FOC_Handle_t *hfoc);
 void FOC_Speed_Loop(FOC_Handle_t *hfoc);
 void Speed_TIM_IRQ_Handler(void);
 

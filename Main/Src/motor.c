@@ -177,8 +177,8 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 
 #ifdef FOC_CONTROL
 		LCD_Printf(0, 0, "Calibrating...");
-		FOC_Calibrate_Offset(&foc_L, adc2_dma_buf);
-		FOC_Calibrate_Offset(&foc_R, adc1_dma_buf);
+		FOC_Calibrate_Offset(&foc_L);
+		FOC_Calibrate_Offset(&foc_R);
 
 		LCD_Printf(0, 0, "Aligning L... ");
 		FOC_Calibrate_Encoder_Offset(&foc_L);
@@ -567,8 +567,8 @@ void MTR_Simple_FOC() {
 		LCD_Printf(0, 8, "IbL:%6.3f", foc_L.I_b);
 		LCD_Printf(0, 9, "IaR:%6.3f", foc_R.I_a);
 		LCD_Printf(0, 10, "IbR:%6.3f", foc_R.I_b);
-		LCD_Printf(0, 11, "r1:%5d %5d", adc1_dma_buf[1], adc1_dma_buf[2]);
-		LCD_Printf(0, 12, "r2:%5d %5d", adc2_dma_buf[1], adc2_dma_buf[2]);
+		LCD_Printf(0, 11, "r1:%5d %5d", (uint16_t) ADC1->JDR1, (uint16_t) ADC1->JDR2);
+		LCD_Printf(0, 12, "r2:%5d %5d", (uint16_t) ADC2->JDR1, (uint16_t) ADC2->JDR2);
 	}
 #endif
 }
@@ -581,7 +581,7 @@ void MTR_Encoder_Test() {
 		LCD_Printf(0, 0, "L:%5d R:%5d", (uint16_t) hlptim2.Instance->CNT,
 				(uint16_t) hlptim1.Instance->CNT);
 		LCD_Printf(0, 1, "eL:%6.3f eR:%6.3f", foc_L.theta_e, foc_R.theta_e);
-		LCD_Printf(0, 2, "AL:%5d AR:%5d", adc2_dma_buf[1], adc1_dma_buf[1]);
+		LCD_Printf(0, 2, "AL:%5d AR:%5d", (uint16_t) ADC2->JDR1, (uint16_t) ADC1->JDR1);
 		LCD_Printf(0, 3, "NFL: %d NFR: %d",
 				HAL_GPIO_ReadPin(MTR_nFAULT_L_GPIO_Port, MTR_nFAULT_L_Pin),
 				HAL_GPIO_ReadPin(MTR_nFAULT_R_GPIO_Port, MTR_nFAULT_R_Pin));

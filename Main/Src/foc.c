@@ -5,7 +5,8 @@
 FOC_Handle_t foc_L;
 FOC_Handle_t foc_R;
 
-// RAM_D2 영역에 강제 할당된 ADC DMA 버퍼 (캐시 일관성 이슈 방지)
+// regular(배터리) DMA 버퍼. 상전류는 injected(JDR)로 읽으므로 여기 안 들어감.
+// 배터리만 쓰면 FOC_ADC_DMA_LENGTH는 1로 줄여도 됨.
 __attribute__((section(".ram_d2_nocache"), aligned(32)))  uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
 __attribute__((section(".ram_d2_nocache"), aligned(32)))  uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
@@ -25,10 +26,18 @@ static inline float32_t FOC_Enc_Cnt(FOC_Handle_t *hfoc) {
 	return (float32_t) raw;
 }
 
-// 1. 하드웨어 트리거 기반 ADC 구동 시작
+// 1. regular(배터리) DMA + injected(상전류) IT 동시 구동 시작
 void FOC_ADC_Start() {
+	// regular DMA 먼저 시작 후, 돌고 있는 ADC에 injected IT를 얹는 순서
+
+	HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
+	HAL_ADCEx_Calibration_Start(&hadc2, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
+
 	HAL_ADC_Start_DMA(&hadc1, (uint32_t*) adc1_dma_buf, FOC_ADC_DMA_LENGTH);
 	HAL_ADC_Start_DMA(&hadc2, (uint32_t*) adc2_dma_buf, FOC_ADC_DMA_LENGTH);
+
+	HAL_ADCEx_InjectedStart_IT(&hadc1);
+	HAL_ADCEx_InjectedStart_IT(&hadc2);
 }
 
 // 2. 모터 제어기 구조체 초기화
@@ -73,14 +82,14 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_TypeDef *TIMx, ADC_TypeDef *ADCx,
 	hfoc->iq_limit = SPD_IQ_LIMIT;
 }
 
-// 3. 전류 센서(ADC) 영점 캘리브레이션 (무부하 상태)
-void FOC_Calibrate_Offset(FOC_Handle_t *hfoc, volatile uint16_t *adc_buf) {
+// 3. 전류 센서(ADC) 영점 캘리브레이션 (무부하, injected JDR 사용)
+void FOC_Calibrate_Offset(FOC_Handle_t *hfoc) {
 	uint32_t sum_a = 0, sum_c = 0;
 	const int N = 500;
 
 	for (int i = 0; i < N; i++) {
-		sum_a += adc_buf[1];
-		sum_c += adc_buf[2];
+		sum_a += (uint16_t) hfoc->ADCx->JDR1;   // rank1 = 상A
+		sum_c += (uint16_t) hfoc->ADCx->JDR2;   // rank2 = 상C
 		HAL_Delay(1);
 	}
 	hfoc->offset_a = (float32_t) (sum_a / N);
@@ -109,7 +118,7 @@ void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc) {
 
 	hfoc->foc_svpwm_en = 1;
 
-	// 4-2. 회전자가 끌려와 물리적으로 멈출 때까지 1.5초 대기
+	// 4-2. 회전자가 끌려와 물리적으로 멈출 때까지 대기
 	HAL_Delay(500);
 
 	// 4-3. 정렬된 상태(전기각 0도)에서 LPTIM 카운터 가독 (방향 보정 적용)
@@ -155,17 +164,17 @@ void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc) {
 	hfoc->theta_e = theta_e;
 }
 
-// 6. 메인 FOC 실행 루프 (ADC 인터럽트에서 주기적 호출)
-void FOC_Execute_Loop(FOC_Handle_t *hfoc, volatile uint16_t *adc_buf) {
+// 6. 메인 FOC 실행 루프 (injected 변환 완료 IRQ에서 주기적 호출)
+void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	if (hfoc->is_running == 0)
 		return;
 
 	// [1] 각도 갱신
 	FOC_Update_Theta_Encoder(hfoc);
 
-	// [2] 3상 전류 측정 및 스케일링 (A 단위)
-	hfoc->I_a = ((float32_t) adc_buf[1] - hfoc->offset_a) * CURRENT_SCALE;
-	hfoc->I_c = ((float32_t) adc_buf[2] - hfoc->offset_c) * CURRENT_SCALE;
+	// [2] injected 변환 결과(JDR)에서 상전류 측정 및 스케일링 (rank1=A, rank2=C)
+	hfoc->I_a = ((float32_t) (uint16_t) hfoc->ADCx->JDR1 - hfoc->offset_a) * CURRENT_SCALE;
+	hfoc->I_c = ((float32_t) (uint16_t) hfoc->ADCx->JDR2 - hfoc->offset_c) * CURRENT_SCALE;
 	hfoc->I_b = -(hfoc->I_a + hfoc->I_c);
 
 	// [3] Clarke Transform
@@ -263,19 +272,21 @@ void FOC_Speed_Loop(FOC_Handle_t *hfoc) {
 // =========================================================
 // [인터럽트 핸들러]
 // =========================================================
-void ADC1_IRQ_Handler() {
-	foc_tick_R++;
-	if (foc_tick_R >= FOC_DECIMATION) {
-		foc_tick_R = 0;
-		FOC_Execute_Loop(&foc_R, adc1_dma_buf);
-	}
-}
-
-void ADC2_IRQ_Handler() {
-	foc_tick_L++;
-	if (foc_tick_L >= FOC_DECIMATION) {
-		foc_tick_L = 0;
-		FOC_Execute_Loop(&foc_L, adc2_dma_buf);
+// injected 변환 완료(JEOS) 콜백이 FOC loop를 구동한다.
+// ADC1=foc_R, ADC2=foc_L
+void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef *hadc) {
+	if (hadc->Instance == ADC1) {
+		foc_tick_R++;
+		if (foc_tick_R >= FOC_DECIMATION) {
+			foc_tick_R = 0;
+			FOC_Execute_Loop(&foc_R);
+		}
+	} else if (hadc->Instance == ADC2) {
+		foc_tick_L++;
+		if (foc_tick_L >= FOC_DECIMATION) {
+			foc_tick_L = 0;
+			FOC_Execute_Loop(&foc_L);
+		}
 	}
 }
 
