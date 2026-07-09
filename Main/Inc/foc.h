@@ -18,10 +18,23 @@
 
 // 전류 센싱 스케일 팩터 (ADC Raw 값 -> 실제 전류 A 로 변환)
 // 공식: VREF / ADC_MAX / CSA_GAIN (또는 Shunt값에 따른 통합 계수)
-#define CURRENT_SCALE           (3.3f / 65536.0f / 0.15f)
+#define CURRENT_CSA_GAIN_MA		300
+#define CURRENT_SCALE           (3.3f / 65536.0f / CURRENT_CSA_GAIN_MA / 1000.f)
 #define FOC_ADC_DMA_LENGTH      1           // DMA 버퍼 길이
 
 #define SPD_DT           0.0005f      // 2kHz
+
+#define MOTOR_PARAM_TERMINAL_RESISTOR		1.92f	// [Ω]
+#define MOTOR_PARAM_TERMINAL_INDUCTANCE		0.129	// [mH]
+#define MOTOR_PARAM_PHASE_RESISTOR			(MOTOR_PARAM_TERMINAL_RESISTOR / 2.0f)
+#define MOTOR_PARAM_PHASE_INDUCTANCE		(MOTOR_PARAM_TERMINAL_INDUCTANCE / 2.0f)
+#define FOC_CONTROL_FREQUENCY 				(240000000.0f / (PWM_PERIOD) / 2.0f)
+#define FOC_CONTROL_DT						(1.0f / (FOC_CONTROL_FREQUENCY))
+#define CURRENT_CONTROL_BANDWIDTH			(((FOC_CONTROL_FREQUENCY) / 50.0f) * 2.0f * PI)
+#define DEFAULT_ID_KP						((CURRENT_CONTROL_BANDWIDTH) * (MOTOR_PARAM_PHASE_INDUCTANCE) / 1000.0f)
+#define DEFAULT_ID_KI						((CURRENT_CONTROL_BANDWIDTH) * (MOTOR_PARAM_PHASE_RESISTOR) * (FOC_CONTROL_DT))
+#define DEFAULT_IQ_KP				DEFAULT_ID_KP
+#define DEFAULT_IQ_KI				DEFAULT_ID_KI
 
 // =========================================================
 // [FOC 제어 핸들 구조체]

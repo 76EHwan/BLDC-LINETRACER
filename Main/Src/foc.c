@@ -60,13 +60,13 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_TypeDef *TIMx, ADC_TypeDef *ADCx,
 	hfoc->theta_e = 0.0f;
 
 	// 전류 PID 게인 설정 (실제 모터 특성에 맞게 Kp, Ki 튜닝 필요)
-	hfoc->pid_id.Kp = 0.4f;
-	hfoc->pid_id.Ki = 0.01f;
+	hfoc->pid_id.Kp = DEFAULT_ID_KP;
+	hfoc->pid_id.Ki = DEFAULT_ID_KI;
 	hfoc->pid_id.Kd = 0.f;
 	arm_pid_init_f32(&hfoc->pid_id, 1);
 
-	hfoc->pid_iq.Kp = 0.4f;
-	hfoc->pid_iq.Ki = 0.01f;
+	hfoc->pid_iq.Kp = DEFAULT_IQ_KP;
+	hfoc->pid_iq.Ki = DEFAULT_IQ_KI;
 	hfoc->pid_iq.Kd = 0.f;
 	arm_pid_init_f32(&hfoc->pid_iq, 1);
 
@@ -76,8 +76,8 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_TypeDef *TIMx, ADC_TypeDef *ADCx,
 	hfoc->enc_prev_cnt = (uint16_t) hfoc->LPTIMx->CNT;
 	hfoc->speed_loop_en = 0;
 	hfoc->enc_dir = +1;          // 기본 정방향. 반전 필요 시 호출부에서 -1로 덮어씀
-	hfoc->spd_Kp = 0.025f;
-	hfoc->spd_Ki = 0.5f;
+	hfoc->spd_Kp = 0.001f;
+	hfoc->spd_Ki = 0.005f;
 	hfoc->spd_integ = 0.0f;
 	hfoc->iq_limit = SPD_IQ_LIMIT;
 }

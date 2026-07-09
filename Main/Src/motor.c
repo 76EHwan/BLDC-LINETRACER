@@ -1,9 +1,8 @@
 #include "user_init.h"
 #include "button.h"
 #include "motor.h"
-#include "foc.h"
-#include "lptim.h"
 #include "math.h"
+#include "foc.h"
 
 #ifdef FOC_CONTROL
 #include "drv8316crq1.h"
@@ -356,12 +355,17 @@ void MTR_Update_Setup() {
 	MTR_FOC_PWM_DIS()
 	;
 #endif
+	FOC_Init_Motor(&foc_L, TIM3, ADC2, LPTIM2);
+	FOC_Init_Motor(&foc_R, TIM4, ADC1, LPTIM1);
+
 	MTR_SLEEP(MTR_L);
 	MTR_SLEEP(MTR_R);
+
 	LCD_Printf(0, 0, "Diver Sleep");
 	HAL_Delay(100);
 	MTR_WAKEUP(MTR_L);
 	MTR_WAKEUP(MTR_R);
+
 	LCD_Printf(0, 1, "Driver Wakeup");
 	HAL_Delay(100);
 
@@ -374,6 +378,8 @@ void MTR_Update_Setup() {
 
 	LCD_Printf(0, 2, "Driver Update");
 	HAL_Delay(1000);
+
+	LCD_Clear();
 #ifdef FOC_CONTROL
 	MTR_FOC_PWM_EN()
 	;
@@ -567,8 +573,10 @@ void MTR_Simple_FOC() {
 		LCD_Printf(0, 8, "IbL:%6.3f", foc_L.I_b);
 		LCD_Printf(0, 9, "IaR:%6.3f", foc_R.I_a);
 		LCD_Printf(0, 10, "IbR:%6.3f", foc_R.I_b);
-		LCD_Printf(0, 11, "r1:%5d %5d", (uint16_t) ADC1->JDR1, (uint16_t) ADC1->JDR2);
-		LCD_Printf(0, 12, "r2:%5d %5d", (uint16_t) ADC2->JDR1, (uint16_t) ADC2->JDR2);
+		LCD_Printf(0, 11, "r1:%5d %5d", (uint16_t) ADC1->JDR1,
+				(uint16_t) ADC1->JDR2);
+		LCD_Printf(0, 12, "r2:%5d %5d", (uint16_t) ADC2->JDR1,
+				(uint16_t) ADC2->JDR2);
 	}
 #endif
 }
@@ -581,7 +589,8 @@ void MTR_Encoder_Test() {
 		LCD_Printf(0, 0, "L:%5d R:%5d", (uint16_t) hlptim2.Instance->CNT,
 				(uint16_t) hlptim1.Instance->CNT);
 		LCD_Printf(0, 1, "eL:%6.3f eR:%6.3f", foc_L.theta_e, foc_R.theta_e);
-		LCD_Printf(0, 2, "AL:%5d AR:%5d", (uint16_t) ADC2->JDR1, (uint16_t) ADC1->JDR1);
+		LCD_Printf(0, 2, "AL:%5d AR:%5d", (uint16_t) ADC2->JDR1,
+				(uint16_t) ADC1->JDR1);
 		LCD_Printf(0, 3, "NFL: %d NFR: %d",
 				HAL_GPIO_ReadPin(MTR_nFAULT_L_GPIO_Port, MTR_nFAULT_L_Pin),
 				HAL_GPIO_ReadPin(MTR_nFAULT_R_GPIO_Port, MTR_nFAULT_R_Pin));
@@ -607,6 +616,10 @@ void MTR_Current_Tune_Loop() {
 
 	// 전류 제어를 위한 FOC 구동 모드
 	MTR_Setup_And_Start(FOC_MODE_SVPWM_SPIN);
+	foc_L.pid_iq.Kp = 0.f;
+	foc_L.pid_iq.Ki = 0.f;
+	foc_R.pid_iq.Kp = 0.f;
+	foc_R.pid_iq.Ki = 0.f;
 
 	uint32_t last_toggle_time = HAL_GetTick();
 	uint8_t toggle_state = 0;
@@ -698,8 +711,8 @@ void MTR_Speed_FOC() {
 
 	const float step_iq_kp = 0.05f;
 	const float step_iq_ki = 0.005f;
-	const float step_spd_kp = 0.01f;
-	const float step_spd_ki = 0.01f;
+	const float step_spd_kp = 0.0001f;
+	const float step_spd_ki = 0.0001f;
 
 	while (1) {
 		bt = Button_Get_Input();
@@ -790,8 +803,8 @@ void MTR_Speed_FOC() {
 
 		LCD_Printf(0, 0, "%cIqKp:%6.3f", sel == 0 ? '>' : ' ', foc_L.pid_iq.Kp);
 		LCD_Printf(0, 1, "%cIqKi:%6.3f", sel == 1 ? '>' : ' ', foc_L.pid_iq.Ki);
-		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ', foc_L.spd_Kp);
-		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ', foc_L.spd_Ki);
+		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ', foc_L.spd_Kp*1000);
+		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ', foc_L.spd_Ki*1000);
 		LCD_Printf(0, 5, "ref:%6.1f", omega);
 		LCD_Printf(0, 6, "wL :%6.1f", foc_L.omega_e_meas);
 		LCD_Printf(0, 7, "wR :%6.1f", foc_R.omega_e_meas);
