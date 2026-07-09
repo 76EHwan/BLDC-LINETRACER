@@ -2,8 +2,12 @@
 #define __FOC_H
 
 #include "main.h"
+#include "tim.h"
 #include "arm_math.h"
 
+#define TIM_SPEED_LOOP	&htim13
+#define TIM_MTR_LEFT	&htim3
+#define TIM_MTR_RIGHT	&htim4
 #define Speed_TIM_IRQ_Handler TIM13_IRQ_Handler
 
 // =========================================================
@@ -41,9 +45,9 @@
 // =========================================================
 typedef struct {
 	// 1. 하드웨어 포인터
-	TIM_TypeDef *TIMx;      // PWM 타이머 (TIM3, TIM4)
-	ADC_TypeDef *ADCx;      // 전류 센싱 ADC (ADC1, ADC2)
-	LPTIM_TypeDef *LPTIMx;    // 엔코더 타이머 (LPTIM1, LPTIM2)
+	TIM_HandleTypeDef *TIMx;      // PWM 타이머 (TIM3, TIM4)
+	ADC_HandleTypeDef *ADCx;      // 전류 센싱 ADC (ADC1, ADC2)
+	LPTIM_HandleTypeDef *LPTIMx;    // 엔코더 타이머 (LPTIM1, LPTIM2)
 
 	// 2. 제어 상태 및 플래그
 	uint8_t is_running;   // 제어 루프 구동 여부
@@ -100,8 +104,8 @@ extern uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
 extern uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
 void FOC_ADC_Start(void);
-void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_TypeDef *TIMx, ADC_TypeDef *ADCx,
-		LPTIM_TypeDef *LPTIMx);
+void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx, ADC_HandleTypeDef *ADCx,
+		LPTIM_HandleTypeDef *LPTIMx);
 void FOC_Calibrate_Offset(FOC_Handle_t *hfoc);
 void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc);
 void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc);

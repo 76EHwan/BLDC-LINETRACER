@@ -7,8 +7,8 @@ FOC_Handle_t foc_R;
 
 // regular(배터리) DMA 버퍼. 상전류는 injected(JDR)로 읽으므로 여기 안 들어감.
 // 배터리만 쓰면 FOC_ADC_DMA_LENGTH는 1로 줄여도 됨.
-__attribute__((section(".ram_d2_nocache"), aligned(32)))  uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
-__attribute__((section(".ram_d2_nocache"), aligned(32)))  uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
+__attribute__((section(".ram_d2_nocache"), aligned(32)))   uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
+__attribute__((section(".ram_d2_nocache"), aligned(32)))   uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
 #define FOC_DECIMATION 2
 static uint8_t foc_tick_L = 0;
@@ -19,7 +19,7 @@ static uint8_t foc_tick_R = 0;
 
 // 엔코더 방향 보정: 반전 시 (RES - raw)로 미러링한 카운트 반환
 static inline float32_t FOC_Enc_Cnt(FOC_Handle_t *hfoc) {
-	uint16_t raw = (uint16_t) hfoc->LPTIMx->CNT;
+	uint16_t raw = (uint16_t) hfoc->LPTIMx->Instance->CNT;
 	if (hfoc->enc_dir < 0) {
 		return (float32_t) ENCODER_RESOLUTION - (float32_t) raw;
 	}
@@ -41,8 +41,8 @@ void FOC_ADC_Start() {
 }
 
 // 2. 모터 제어기 구조체 초기화
-void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_TypeDef *TIMx, ADC_TypeDef *ADCx,
-		LPTIM_TypeDef *LPTIMx) {
+void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx, ADC_HandleTypeDef *ADCx,
+		LPTIM_HandleTypeDef *LPTIMx) {
 	hfoc->TIMx = TIMx;
 	hfoc->ADCx = ADCx;
 	hfoc->LPTIMx = LPTIMx;
@@ -73,7 +73,7 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_TypeDef *TIMx, ADC_TypeDef *ADCx,
 	// 속도 루프 + 방향 보정 초기화
 	hfoc->omega_e_meas = 0.0f;
 	hfoc->target_omega = 0.0f;
-	hfoc->enc_prev_cnt = (uint16_t) hfoc->LPTIMx->CNT;
+	hfoc->enc_prev_cnt = (uint16_t) hfoc->LPTIMx->Instance->CNT;
 	hfoc->speed_loop_en = 0;
 	hfoc->enc_dir = +1;          // 기본 정방향. 반전 필요 시 호출부에서 -1로 덮어씀
 	hfoc->spd_Kp = 0.0006f;
@@ -88,8 +88,8 @@ void FOC_Calibrate_Offset(FOC_Handle_t *hfoc) {
 	const int N = 500;
 
 	for (int i = 0; i < N; i++) {
-		sum_a += (uint16_t) hfoc->ADCx->JDR1;   // rank1 = 상A
-		sum_c += (uint16_t) hfoc->ADCx->JDR2;   // rank2 = 상C
+		sum_a += (uint16_t) hfoc->ADCx->Instance->JDR1;   // rank1 = 상A
+		sum_c += (uint16_t) hfoc->ADCx->Instance->JDR2;   // rank2 = 상C
 		HAL_Delay(1);
 	}
 	hfoc->offset_a = (float32_t) (sum_a / N);
@@ -112,9 +112,9 @@ void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc) {
 	float32_t duty_c = (v_c / MOTOR_RATED_VOLTAGE) * PWM_PERIOD
 			+ PWM_HALF_PERIOD;
 
-	hfoc->TIMx->CCR1 = (uint32_t) duty_a;
-	hfoc->TIMx->CCR2 = (uint32_t) duty_b;
-	hfoc->TIMx->CCR3 = (uint32_t) duty_c;
+	hfoc->TIMx->Instance->CCR1 = (uint32_t) duty_a;
+	hfoc->TIMx->Instance->CCR2 = (uint32_t) duty_b;
+	hfoc->TIMx->Instance->CCR3 = (uint32_t) duty_c;
 
 	hfoc->foc_svpwm_en = 1;
 
@@ -138,15 +138,15 @@ void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc) {
 	}
 
 	// 4-5. 정렬 종료 및 출력 중립(0V) 복구
-	hfoc->TIMx->CCR1 = (uint32_t) PWM_HALF_PERIOD;
-	hfoc->TIMx->CCR2 = (uint32_t) PWM_HALF_PERIOD;
-	hfoc->TIMx->CCR3 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc->TIMx->Instance->CCR1 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc->TIMx->Instance->CCR2 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc->TIMx->Instance->CCR3 = (uint32_t) PWM_HALF_PERIOD;
 	hfoc->foc_svpwm_en = 0;
 
 	HAL_Delay(500);
 
 	// 정렬 중 변한 CNT를 속도 루프 기준으로 동기화 (raw 기준, 차분과 짝 맞춤)
-	hfoc->enc_prev_cnt = (uint16_t) hfoc->LPTIMx->CNT;
+	hfoc->enc_prev_cnt = (uint16_t) hfoc->LPTIMx->Instance->CNT;
 }
 
 // 5. 실시간 LPTIM 엔코더 전기각 갱신 함수 (방향 보정 적용)
@@ -173,8 +173,10 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	FOC_Update_Theta_Encoder(hfoc);
 
 	// [2] injected 변환 결과(JDR)에서 상전류 측정 및 스케일링 (rank1=A, rank2=C)
-	hfoc->I_a = ((float32_t) (uint16_t) hfoc->ADCx->JDR1 - hfoc->offset_a) * CURRENT_SCALE;
-	hfoc->I_c = ((float32_t) (uint16_t) hfoc->ADCx->JDR2 - hfoc->offset_c) * CURRENT_SCALE;
+	hfoc->I_a = ((float32_t) (uint16_t) hfoc->ADCx->Instance->JDR1 - hfoc->offset_a)
+			* CURRENT_SCALE;
+	hfoc->I_c = ((float32_t) (uint16_t) hfoc->ADCx->Instance->JDR2 - hfoc->offset_c)
+			* CURRENT_SCALE;
 	hfoc->I_b = -(hfoc->I_a + hfoc->I_c);
 
 	// [3] Clarke Transform
@@ -224,9 +226,9 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 
 	// [9] 하드웨어 타이머 레지스터 적용
 	if (hfoc->foc_svpwm_en) {
-		hfoc->TIMx->CCR1 = (uint32_t) duty_a;
-		hfoc->TIMx->CCR2 = (uint32_t) duty_b;
-		hfoc->TIMx->CCR3 = (uint32_t) duty_c;
+		hfoc->TIMx->Instance->CCR1 = (uint32_t) duty_a;
+		hfoc->TIMx->Instance->CCR2 = (uint32_t) duty_b;
+		hfoc->TIMx->Instance->CCR3 = (uint32_t) duty_c;
 	}
 }
 
@@ -236,7 +238,7 @@ void FOC_Speed_Loop(FOC_Handle_t *hfoc) {
 		return;
 
 	// [1] raw CNT 차분 (16비트 wrap 자동 처리) 후 방향 부호 적용
-	uint16_t cnt = (uint16_t) hfoc->LPTIMx->CNT;
+	uint16_t cnt = (uint16_t) hfoc->LPTIMx->Instance->CNT;
 	int16_t delta = (int16_t) (cnt - hfoc->enc_prev_cnt);
 	hfoc->enc_prev_cnt = cnt;
 	if (hfoc->enc_dir < 0)

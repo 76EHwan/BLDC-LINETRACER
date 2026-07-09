@@ -18,8 +18,6 @@ typedef enum {
 	FOC_MODE_SPEED_LOOP		= 3, // 모터 구동 O, SVPWM 연산 O (속도 Closed Loop 실행/주행용)
 } FOC_DriveMode_t;
 
-
-
 void MTR_Read_Register(void);
 void MTR_Simple_Control(void);
 void MTR_Update_Setup(void);

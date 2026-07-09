@@ -20,8 +20,8 @@ void User_Init() {
 	LSM6DS3_Init();
 #ifdef FOC_CONTROL
 	MX_DRV8316C_Init();
-	FOC_Init_Motor(&foc_L, TIM3, ADC2, LPTIM2);
-	FOC_Init_Motor(&foc_R, TIM4, ADC1, LPTIM1);
+	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
+	FOC_Init_Motor(&foc_R, &htim4, &hadc1, &hlptim1);
 
 #endif
 

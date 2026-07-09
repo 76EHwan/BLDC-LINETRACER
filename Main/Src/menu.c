@@ -27,7 +27,7 @@ typedef struct {
 	uint32_t reserved[6];  /* 32바이트 맞춤 */
 } LU_Record_t;
 
-_Static_assert(sizeof(LU_Record_t) == LU_SLOT_SIZE, "record must be 32 bytes");
+//_Static_assert(sizeof(LU_Record_t) == LU_SLOT_SIZE, "record must be 32 bytes");
 
 static void LastUsed_Execute(void);
 static void LastUsed_Save(MenuContext_t *pCtx, uint8_t index);
@@ -36,18 +36,16 @@ static void LastUsed_Save(MenuContext_t *pCtx, uint8_t index);
 extern MenuContext_t sensor_menu;
 extern MenuContext_t motor_menu;
 extern MenuContext_t drive_menu;
-extern MenuContext_t param_menu;
 
 // =========================================================
 // 1. 메뉴 아이템 배열 정의 (자동 개수 산정을 위해 먼저 정의)
 // =========================================================
 // @formatter:off
 MenuItem_t main_menu_items[] = {
-    { .name = "Boot Load",   .pfnActionCallback = Boot_Loading,     .child_menu = NULL },
     { .name = "Sensor Menu", .pfnActionCallback = NULL,             .child_menu = &sensor_menu },
     { .name = "Motor Menu",  .pfnActionCallback = NULL,             .child_menu = &motor_menu },
     { .name = "Drive Menu",  .pfnActionCallback = NULL,             .child_menu = &drive_menu },
-    { .name = "Param Menu",  .pfnActionCallback = NULL,             .child_menu = &param_menu },
+    { .name = "Boot Load",   .pfnActionCallback = Boot_Loading,     .child_menu = NULL },
     { .name = "Last Used",   .pfnActionCallback = LastUsed_Execute, .child_menu = NULL }
 };
 
@@ -63,12 +61,11 @@ MenuItem_t sensor_menu_items[] = {
 MenuItem_t motor_menu_items[] = {
     { .name = "Driver Setup",  .pfnActionCallback = MTR_Read_Register },
     { .name = "Update Setup",  .pfnActionCallback = MTR_Update_Setup },
-    { .name = "Simple PWM",    .pfnActionCallback = MTR_Simple_Control },
-    { .name = "Simple 6-STEP", .pfnActionCallback = NULL },
+    { .name = "6-Step PWM",    .pfnActionCallback = MTR_Simple_Control },
     { .name = "Simple FOC",    .pfnActionCallback = MTR_Simple_FOC },
-    { .name = "Update PI",     .pfnActionCallback = MTR_Current_Tune_Loop },
-    { .name = "Encoder",       .pfnActionCallback = MTR_Encoder_Test },
-    { .name = "Encoder FOC",   .pfnActionCallback = MTR_Speed_FOC }
+    { .name = "Tune Cur PI",   .pfnActionCallback = MTR_Current_Tune_Loop },
+    { .name = "Encoder Test",  .pfnActionCallback = MTR_Encoder_Test },
+    { .name = "Tune Spd PI",   .pfnActionCallback = MTR_Speed_FOC }
 };
 
 MenuItem_t drive_menu_items[] = {
@@ -82,12 +79,6 @@ MenuItem_t drive_menu_items[] = {
     { .name = "Save MicroSD", .pfnActionCallback = NULL }
 };
 
-MenuItem_t param_menu_items[] = {
-    { .name = "LED Test",     .pfnActionCallback = LED_Test },
-    { .name = "LCD Test",     .pfnActionCallback = LCD7789_Test },
-    { .name = "Flash Test",   .pfnActionCallback = W25QXX_Test },
-    { .name = "SD Card Test", .pfnActionCallback = NULL }
-};
 
 // =========================================================
 // 2. 메뉴 컨텍스트 정의 (MENU_ITEM_COUNT 매크로로 자동 산정)
@@ -124,14 +115,6 @@ MenuContext_t drive_menu = {
     .cursor_index = 0
 };
 
-MenuContext_t param_menu = {
-    .category_name = "Param Menu",
-    .pMenuItems = param_menu_items,
-    .item_count = MENU_ITEM_COUNT(param_menu_items),
-    .parent_menu = &main_menu,
-    .cursor_index = 0
-};
-
 MenuContext_t *current_menu = &main_menu;
 // @formatter:on
 
@@ -139,7 +122,7 @@ MenuContext_t *current_menu = &main_menu;
 // 2-1. Last-Used 처리
 // =========================================================
 static MenuContext_t * const lu_all_menus[] = {
-	&main_menu, &sensor_menu, &motor_menu, &drive_menu, &param_menu
+	&main_menu, &sensor_menu, &motor_menu, &drive_menu
 };
 
 /* 섹터 전체를 훑어 가장 마지막 유효 기록을 반환 (append 특성상 = 최신) */

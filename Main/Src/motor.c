@@ -4,7 +4,6 @@
 #include "math.h"
 #include "foc.h"
 
-#ifdef FOC_CONTROL
 #include "drv8316crq1.h"
 
 #define MTR_L &DRV8316C_L
@@ -32,112 +31,45 @@
 #define MTR_REG_CTRL_5    DRV_REG_CTRL_5
 #define MTR_REG_CTRL_6    DRV_REG_CTRL_6
 #define MTR_REG_CTRL_10   DRV_REG_CTRL_10
-#endif
 
-#ifdef SENSOR_TRAP_CONTROL
-#include "mct8316z.h"
+void MTR_TIM_Start(FOC_Handle_t *hfoc) {
+	__HAL_TIM_SET_COMPARE(hfoc->TIMx, TIM_CHANNEL_1, 0);
+	__HAL_TIM_SET_COMPARE(hfoc->TIMx, TIM_CHANNEL_2, 0);
+	__HAL_TIM_SET_COMPARE(hfoc->TIMx, TIM_CHANNEL_3, 0);
+	__HAL_TIM_SET_COMPARE(hfoc->TIMx, TIM_CHANNEL_4, 4800 - ADC_READ_TIMING);
 
-#define MTR_L &MCT8316Z_L
-#define MTR_R &MCT8316Z_R
-
-#define MTR_ReadRegister   MCT8316Z_ReadRegister
-#define MTR_UpdateRegister MCT8316Z_ApplyDefaultConfig
-#define MTR_REG_IC_STATUS  MCT_REG_IC_STATUS
-#define MTR_REG_STATUS_1   MCT_REG_STATUS_1
-#define MTR_REG_STATUS_2   MCT_REG_STATUS_2
-#define MTR_REG_CTRL_2     MCT_REG_CTRL_2
-#define MTR_REG_CTRL_3     MCT_REG_CTRL_3
-#define MTR_REG_CTRL_4     MCT_REG_CTRL_4
-#define MTR_REG_CTRL_5     MCT_REG_CTRL_5
-#define MTR_REG_CTRL_6     MCT_REG_CTRL_6
-#define MTR_REG_CTRL_7     MCT_REG_CTRL_7
-#define MTR_REG_CTRL_8     MCT_REG_CTRL_8
-#define MTR_REG_CTRL_9     MCT_REG_CTRL_9
-#endif
-
-// ====================================================================
-// 공통 제어 함수 모음
-// ====================================================================
-
-void MTR_L_TIM_Start() {
-	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
-	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
-	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);
-	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_4, 4790);
-
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
-	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
+	HAL_TIM_PWM_Start(hfoc->TIMx, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(hfoc->TIMx, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(hfoc->TIMx, TIM_CHANNEL_3);
+	HAL_TIM_PWM_Start(hfoc->TIMx, TIM_CHANNEL_4);
 }
 
-void MTR_L_TIM_Stop() {
-	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0);
-	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 0);
-	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 0);
+void MTR_TIM_Stop(FOC_Handle_t *hfoc) {
+	__HAL_TIM_SET_COMPARE((hfoc->TIMx), TIM_CHANNEL_1, 0);
+	__HAL_TIM_SET_COMPARE((hfoc->TIMx), TIM_CHANNEL_2, 0);
+	__HAL_TIM_SET_COMPARE((hfoc->TIMx), TIM_CHANNEL_3, 0);
 
-	HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_1);
-	HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_2);
-	HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_3);
-	HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_4);
-}
-
-void MTR_R_TIM_Start() {
-	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, 0);
-	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, 0);
-	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, 0);
-	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, 4790);
-
-	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
-	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
-	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
-	HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
-}
-
-void MTR_R_TIM_Stop() {
-	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, 0);
-	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, 0);
-	__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, 0);
-
-	HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_1);
-	HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_2);
-	HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_3);
-	HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_4);
+	HAL_TIM_PWM_Stop((hfoc->TIMx), TIM_CHANNEL_1);
+	HAL_TIM_PWM_Stop((hfoc->TIMx), TIM_CHANNEL_2);
+	HAL_TIM_PWM_Stop((hfoc->TIMx), TIM_CHANNEL_3);
+	HAL_TIM_PWM_Stop((hfoc->TIMx), TIM_CHANNEL_4);
 }
 
 void MTR_Start() {
-#ifdef FOC_CONTROL
 	DRV8316C_FOC_PWM_EN();
-	MTR_L_TIM_Start();
-	MTR_R_TIM_Start();
-#endif
-#ifdef SENSOR_TRAP_CONTROL
-    HAL_TIM_PWM_Start(&htim5, TIM_CHANNEL_1);
-    HAL_TIM_PWM_Start(&htim5, TIM_CHANNEL_2);
-    __HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_1, 0);
-    __HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_2, 0);
-#endif
+	MTR_TIM_Start(&foc_L);
+	MTR_TIM_Start(&foc_R);
 }
 
 void MTR_Stop() {
-#ifdef FOC_CONTROL
 	DRV8316C_FOC_PWM_DIS();
-	MTR_L_TIM_Stop();
-	MTR_R_TIM_Stop();
-#endif
-#ifdef SENSOR_TRAP_CONTROL
-    __HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_1, 0);
-    __HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_2, 0);
-    HAL_TIM_PWM_Stop(&htim5, TIM_CHANNEL_1);
-    HAL_TIM_PWM_Stop(&htim5, TIM_CHANNEL_2);
-    MCT8316Z_SLEEP(MTR_L);
-    MCT8316Z_SLEEP(MTR_R);
-#endif
+	MTR_TIM_Stop(&foc_L);
+	MTR_TIM_Stop(&foc_R);
 }
 
 void Encoder_Start() {
-	HAL_LPTIM_Encoder_Start(&hlptim1, UINT16_MAX);
-	HAL_LPTIM_Encoder_Start(&hlptim2, UINT16_MAX);
+	HAL_LPTIM_Encoder_Start((foc_L.LPTIMx), UINT16_MAX);
+	HAL_LPTIM_Encoder_Start((foc_R.LPTIMx), UINT16_MAX);
 }
 
 void Encoder_Stop() {
@@ -149,18 +81,11 @@ void Encoder_Stop() {
 // FOC 통합 구동 및 안전 정지 함수
 // ====================================================================
 void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
-#ifdef FOC_CONTROL
-	FOC_Init_Motor(&foc_L, TIM3, ADC2, LPTIM2);
-	FOC_Init_Motor(&foc_R, TIM4, ADC1, LPTIM1);
-
-	arm_pid_init_f32(&foc_L.pid_id, 1);
-	arm_pid_init_f32(&foc_L.pid_iq, 1);
-	arm_pid_init_f32(&foc_R.pid_id, 1);
-	arm_pid_init_f32(&foc_R.pid_iq, 1);
+	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
+	FOC_Init_Motor(&foc_R, &htim4, &hadc1, &hlptim1);
 
 	foc_L.enc_dir = -1;
 	foc_R.enc_dir = -1;
-#endif
 
 	Encoder_Start();
 	FOC_ADC_Start();
@@ -174,7 +99,6 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 		// PWM 출력 인가 후 전류 증폭기(CSA) 영점 안정화 대기
 		HAL_Delay(50);
 
-#ifdef FOC_CONTROL
 		LCD_Printf(0, 0, "Calibrating...");
 		FOC_Calibrate_Offset(&foc_L);
 		FOC_Calibrate_Offset(&foc_R);
@@ -185,10 +109,8 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 		FOC_Calibrate_Encoder_Offset(&foc_R);
 		LCD_Clear();
 	}
-#endif
 	MTR_Stop();
 
-#ifdef FOC_CONTROL
 	// 플래그 및 지령치 초기화 로직 유지
 	if (mode == FOC_MODE_NO_SVPWM_SPIN) {
 		foc_L.foc_svpwm_en = 0;
@@ -218,24 +140,22 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 	foc_L.spd_integ = 0.0f;
 	foc_R.spd_integ = 0.0f;
 
-	foc_L.enc_prev_cnt = (uint16_t) foc_L.LPTIMx->CNT;
-	foc_R.enc_prev_cnt = (uint16_t) foc_R.LPTIMx->CNT;
+	foc_L.enc_prev_cnt = (uint16_t) foc_L.LPTIMx->Instance->CNT;
+	foc_R.enc_prev_cnt = (uint16_t) foc_R.LPTIMx->Instance->CNT;
 	// enc_dir은 위에서 이미 -1로 확정됨 (여기서 재대입하지 않음)
 
 	if (mode != FOC_MODE_SVPWM_NO_SPIN) {
 		MTR_Start();
 	}
 	if (mode == FOC_MODE_SPEED_LOOP) {
-		HAL_TIM_Base_Start_IT(&htim13);
+		HAL_TIM_Base_Start_IT(TIM_SPEED_LOOP);
 	}
-#endif
 }
 
 void MTR_Safe_Stop(void) {
 	// 1. 속도 루프 인터럽트 타이머 선 정지
-	HAL_TIM_Base_Stop_IT(&htim13);
+	HAL_TIM_Base_Stop_IT(TIM_SPEED_LOOP);
 
-#ifdef FOC_CONTROL
 	// 2. FOC 제어 플래그 차단
 	foc_L.is_running = 0;
 	foc_R.is_running = 0;
@@ -253,7 +173,6 @@ void MTR_Safe_Stop(void) {
 	foc_R.target_omega = 0.0f;
 	foc_L.spd_integ = 0.0f;
 	foc_R.spd_integ = 0.0f;
-#endif
 
 	// 4. 하드웨어 출력 차단
 	MTR_Stop();         // MTR_Stop() 내에서 DRV8316C_FOC_PWM_DIS() 호출됨
@@ -280,10 +199,7 @@ void MTR_Read_Register() {
 	LCD_Printf(0, 7, "CTR4");
 	LCD_Printf(0, 8, "CTR5");
 	LCD_Printf(0, 9, "CTR6");
-	LCD_Printf(0, 10, "CTR7");
-	LCD_Printf(0, 11, "CTR8");
-	LCD_Printf(0, 12, "CTR9");
-	LCD_Printf(0, 13, "CTR10");
+	LCD_Printf(0, 10, "CTR10");
 
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
 		uint8_t mtr_L_pData, mtr_R_pData;
@@ -304,19 +220,8 @@ void MTR_Read_Register() {
 		LCD_Printf(lcd_left_x_bias, 8, "%02x", mtr_L_pData);
 		MTR_ReadRegister(MTR_L, MTR_REG_CTRL_6, &mtr_L_pData);
 		LCD_Printf(lcd_left_x_bias, 9, "%02x", mtr_L_pData);
-#ifdef FOC_CONTROL
 		MTR_ReadRegister(MTR_L, MTR_REG_CTRL_10, &mtr_L_pData);
-		LCD_Printf(lcd_left_x_bias, 13, "%02x", mtr_L_pData);
-#endif
-#ifdef SENSOR_TRAP_CONTROL
-		MTR_ReadRegister(MTR_L, MTR_REG_CTRL_7, &mtr_L_pData);
 		LCD_Printf(lcd_left_x_bias, 10, "%02x", mtr_L_pData);
-		MTR_ReadRegister(MTR_L, MTR_REG_CTRL_8, &mtr_L_pData);
-		LCD_Printf(lcd_left_x_bias, 11, "%02x", mtr_L_pData);
-		MTR_ReadRegister(MTR_L, MTR_REG_CTRL_9, &mtr_L_pData);
-		LCD_Printf(lcd_left_x_bias, 12, "%02x", mtr_L_pData);
-#endif
-
 		MTR_ReadRegister(MTR_R, MTR_REG_IC_STATUS, &mtr_R_pData);
 		LCD_Printf(lcd_right_x_bias, 2, "%02x", mtr_R_pData);
 		MTR_ReadRegister(MTR_R, MTR_REG_STATUS_1, &mtr_R_pData);
@@ -333,30 +238,18 @@ void MTR_Read_Register() {
 		LCD_Printf(lcd_right_x_bias, 8, "%02x", mtr_R_pData);
 		MTR_ReadRegister(MTR_R, MTR_REG_CTRL_6, &mtr_R_pData);
 		LCD_Printf(lcd_right_x_bias, 9, "%02x", mtr_R_pData);
-#ifdef FOC_CONTROL
 		MTR_ReadRegister(MTR_R, MTR_REG_CTRL_10, &mtr_R_pData);
-		LCD_Printf(lcd_right_x_bias, 13, "%02x", mtr_R_pData);
-#endif
-#ifdef SENSOR_TRAP_CONTROL
-        MTR_ReadRegister(MTR_R, MTR_REG_CTRL_7, &mtr_R_pData);
-        LCD_Printf(lcd_right_x_bias, 10, "%02x", mtr_R_pData);
-        MTR_ReadRegister(MTR_R, MTR_REG_CTRL_8, &mtr_R_pData);
-        LCD_Printf(lcd_right_x_bias, 11, "%02x", mtr_R_pData);
-        MTR_ReadRegister(MTR_R, MTR_REG_CTRL_9, &mtr_R_pData);
-        LCD_Printf(lcd_right_x_bias, 12, "%02x", mtr_R_pData);
-#endif
+		LCD_Printf(lcd_right_x_bias, 10, "%02x", mtr_R_pData);
 	}
 	Button_Wait_Release(&btn_k);
 	LCD_Clear();
 }
 
 void MTR_Update_Setup() {
-#ifdef FOC_CONTROL
 	MTR_FOC_PWM_DIS()
 	;
-#endif
-	FOC_Init_Motor(&foc_L, TIM3, ADC2, LPTIM2);
-	FOC_Init_Motor(&foc_R, TIM4, ADC1, LPTIM1);
+	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
+	FOC_Init_Motor(&foc_R, &htim4, &hadc1, &hlptim1);
 
 	MTR_SLEEP(MTR_L);
 	MTR_SLEEP(MTR_R);
@@ -380,10 +273,8 @@ void MTR_Update_Setup() {
 	HAL_Delay(1000);
 
 	LCD_Clear();
-#ifdef FOC_CONTROL
 	MTR_FOC_PWM_EN()
 	;
-#endif
 }
 
 // ====================================================================
@@ -392,9 +283,6 @@ void MTR_Update_Setup() {
 
 void MTR_Simple_Control() {
 	UserInput_t bt = INPUT_CMD_NONE;
-
-#ifdef FOC_CONTROL
-	// 모터는 돌지만, 내부 루프에서 수동 PWM 조작을 하므로 SVPWM 제어기는 정지
 	MTR_Setup_And_Start(FOC_MODE_NO_SVPWM_SPIN);
 
 	static int16_t angle = 0;
@@ -464,47 +352,9 @@ void MTR_Simple_Control() {
 
 		LCD_Printf(0, 0, "Ang:%3d Max:%4d", angle, max_pwm);
 	}
-#endif
-
-#ifdef SENSOR_TRAP_CONTROL
-    uint16_t duty = 2000;
-    MTR_Start();
-    for (uint16_t i = 0; i < 1000; i += 5) {
-        __HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_1, 2 * i);
-        __HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_2, 2 * i);
-        HAL_Delay(1);
-    }
-    while ((bt = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
-        LCD_Printf(0, 0, "%5d", duty);
-        if (bt == INPUT_CMD_L_HOLD) duty -= (duty < 1000) ? 0 : 20;
-        if (bt == INPUT_CMD_R_HOLD) duty += (duty > 8000) ? 0 : 20;
-        if (bt == INPUT_CMD_U_HOLD) {
-            HAL_GPIO_WritePin(MTR_BRAKE_L_GPIO_Port, MTR_BRAKE_L_Pin, GPIO_PIN_SET);
-            HAL_GPIO_WritePin(MTR_BRAKE_R_GPIO_Port, MTR_BRAKE_R_Pin, GPIO_PIN_SET);
-            HAL_GPIO_WritePin(MTR_DRVOFF_L_GPIO_Port, MTR_DRVOFF_L_Pin, GPIO_PIN_SET);
-            HAL_GPIO_WritePin(MTR_DRVOFF_R_GPIO_Port, MTR_DRVOFF_R_Pin, GPIO_PIN_SET);
-        }
-        if (bt == INPUT_CMD_D_HOLD) {
-            HAL_GPIO_WritePin(MTR_DRVOFF_L_GPIO_Port, MTR_DRVOFF_L_Pin, GPIO_PIN_RESET);
-            HAL_GPIO_WritePin(MTR_DRVOFF_R_GPIO_Port, MTR_DRVOFF_R_Pin, GPIO_PIN_RESET);
-            MCT8316Z_ClearFaults(MTR_L);
-            HAL_GPIO_WritePin(MTR_BRAKE_L_GPIO_Port, MTR_BRAKE_L_Pin, GPIO_PIN_RESET);
-            MCT8316Z_ClearFaults(MTR_R);
-            HAL_GPIO_WritePin(MTR_BRAKE_R_GPIO_Port, MTR_BRAKE_R_Pin, GPIO_PIN_RESET);
-        }
-        __HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_1, duty);
-        __HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_2, duty);
-    }
-    Button_Wait_Release(&btn_k);
-    __HAL_TIM_SET_COUNTER(&htim5, 0);
-    __HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_1, 0);
-    __HAL_TIM_SET_COMPARE(&htim5, TIM_CHANNEL_2, 0);
-    MTR_Safe_Stop();
-#endif
 }
 
 void MTR_Simple_FOC() {
-#ifdef FOC_CONTROL
 	UserInput_t bt = INPUT_CMD_NONE;
 
 	// 모터 구동 및 SVPWM 활성화 모드
@@ -578,7 +428,6 @@ void MTR_Simple_FOC() {
 		LCD_Printf(0, 12, "r2:%5d %5d", (uint16_t) ADC2->JDR1,
 				(uint16_t) ADC2->JDR2);
 	}
-#endif
 }
 
 void MTR_Encoder_Test() {
@@ -599,10 +448,8 @@ void MTR_Encoder_Test() {
 			return;
 		}
 
-#ifdef FOC_CONTROL
 		FOC_Update_Theta_Encoder(&foc_L);
 		FOC_Update_Theta_Encoder(&foc_R);
-#endif
 		HAL_Delay(50);
 	}
 }
@@ -611,7 +458,6 @@ void MTR_Encoder_Test() {
 #define TUNE_TEST_CURRENT 1.0f
 
 void MTR_Current_Tune_Loop() {
-#ifdef FOC_CONTROL
 	UserInput_t bt = INPUT_CMD_NONE;
 
 	// 전류 제어를 위한 FOC 구동 모드
@@ -694,11 +540,9 @@ void MTR_Current_Tune_Loop() {
 		LCD_Printf(0, 5, "Cur Id:%6.2f", foc_L.I_d);
 		LCD_Printf(0, 6, "Cur Iq:%6.2f", foc_L.I_q);
 	}
-#endif
 }
 
 void MTR_Speed_FOC() {
-#ifdef FOC_CONTROL
 	UserInput_t bt = INPUT_CMD_NONE;
 
 	// 통합 시작 함수: 정상 FOC 속도 제어 모드
@@ -803,8 +647,10 @@ void MTR_Speed_FOC() {
 
 		LCD_Printf(0, 0, "%cIqKp:%6.3f", sel == 0 ? '>' : ' ', foc_L.pid_iq.Kp);
 		LCD_Printf(0, 1, "%cIqKi:%6.3f", sel == 1 ? '>' : ' ', foc_L.pid_iq.Ki);
-		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ', foc_L.spd_Kp*1000);
-		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ', foc_L.spd_Ki*1000);
+		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ',
+				foc_L.spd_Kp * 1000);
+		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ',
+				foc_L.spd_Ki * 1000);
 		LCD_Printf(0, 5, "ref:%6.1f", omega);
 		LCD_Printf(0, 6, "wL :%6.1f", foc_L.omega_e_meas);
 		LCD_Printf(0, 7, "wR :%6.1f", foc_R.omega_e_meas);
@@ -813,10 +659,9 @@ void MTR_Speed_FOC() {
 		LCD_Printf(0, 10, "IqR:%6.3f", foc_R.target_Iq);
 		LCD_Printf(0, 11, "IqcR:%6.3f", foc_R.I_q);
 	}
-#endif
 }
 
 void MTR_Set_Speed(float mps_L, float mps_R) {
-	foc_L.omega_setpoint = mps_L * INV_TIRE_RADIUS;
-	foc_R.omega_setpoint = mps_R * INV_TIRE_RADIUS;
+	foc_L.target_omega = mps_L * INV_TIRE_RADIUS;
+	foc_R.target_omega = -mps_R * INV_TIRE_RADIUS;
 }

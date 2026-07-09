@@ -13,9 +13,10 @@
 void User_Init(void);
 
 #define TEST_DISPLAY "/display"
-#define LCD_Printf LCD7789_Printf
-#define LCD_Clear LCD7789_Clear
-#define LCD_Set_Color LCD7789_Set_Color
+#define LCD_Test		LCD7789_Test
+#define LCD_Printf		LCD7789_Printf
+#define LCD_Clear		LCD7789_Clear
+#define LCD_Set_Color 	LCD7789_Set_Color
 
 #define FOC_CONTROL
 //#define SENSOR_TRAP_CONTROL
