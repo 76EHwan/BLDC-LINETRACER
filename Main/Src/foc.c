@@ -76,8 +76,8 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_TypeDef *TIMx, ADC_TypeDef *ADCx,
 	hfoc->enc_prev_cnt = (uint16_t) hfoc->LPTIMx->CNT;
 	hfoc->speed_loop_en = 0;
 	hfoc->enc_dir = +1;          // 기본 정방향. 반전 필요 시 호출부에서 -1로 덮어씀
-	hfoc->spd_Kp = 0.001f;
-	hfoc->spd_Ki = 0.005f;
+	hfoc->spd_Kp = 0.0006f;
+	hfoc->spd_Ki = 0.003f;
 	hfoc->spd_integ = 0.0f;
 	hfoc->iq_limit = SPD_IQ_LIMIT;
 }
