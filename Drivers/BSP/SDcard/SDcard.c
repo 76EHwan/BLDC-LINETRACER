@@ -6,9 +6,6 @@ uint8_t sdcard_err = 1;
 
 FIL file;
 
-// =====================
-// SD카드 마운트
-// =====================
 FRESULT SDCard_Mount(void) {
 	return f_mount(&SDFatFS, "", 1);
 }
@@ -17,9 +14,6 @@ void SDCard_Unmount(void) {
 	f_mount(NULL, "", 0);
 }
 
-// =====================
-// 파일 쓰기
-// =====================
 FRESULT SDCard_Write(const char *filename, const char *data) {
 	FRESULT res;
 	UINT bytesWritten;
@@ -36,9 +30,6 @@ FRESULT SDCard_Write(const char *filename, const char *data) {
 	return res;
 }
 
-// =====================
-// 파일 읽기
-// =====================
 FRESULT SDCard_Read(const char *filename, char *buffer, UINT bufSize) {
 	FRESULT res;
 	UINT bytesRead;
@@ -92,4 +83,43 @@ void SDCard_Test(void) {
 	LCD_Printf(0, 2, readBuffer);
 
 	SDCard_Unmount();
+}
+
+FRESULT SDCard_Mkdir(const char *dirname) {
+	FRESULT res = f_mkdir(dirname);
+	if (res == FR_EXIST)
+		return FR_OK;
+	return res;
+}
+
+FRESULT SDCard_WriteBinary(const char *filename, const void *data, UINT size) {
+	FRESULT res;
+	UINT bytesWritten;
+
+	res = f_open(&file, filename, FA_CREATE_ALWAYS | FA_WRITE);
+	if (res != FR_OK)
+		return res;
+
+	res = f_write(&file, data, size, &bytesWritten);
+	f_close(&file);
+
+	if (res == FR_OK && bytesWritten != size)
+		return FR_DENIED;
+	return res;
+}
+
+FRESULT SDCard_ReadBinary(const char *filename, void *buffer, UINT size) {
+	FRESULT res;
+	UINT bytesRead;
+
+	res = f_open(&file, filename, FA_READ);
+	if (res != FR_OK)
+		return res;
+
+	res = f_read(&file, buffer, size, &bytesRead);
+	f_close(&file);
+
+	if (res == FR_OK && bytesRead != size)
+		return FR_DENIED;
+	return res;
 }

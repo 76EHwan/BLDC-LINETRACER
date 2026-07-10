@@ -23,6 +23,11 @@ FRESULT SDCard_Mount(void);
 void SDCard_Unmount(void);
 FRESULT SDCard_Write(const char* filename, const char* data);
 FRESULT SDCard_Read(const char* filename, char* buffer, UINT bufSize);
+
+FRESULT SDCard_Mkdir(const char* dirname);
+FRESULT SDCard_WriteBinary(const char* filename, const void* data, UINT size);
+FRESULT SDCard_ReadBinary(const char* filename, void* buffer, UINT size);
+
 void SDCard_Test(void);
 
 #endif /* BSP_SDCARD_SDCARD_H_ */

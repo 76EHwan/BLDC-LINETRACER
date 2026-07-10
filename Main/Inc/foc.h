@@ -2,12 +2,11 @@
 #define __FOC_H
 
 #include "main.h"
+#include "SDcard.h"
 #include "tim.h"
 #include "arm_math.h"
 
 #define TIM_SPEED_LOOP	&htim13
-#define TIM_MTR_LEFT	&htim3
-#define TIM_MTR_RIGHT	&htim4
 #define Speed_TIM_IRQ_Handler TIM13_IRQ_Handler
 
 // =========================================================
@@ -104,6 +103,7 @@ extern uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
 extern uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
 void FOC_ADC_Start(void);
+void FOC_Reset_State(FOC_Handle_t *hfoc);
 void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx, ADC_HandleTypeDef *ADCx,
 		LPTIM_HandleTypeDef *LPTIMx);
 void FOC_Calibrate_Offset(FOC_Handle_t *hfoc);
@@ -112,5 +112,7 @@ void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc);
 void FOC_Execute_Loop(FOC_Handle_t *hfoc);
 void FOC_Speed_Loop(FOC_Handle_t *hfoc);
 void Speed_TIM_IRQ_Handler(void);
+FRESULT Save_FOC_Parameters(void);
+FRESULT Load_FOC_Parameters(void);
 
 #endif /* __FOC_H */

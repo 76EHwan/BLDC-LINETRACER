@@ -1,14 +1,32 @@
 #include "foc.h"
 #include "adc.h"
+#include "SDcard.h"
+
+#define FOC_MAGIC_NUMBER    0xF0C0F0C0
 
 // 모터 핸들 전역 인스턴스 (좌/우)
 FOC_Handle_t foc_L;
 FOC_Handle_t foc_R;
 
+#pragma pack(push, 1)
+typedef struct {
+	uint32_t magic_number;
+	float L_offset_a, L_offset_c, L_theta_offset;
+	float L_id_Kp, L_id_Ki, L_iq_Kp, L_iq_Ki;
+	float L_spd_Kp, L_spd_Ki, L_iq_limit;
+	int8_t L_enc_dir;
+
+	float R_offset_a, R_offset_c, R_theta_offset;
+	float R_id_Kp, R_id_Ki, R_iq_Kp, R_iq_Ki;
+	float R_spd_Kp, R_spd_Ki, R_iq_limit;
+	int8_t R_enc_dir;
+} FOC_SaveData_t;
+#pragma pack(pop)
+
 // regular(배터리) DMA 버퍼. 상전류는 injected(JDR)로 읽으므로 여기 안 들어감.
 // 배터리만 쓰면 FOC_ADC_DMA_LENGTH는 1로 줄여도 됨.
-__attribute__((section(".ram_d2_nocache"), aligned(32)))   uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
-__attribute__((section(".ram_d2_nocache"), aligned(32)))   uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
+__attribute__((section(".ram_d2_nocache"), aligned(32)))       uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
+__attribute__((section(".ram_d2_nocache"), aligned(32)))       uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
 #define FOC_DECIMATION 2
 static uint8_t foc_tick_L = 0;
@@ -40,46 +58,108 @@ void FOC_ADC_Start() {
 	HAL_ADCEx_InjectedStart_IT(&hadc2);
 }
 
-// 2. 모터 제어기 구조체 초기화
-void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx, ADC_HandleTypeDef *ADCx,
-		LPTIM_HandleTypeDef *LPTIMx) {
-	hfoc->TIMx = TIMx;
-	hfoc->ADCx = ADCx;
-	hfoc->LPTIMx = LPTIMx;
+static void Load_FOC_Parameters_For_Handle(FOC_Handle_t *hfoc) {
+	FOC_SaveData_t data = { 0 };
 
+	// SD카드에서 바이너리 읽기 시도
+	FRESULT res = SDCard_ReadBinary("0:/FOC_DATA/foc_param.bin", &data,
+			sizeof(data));
+
+	// 파일이 존재하고 데이터가 깨지지 않았다면 덮어쓰기 진행
+	if (res == FR_OK && data.magic_number == FOC_MAGIC_NUMBER) {
+
+		// 초기화 중인 모터가 '왼쪽 모터'인 경우
+		if (hfoc == &foc_L) {
+			hfoc->offset_a = data.L_offset_a;
+			hfoc->offset_c = data.L_offset_c;
+			hfoc->theta_offset = data.L_theta_offset;
+			hfoc->pid_id.Kp = data.L_id_Kp;
+			hfoc->pid_id.Ki = data.L_id_Ki;
+			hfoc->pid_iq.Kp = data.L_iq_Kp;
+			hfoc->pid_iq.Ki = data.L_iq_Ki;
+			hfoc->spd_Kp = data.L_spd_Kp;
+			hfoc->spd_Ki = data.L_spd_Ki;
+			hfoc->iq_limit = data.L_iq_limit;
+			hfoc->enc_dir = data.L_enc_dir;
+		}
+		// 초기화 중인 모터가 '오른쪽 모터'인 경우
+		else if (hfoc == &foc_R) {
+			hfoc->offset_a = data.R_offset_a;
+			hfoc->offset_c = data.R_offset_c;
+			hfoc->theta_offset = data.R_theta_offset;
+			hfoc->pid_id.Kp = data.R_id_Kp;
+			hfoc->pid_id.Ki = data.R_id_Ki;
+			hfoc->pid_iq.Kp = data.R_iq_Kp;
+			hfoc->pid_iq.Ki = data.R_iq_Ki;
+			hfoc->spd_Kp = data.R_spd_Kp;
+			hfoc->spd_Ki = data.R_spd_Ki;
+			hfoc->iq_limit = data.R_iq_limit;
+			hfoc->enc_dir = data.R_enc_dir;
+		}
+	}
+}
+
+void FOC_Reset_State(FOC_Handle_t *hfoc) {
 	hfoc->is_running = 0;
 	hfoc->foc_svpwm_en = 0;
+	hfoc->speed_loop_en = 0;
 
-	hfoc->offset_a = 32768.0f;
-	hfoc->offset_c = 32768.0f;
-	hfoc->theta_offset = 0.0f;
-
+	// 2. 현재 상태 및 타겟 변수 초기화
 	hfoc->target_Id = 0.0f;
 	hfoc->target_Iq = 0.0f;
 	hfoc->omega_e = 0.0f;
 	hfoc->theta_e = 0.0f;
 
-	// 전류 PID 게인 설정 (실제 모터 특성에 맞게 Kp, Ki 튜닝 필요)
+	hfoc->omega_e_meas = 0.0f;
+	hfoc->target_omega = 0.0f;
+
+	// 3. I항(적분기) 누적 오차 리셋
+	hfoc->spd_integ = 0.0f;
+
+	// [중요] 4. 인코더 카운트 동기화
+	// 모터가 꺼져있는 동안 외부 힘에 의해 축이 돌아갔을 수 있으므로,
+	// 현재 타이머의 CNT 값을 읽어와 prev_cnt를 맞춰주어야 속도 측정 시 튀지 않습니다.
+	hfoc->enc_prev_cnt = (uint16_t) hfoc->LPTIMx->Instance->CNT;
+
+	// [중요] 5. CMSIS DSP PID 내부 상태(State) 리셋
+	// arm_pid_init_f32의 두 번째 인자를 1로 주면 내부의 에러 누적 메모리를 0으로 지워줍니다.
+	arm_pid_init_f32(&hfoc->pid_id, 1);
+	arm_pid_init_f32(&hfoc->pid_iq, 1);
+
+}
+
+// 2. 모터 제어기 구조체 초기화
+void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
+		ADC_HandleTypeDef *ADCx, LPTIM_HandleTypeDef *LPTIMx) {
+	// 1. 하드웨어 포인터 할당
+	hfoc->TIMx = TIMx;
+	hfoc->ADCx = ADCx;
+	hfoc->LPTIMx = LPTIMx;
+
+	FOC_Reset_State(hfoc);
+
+	// 2. 디폴트 파라미터 (오프셋 및 방향)
+	hfoc->offset_a = 32768.0f;
+	hfoc->offset_c = 32768.0f;
+	hfoc->theta_offset = 0.0f;
+	hfoc->enc_dir = +1;
+
+	// 3. 제어기 게인(Gain) 및 리밋(Limit) 설정
 	hfoc->pid_id.Kp = DEFAULT_ID_KP;
 	hfoc->pid_id.Ki = DEFAULT_ID_KI;
 	hfoc->pid_id.Kd = 0.f;
-	arm_pid_init_f32(&hfoc->pid_id, 1);
 
 	hfoc->pid_iq.Kp = DEFAULT_IQ_KP;
 	hfoc->pid_iq.Ki = DEFAULT_IQ_KI;
 	hfoc->pid_iq.Kd = 0.f;
-	arm_pid_init_f32(&hfoc->pid_iq, 1);
 
-	// 속도 루프 + 방향 보정 초기화
-	hfoc->omega_e_meas = 0.0f;
-	hfoc->target_omega = 0.0f;
-	hfoc->enc_prev_cnt = (uint16_t) hfoc->LPTIMx->Instance->CNT;
-	hfoc->speed_loop_en = 0;
-	hfoc->enc_dir = +1;          // 기본 정방향. 반전 필요 시 호출부에서 -1로 덮어씀
 	hfoc->spd_Kp = 0.0006f;
 	hfoc->spd_Ki = 0.003f;
-	hfoc->spd_integ = 0.0f;
 	hfoc->iq_limit = SPD_IQ_LIMIT;
+
+	// SD 카드에서 Kp, Ki를 불러왔으므로 PID 구조체에 한 번 반영해 줍니다.
+	arm_pid_init_f32(&hfoc->pid_id, 1);
+	arm_pid_init_f32(&hfoc->pid_iq, 1);
 }
 
 // 3. 전류 센서(ADC) 영점 캘리브레이션 (무부하, injected JDR 사용)
@@ -173,10 +253,10 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	FOC_Update_Theta_Encoder(hfoc);
 
 	// [2] injected 변환 결과(JDR)에서 상전류 측정 및 스케일링 (rank1=A, rank2=C)
-	hfoc->I_a = ((float32_t) (uint16_t) hfoc->ADCx->Instance->JDR1 - hfoc->offset_a)
-			* CURRENT_SCALE;
-	hfoc->I_c = ((float32_t) (uint16_t) hfoc->ADCx->Instance->JDR2 - hfoc->offset_c)
-			* CURRENT_SCALE;
+	hfoc->I_a = ((float32_t) (uint16_t) hfoc->ADCx->Instance->JDR1
+			- hfoc->offset_a) * CURRENT_SCALE;
+	hfoc->I_c = ((float32_t) (uint16_t) hfoc->ADCx->Instance->JDR2
+			- hfoc->offset_c) * CURRENT_SCALE;
 	hfoc->I_b = -(hfoc->I_a + hfoc->I_c);
 
 	// [3] Clarke Transform
@@ -296,4 +376,89 @@ void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef *hadc) {
 void Speed_TIM_IRQ_Handler() {
 	FOC_Speed_Loop(&foc_L);
 	FOC_Speed_Loop(&foc_R);
+}
+
+// =========================================================
+// [SD카드 저장 및 불러오기]
+// =========================================================
+FRESULT Save_FOC_Parameters(void) {
+	FOC_SaveData_t data = { 0 };
+	data.magic_number = FOC_MAGIC_NUMBER;
+
+	// 왼쪽 모터 데이터 복사
+	data.L_offset_a = foc_L.offset_a;
+	data.L_offset_c = foc_L.offset_c;
+	data.L_theta_offset = foc_L.theta_offset;
+	data.L_id_Kp = foc_L.pid_id.Kp;
+	data.L_id_Ki = foc_L.pid_id.Ki;
+	data.L_iq_Kp = foc_L.pid_iq.Kp;
+	data.L_iq_Ki = foc_L.pid_iq.Ki;
+	data.L_spd_Kp = foc_L.spd_Kp;
+	data.L_spd_Ki = foc_L.spd_Ki;
+	data.L_iq_limit = foc_L.iq_limit;
+	data.L_enc_dir = foc_L.enc_dir;
+
+	// 오른쪽 모터 데이터 복사
+	data.R_offset_a = foc_R.offset_a;
+	data.R_offset_c = foc_R.offset_c;
+	data.R_theta_offset = foc_R.theta_offset;
+	data.R_id_Kp = foc_R.pid_id.Kp;
+	data.R_id_Ki = foc_R.pid_id.Ki;
+	data.R_iq_Kp = foc_R.pid_iq.Kp;
+	data.R_iq_Ki = foc_R.pid_iq.Ki;
+	data.R_spd_Kp = foc_R.spd_Kp;
+	data.R_spd_Ki = foc_R.spd_Ki;
+	data.R_iq_limit = foc_R.iq_limit;
+	data.R_enc_dir = foc_R.enc_dir;
+
+	// SDcard.c에 추가한 함수 활용 (폴더 생성 후 바이너리 쓰기)
+	FRESULT res = SDCard_Mkdir("/FOC_DATA");
+	if (res != FR_OK)
+		return res;
+
+	return SDCard_WriteBinary("/FOC_DATA/foc_param.bin", &data, sizeof(data));
+}
+
+FRESULT Load_FOC_Parameters(void) {
+	FOC_SaveData_t data = { 0 };
+
+	// SDcard.c에 추가한 함수 활용 (바이너리 읽기)
+	FRESULT res = SDCard_ReadBinary("/FOC_DATA/foc_param.bin", &data,
+			sizeof(data));
+	if (res != FR_OK)
+		return res; // 파일이 없거나 에러 발생 시
+	if (data.magic_number != FOC_MAGIC_NUMBER)
+		return FR_DENIED; // 데이터 깨짐 방지
+
+	// 왼쪽 모터 데이터 복원
+	foc_L.offset_a = data.L_offset_a;
+	foc_L.offset_c = data.L_offset_c;
+	foc_L.theta_offset = data.L_theta_offset;
+	foc_L.pid_id.Kp = data.L_id_Kp;
+	foc_L.pid_id.Ki = data.L_id_Ki;
+	foc_L.pid_iq.Kp = data.L_iq_Kp;
+	foc_L.pid_iq.Ki = data.L_iq_Ki;
+	foc_L.spd_Kp = data.L_spd_Kp;
+	foc_L.spd_Ki = data.L_spd_Ki;
+	foc_L.iq_limit = data.L_iq_limit;
+	foc_L.enc_dir = data.L_enc_dir;
+	arm_pid_init_f32(&foc_L.pid_id, 1);
+	arm_pid_init_f32(&foc_L.pid_iq, 1);
+
+	// 오른쪽 모터 데이터 복원
+	foc_R.offset_a = data.R_offset_a;
+	foc_R.offset_c = data.R_offset_c;
+	foc_R.theta_offset = data.R_theta_offset;
+	foc_R.pid_id.Kp = data.R_id_Kp;
+	foc_R.pid_id.Ki = data.R_id_Ki;
+	foc_R.pid_iq.Kp = data.R_iq_Kp;
+	foc_R.pid_iq.Ki = data.R_iq_Ki;
+	foc_R.spd_Kp = data.R_spd_Kp;
+	foc_R.spd_Ki = data.R_spd_Ki;
+	foc_R.iq_limit = data.R_iq_limit;
+	foc_R.enc_dir = data.R_enc_dir;
+	arm_pid_init_f32(&foc_R.pid_id, 1);
+	arm_pid_init_f32(&foc_R.pid_iq, 1);
+
+	return FR_OK;
 }

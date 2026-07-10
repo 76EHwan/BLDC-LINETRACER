@@ -4,7 +4,6 @@
 #include "main.h"
 
 #include "menu.h"
-
 #include "user_init.h"
 #include "bootloader.h"
 #include "button.h"
