@@ -287,23 +287,20 @@ void MTR_Simple_Control() {
 
 	static int16_t angle = 0;
 	static uint16_t half_pwm = 2400;
-	static uint16_t max_pwm = 500;
-
+	static uint16_t max_pwm = 1000;
 	while (1) {
 		bt = Button_Get_Input();
-
 		switch (bt) {
-		case INPUT_CMD_L_HOLD:
+		case INPUT_CMD_K_HOLD:
+			LCD_Clear();
+			return;
 		case INPUT_CMD_L_SINGLE:
+		case INPUT_CMD_L_HOLD:
 			angle -= 10;
-			if (angle < 0)
-				angle += 360;
 			break;
-		case INPUT_CMD_R_HOLD:
 		case INPUT_CMD_R_SINGLE:
+		case INPUT_CMD_R_HOLD:
 			angle += 10;
-			if (angle >= 360)
-				angle -= 360;
 			break;
 		case INPUT_CMD_U_SINGLE:
 		case INPUT_CMD_U_HOLD:
@@ -311,14 +308,9 @@ void MTR_Simple_Control() {
 			break;
 		case INPUT_CMD_D_SINGLE:
 		case INPUT_CMD_D_HOLD:
-			if (max_pwm >= 10)
-				max_pwm -= 10;
+			max_pwm -= 10;
 			break;
-		case INPUT_CMD_K_HOLD:
-			MTR_Safe_Stop();
-			return;
 		default:
-			break;
 		}
 
 		float rad = (float) angle * M_PI / 180.0f;

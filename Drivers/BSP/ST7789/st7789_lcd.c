@@ -3,6 +3,7 @@
 #include "spi.h"
 #include "tim.h"
 #include "rng.h"
+#include "fatfs.h"
 #include "font.h"
 #include "SDcard.h"
 
@@ -66,15 +67,13 @@ void LCD7789_Test(void) {
 
 	ST7789_RegisterBusIO(&st7789_pObj, &st7789_pIO);
 	ST7789_LCD_Driver.Init(&st7789_pObj, ST7789_FORMAT_RBG565, &ST7789Ctx);
+	ST7789_SetBrightness(&st7789_pObj, 0);
 
 	ST7789_LCD_Driver.FillRect(&st7789_pObj, 0, 0, ST7789Ctx.Width,
 			ST7789Ctx.Height, BLACK);
 
-	ST7789_SetBrightness(&st7789_pObj, 0);
-
-	FRESULT res = SDCard_Mount(); // 반환값 저장
+	FRESULT res = SDCard_Mount();
 	if (res != FR_OK) {
-		// 에러 코드를 화면에 출력 (예: "Mount Fail: 3" -> FR_NOT_READY)
 		LCD7789_Printf(0, 0, "Mount Fail: %d", res);
 		while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) != GPIO_PIN_SET)
 			;
@@ -479,22 +478,10 @@ void LCD7789_Clear() {
 	LCD7789_Light(900, 250);
 }
 
-static __attribute__((section(".ram_d2_nocache"), aligned(32))) DIR dir;
-static __attribute__((section(".ram_d2_nocache"), aligned(32))) FILINFO fno;
-static __attribute__((section(".ram_d2_nocache"), aligned(32))) FIL file;
-
 void LCD7789_Display_Random_BMP_From_SD(const TCHAR *address) {
 	FRESULT res;
-//	DIR dir;
-//	FILINFO fno;
 	int bmp_count = 0;
 	uint16_t y_pos = 5;
-
-////	LCD7789_Clear();
-////
-////	// Printf의 내부 고정 크기(기본 10)를 사용하므로 font 인자가 빠짐
-////	LCD7789_Printf(5, y_pos, "[BMP Load Test]");
-//	y_pos += 15;
 
 	if (SDCard_Mount() != FR_OK) {
 		LCD7789_Printf(0, y_pos, "ERR: SD Mount");
@@ -517,9 +504,6 @@ void LCD7789_Display_Random_BMP_From_SD(const TCHAR *address) {
 		}
 	}
 	f_closedir(&dir);
-
-//	LCD7789_Printf(5, y_pos, "BMP Count: %d", bmp_count);
-//	y_pos += 15;
 
 	if (bmp_count == 0) {
 		LCD7789_Printf(0, y_pos, "ERR: No BMPs");
@@ -558,12 +542,8 @@ void LCD7789_Display_Random_BMP_From_SD(const TCHAR *address) {
 	char full_path[64];
 	sprintf(full_path, "%s/%s", address, target_filename);
 
-//	char short_name[15] = { 0 };
-//	strncpy(short_name, target_filename, 14);
-//	LCD7789_Printf(5, y_pos, "File: %s", short_name);
 	y_pos += 15;
 
-//	FIL file;
 	UINT bytesRead;
 	uint8_t header[54];
 
@@ -584,10 +564,6 @@ void LCD7789_Display_Random_BMP_From_SD(const TCHAR *address) {
 			| (header[25] << 24);
 	uint16_t bitDepth = header[28] | (header[29] << 8);
 
-//	LCD7789_Printf(5, y_pos, "W:%d H:%d B:%d", (int) width, (int) height,
-//			(int) bitDepth);
-//	y_pos += 15;
-
 	if (bitDepth != 24) {
 		LCD7789_Printf(0, y_pos, "ERR: Not 24bit!");
 		f_close(&file);
@@ -595,19 +571,11 @@ void LCD7789_Display_Random_BMP_From_SD(const TCHAR *address) {
 		return;
 	}
 
-//	LCD7789_Printf(5, y_pos, "Drawing...");
-//	HAL_Delay(1000);
-//	LCD7789_Clear();
-
 	f_lseek(&file, dataOffset);
-//	uint8_t rowBuffer[240 * 3];
-//	uint16_t lcdBuffer[240];
+
 	int padding = (4 - ((width * 3) % 4)) % 4;
 
-	// 함수 내부에 있던 uint8_t rowBuffer... 선언은 삭제합니다.
-
 	for (int y = height - 1; y >= 0; y--) {
-		// 이제 스택이 아닌 D2 캐시 불가 영역으로 직접 읽어옵니다.
 		f_read(&file, sd_row_buffer, (width * 3) + padding, &bytesRead);
 
 		for (int x = 0; x < width; x++) {

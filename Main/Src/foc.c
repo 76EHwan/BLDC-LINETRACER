@@ -1,7 +1,9 @@
 #include "foc.h"
 #include "adc.h"
 #include "SDcard.h"
+#include <stdio.h>
 
+#define FOC_PARAM_PATH "/FOC_DATA/foc_param.txt"
 #define FOC_MAGIC_NUMBER    0xF0C0F0C0
 
 // 모터 핸들 전역 인스턴스 (좌/우)
@@ -25,8 +27,8 @@ typedef struct {
 
 // regular(배터리) DMA 버퍼. 상전류는 injected(JDR)로 읽으므로 여기 안 들어감.
 // 배터리만 쓰면 FOC_ADC_DMA_LENGTH는 1로 줄여도 됨.
-__attribute__((section(".ram_d2_nocache"), aligned(32)))       uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
-__attribute__((section(".ram_d2_nocache"), aligned(32)))       uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
+__attribute__((section(".ram_d2_nocache"), aligned(32)))         uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
+__attribute__((section(".ram_d2_nocache"), aligned(32)))         uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
 #define FOC_DECIMATION 2
 static uint8_t foc_tick_L = 0;
@@ -56,47 +58,6 @@ void FOC_ADC_Start() {
 
 	HAL_ADCEx_InjectedStart_IT(&hadc1);
 	HAL_ADCEx_InjectedStart_IT(&hadc2);
-}
-
-static void Load_FOC_Parameters_For_Handle(FOC_Handle_t *hfoc) {
-	FOC_SaveData_t data = { 0 };
-
-	// SD카드에서 바이너리 읽기 시도
-	FRESULT res = SDCard_ReadBinary("0:/FOC_DATA/foc_param.bin", &data,
-			sizeof(data));
-
-	// 파일이 존재하고 데이터가 깨지지 않았다면 덮어쓰기 진행
-	if (res == FR_OK && data.magic_number == FOC_MAGIC_NUMBER) {
-
-		// 초기화 중인 모터가 '왼쪽 모터'인 경우
-		if (hfoc == &foc_L) {
-			hfoc->offset_a = data.L_offset_a;
-			hfoc->offset_c = data.L_offset_c;
-			hfoc->theta_offset = data.L_theta_offset;
-			hfoc->pid_id.Kp = data.L_id_Kp;
-			hfoc->pid_id.Ki = data.L_id_Ki;
-			hfoc->pid_iq.Kp = data.L_iq_Kp;
-			hfoc->pid_iq.Ki = data.L_iq_Ki;
-			hfoc->spd_Kp = data.L_spd_Kp;
-			hfoc->spd_Ki = data.L_spd_Ki;
-			hfoc->iq_limit = data.L_iq_limit;
-			hfoc->enc_dir = data.L_enc_dir;
-		}
-		// 초기화 중인 모터가 '오른쪽 모터'인 경우
-		else if (hfoc == &foc_R) {
-			hfoc->offset_a = data.R_offset_a;
-			hfoc->offset_c = data.R_offset_c;
-			hfoc->theta_offset = data.R_theta_offset;
-			hfoc->pid_id.Kp = data.R_id_Kp;
-			hfoc->pid_id.Ki = data.R_id_Ki;
-			hfoc->pid_iq.Kp = data.R_iq_Kp;
-			hfoc->pid_iq.Ki = data.R_iq_Ki;
-			hfoc->spd_Kp = data.R_spd_Kp;
-			hfoc->spd_Ki = data.R_spd_Ki;
-			hfoc->iq_limit = data.R_iq_limit;
-			hfoc->enc_dir = data.R_enc_dir;
-		}
-	}
 }
 
 void FOC_Reset_State(FOC_Handle_t *hfoc) {
@@ -382,81 +343,80 @@ void Speed_TIM_IRQ_Handler() {
 // [SD카드 저장 및 불러오기]
 // =========================================================
 FRESULT Save_FOC_Parameters(void) {
-	FOC_SaveData_t data = { 0 };
-	data.magic_number = FOC_MAGIC_NUMBER;
+	char buf[1024];
+	int len = 0;
 
-	// 왼쪽 모터 데이터 복사
-	data.L_offset_a = foc_L.offset_a;
-	data.L_offset_c = foc_L.offset_c;
-	data.L_theta_offset = foc_L.theta_offset;
-	data.L_id_Kp = foc_L.pid_id.Kp;
-	data.L_id_Ki = foc_L.pid_id.Ki;
-	data.L_iq_Kp = foc_L.pid_iq.Kp;
-	data.L_iq_Ki = foc_L.pid_iq.Ki;
-	data.L_spd_Kp = foc_L.spd_Kp;
-	data.L_spd_Ki = foc_L.spd_Ki;
-	data.L_iq_limit = foc_L.iq_limit;
-	data.L_enc_dir = foc_L.enc_dir;
+	len += sprintf(buf + len, "L_offset_a=%f\n", foc_L.offset_a);
+	len += sprintf(buf + len, "L_offset_c=%f\n", foc_L.offset_c);
+	len += sprintf(buf + len, "L_theta_offset=%f\n", foc_L.theta_offset);
+	len += sprintf(buf + len, "L_id_Kp=%f\n", foc_L.pid_id.Kp);
+	len += sprintf(buf + len, "L_id_Ki=%f\n", foc_L.pid_id.Ki);
+	len += sprintf(buf + len, "L_iq_Kp=%f\n", foc_L.pid_iq.Kp);
+	len += sprintf(buf + len, "L_iq_Ki=%f\n", foc_L.pid_iq.Ki);
+	len += sprintf(buf + len, "L_spd_Kp=%f\n", foc_L.spd_Kp);
+	len += sprintf(buf + len, "L_spd_Ki=%f\n", foc_L.spd_Ki);
+	len += sprintf(buf + len, "L_iq_limit=%f\n", foc_L.iq_limit);
+	len += sprintf(buf + len, "L_enc_dir=%d\n", foc_L.enc_dir);
 
-	// 오른쪽 모터 데이터 복사
-	data.R_offset_a = foc_R.offset_a;
-	data.R_offset_c = foc_R.offset_c;
-	data.R_theta_offset = foc_R.theta_offset;
-	data.R_id_Kp = foc_R.pid_id.Kp;
-	data.R_id_Ki = foc_R.pid_id.Ki;
-	data.R_iq_Kp = foc_R.pid_iq.Kp;
-	data.R_iq_Ki = foc_R.pid_iq.Ki;
-	data.R_spd_Kp = foc_R.spd_Kp;
-	data.R_spd_Ki = foc_R.spd_Ki;
-	data.R_iq_limit = foc_R.iq_limit;
-	data.R_enc_dir = foc_R.enc_dir;
+	len += sprintf(buf + len, "R_offset_a=%f\n", foc_R.offset_a);
+	len += sprintf(buf + len, "R_offset_c=%f\n", foc_R.offset_c);
+	len += sprintf(buf + len, "R_theta_offset=%f\n", foc_R.theta_offset);
+	len += sprintf(buf + len, "R_id_Kp=%f\n", foc_R.pid_id.Kp);
+	len += sprintf(buf + len, "R_id_Ki=%f\n", foc_R.pid_id.Ki);
+	len += sprintf(buf + len, "R_iq_Kp=%f\n", foc_R.pid_iq.Kp);
+	len += sprintf(buf + len, "R_iq_Ki=%f\n", foc_R.pid_iq.Ki);
+	len += sprintf(buf + len, "R_spd_Kp=%f\n", foc_R.spd_Kp);
+	len += sprintf(buf + len, "R_spd_Ki=%f\n", foc_R.spd_Ki);
+	len += sprintf(buf + len, "R_iq_limit=%f\n", foc_R.iq_limit);
+	len += sprintf(buf + len, "R_enc_dir=%d\n", foc_R.enc_dir);
 
-	// SDcard.c에 추가한 함수 활용 (폴더 생성 후 바이너리 쓰기)
-	FRESULT res = SDCard_Mkdir("/FOC_DATA");
-	if (res != FR_OK)
-		return res;
+	return SDCard_Save(FOC_PARAM_PATH, buf, len);
+}
 
-	return SDCard_WriteBinary("/FOC_DATA/foc_param.bin", &data, sizeof(data));
+static int FOC_FindValue(const char *text, const char *key, float *out) {
+	const char *p = strstr(text, key);
+	if (!p) return 0;
+	p += strlen(key);
+	if (*p != '=') return 0;
+	*out = strtof(p + 1, NULL);
+	return 1;
 }
 
 FRESULT Load_FOC_Parameters(void) {
-	FOC_SaveData_t data = { 0 };
-
-	// SDcard.c에 추가한 함수 활용 (바이너리 읽기)
-	FRESULT res = SDCard_ReadBinary("/FOC_DATA/foc_param.bin", &data,
-			sizeof(data));
+	static char buf[1024];
+	FRESULT res = SDCard_Load(FOC_PARAM_PATH, buf, sizeof(buf) - 1);
 	if (res != FR_OK)
-		return res; // 파일이 없거나 에러 발생 시
-	if (data.magic_number != FOC_MAGIC_NUMBER)
-		return FR_DENIED; // 데이터 깨짐 방지
+		return res;
+	buf[sizeof(buf) - 1] = '\0';
 
-	// 왼쪽 모터 데이터 복원
-	foc_L.offset_a = data.L_offset_a;
-	foc_L.offset_c = data.L_offset_c;
-	foc_L.theta_offset = data.L_theta_offset;
-	foc_L.pid_id.Kp = data.L_id_Kp;
-	foc_L.pid_id.Ki = data.L_id_Ki;
-	foc_L.pid_iq.Kp = data.L_iq_Kp;
-	foc_L.pid_iq.Ki = data.L_iq_Ki;
-	foc_L.spd_Kp = data.L_spd_Kp;
-	foc_L.spd_Ki = data.L_spd_Ki;
-	foc_L.iq_limit = data.L_iq_limit;
-	foc_L.enc_dir = data.L_enc_dir;
+	float v;
+
+	if (FOC_FindValue(buf, "L_offset_a", &v)) foc_L.offset_a = v;
+	if (FOC_FindValue(buf, "L_offset_c", &v)) foc_L.offset_c = v;
+	if (FOC_FindValue(buf, "L_theta_offset", &v)) foc_L.theta_offset = v;
+	if (FOC_FindValue(buf, "L_id_Kp", &v)) foc_L.pid_id.Kp = v;
+	if (FOC_FindValue(buf, "L_id_Ki", &v)) foc_L.pid_id.Ki = v;
+	if (FOC_FindValue(buf, "L_iq_Kp", &v)) foc_L.pid_iq.Kp = v;
+	if (FOC_FindValue(buf, "L_iq_Ki", &v)) foc_L.pid_iq.Ki = v;
+	if (FOC_FindValue(buf, "L_spd_Kp", &v)) foc_L.spd_Kp = v;
+	if (FOC_FindValue(buf, "L_spd_Ki", &v)) foc_L.spd_Ki = v;
+	if (FOC_FindValue(buf, "L_iq_limit", &v)) foc_L.iq_limit = v;
+	if (FOC_FindValue(buf, "L_enc_dir", &v)) foc_L.enc_dir = (int8_t)v;
+
+	if (FOC_FindValue(buf, "R_offset_a", &v)) foc_R.offset_a = v;
+	if (FOC_FindValue(buf, "R_offset_c", &v)) foc_R.offset_c = v;
+	if (FOC_FindValue(buf, "R_theta_offset", &v)) foc_R.theta_offset = v;
+	if (FOC_FindValue(buf, "R_id_Kp", &v)) foc_R.pid_id.Kp = v;
+	if (FOC_FindValue(buf, "R_id_Ki", &v)) foc_R.pid_id.Ki = v;
+	if (FOC_FindValue(buf, "R_iq_Kp", &v)) foc_R.pid_iq.Kp = v;
+	if (FOC_FindValue(buf, "R_iq_Ki", &v)) foc_R.pid_iq.Ki = v;
+	if (FOC_FindValue(buf, "R_spd_Kp", &v)) foc_R.spd_Kp = v;
+	if (FOC_FindValue(buf, "R_spd_Ki", &v)) foc_R.spd_Ki = v;
+	if (FOC_FindValue(buf, "R_iq_limit", &v)) foc_R.iq_limit = v;
+	if (FOC_FindValue(buf, "R_enc_dir", &v)) foc_R.enc_dir = (int8_t)v;
+
 	arm_pid_init_f32(&foc_L.pid_id, 1);
 	arm_pid_init_f32(&foc_L.pid_iq, 1);
-
-	// 오른쪽 모터 데이터 복원
-	foc_R.offset_a = data.R_offset_a;
-	foc_R.offset_c = data.R_offset_c;
-	foc_R.theta_offset = data.R_theta_offset;
-	foc_R.pid_id.Kp = data.R_id_Kp;
-	foc_R.pid_id.Ki = data.R_id_Ki;
-	foc_R.pid_iq.Kp = data.R_iq_Kp;
-	foc_R.pid_iq.Ki = data.R_iq_Ki;
-	foc_R.spd_Kp = data.R_spd_Kp;
-	foc_R.spd_Ki = data.R_spd_Ki;
-	foc_R.iq_limit = data.R_iq_limit;
-	foc_R.enc_dir = data.R_enc_dir;
 	arm_pid_init_f32(&foc_R.pid_id, 1);
 	arm_pid_init_f32(&foc_R.pid_iq, 1);
 

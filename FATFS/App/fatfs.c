@@ -18,12 +18,15 @@
 /* USER CODE END Header */
 #include "fatfs.h"
 
-uint8_t retSD;    /* Return value for SD */
-char SDPath[4];   /* SD logical drive path */
-FATFS SDFatFS;    /* File system object for SD logical drive */
-FIL SDFile;       /* File object for SD */
+__attribute__((section(".ram_d2_nocache"), aligned(32))) uint8_t retSD;    /* Return value for SD */
+__attribute__((section(".ram_d2_nocache"), aligned(32))) char SDPath[4];   /* SD logical drive path */
+__attribute__((section(".ram_d2_nocache"), aligned(32))) FATFS SDFatFS;    /* File system object for SD logical drive */
+__attribute__((section(".ram_d2_nocache"), aligned(32))) FIL SDFile;       /* File object for SD */
 
 /* USER CODE BEGIN Variables */
+__attribute__((section(".ram_d2_nocache"), aligned(32))) FIL file;
+__attribute__((section(".ram_d2_nocache"), aligned(32))) FILINFO fno;
+__attribute__((section(".ram_d2_nocache"), aligned(32))) DIR dir;
 
 /* USER CODE END Variables */
 

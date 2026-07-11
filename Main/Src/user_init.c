@@ -18,9 +18,10 @@
 void User_Init() {
 	Button_init();
 	Buzzer_Init();
-	Buzzer_Start();
+//	Buzzer_Start();
 	LCD7789_Test();
 	LSM6DS3_Init();
+//	Buzzer_Stop();
 	MX_DRV8316C_Init();
 
 	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
@@ -29,9 +30,10 @@ void User_Init() {
 	FOC_Calibrate_Offset(&foc_L);
 	FOC_Calibrate_Offset(&foc_R);
 
+	SDCard_Test();
+
 	Save_FOC_Parameters();
 
-	SDCard_Test();
 	HAL_Delay(2500);
-	Buzzer_Stop();
+
 }
