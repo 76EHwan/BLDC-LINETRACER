@@ -42,8 +42,13 @@ void MX_FATFS_Init(void);
 /* USER CODE BEGIN Prototypes */
 extern FILINFO fno;
 extern DIR dir;
+<<<<<<< HEAD
 extern FATFS SDFatFS_NC;
 extern FIL SDFile_NC;
+=======
+extern FIL SDFile_NC;
+extern FATFS SDFatFS_NC;
+>>>>>>> refs/heads/Bug/SDcard
 /* USER CODE END Prototypes */
 #ifdef __cplusplus
 }

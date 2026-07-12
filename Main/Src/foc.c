@@ -3,6 +3,11 @@
 #include "SDcard.h"
 #include <stdio.h>
 
+<<<<<<< HEAD
+=======
+#define FOC_PARAM_PATH "/FOC_DATA/foc_param.txt"
+
+>>>>>>> refs/heads/Bug/SDcard
 // 모터 핸들 전역 인스턴스 (좌/우)
 FOC_Handle_t foc_L;
 FOC_Handle_t foc_R;
@@ -24,12 +29,8 @@ typedef struct {
 
 // regular(배터리) DMA 버퍼. 상전류는 injected(JDR)로 읽으므로 여기 안 들어감.
 // 배터리만 쓰면 FOC_ADC_DMA_LENGTH는 1로 줄여도 됨.
-__attribute__((section(".ram_d2_nocache"), aligned(32)))         uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
-__attribute__((section(".ram_d2_nocache"), aligned(32)))         uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
-
-#define FOC_DECIMATION 2
-static uint8_t foc_tick_L = 0;
-static uint8_t foc_tick_R = 0;
+__attribute__((section(".ram_d2_nocache"), aligned(32)))          uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
+__attribute__((section(".ram_d2_nocache"), aligned(32)))          uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
 // 속도 루프 파라미터
 #define SPD_IQ_LIMIT     2.5f        // Iq 지령 상한 (A)
@@ -111,8 +112,8 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 	hfoc->pid_iq.Ki = DEFAULT_IQ_KI;
 	hfoc->pid_iq.Kd = 0.f;
 
-	hfoc->spd_Kp = 0.0006f;
-	hfoc->spd_Ki = 0.003f;
+	hfoc->spd_Kp = 0.00032f;
+	hfoc->spd_Ki = 0.0007f;
 	hfoc->iq_limit = SPD_IQ_LIMIT;
 
 	// SD 카드에서 Kp, Ki를 불러왔으므로 PID 구조체에 한 번 반영해 줍니다.
@@ -316,17 +317,9 @@ void FOC_Speed_Loop(FOC_Handle_t *hfoc) {
 // ADC1=foc_R, ADC2=foc_L
 void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef *hadc) {
 	if (hadc->Instance == ADC1) {
-		foc_tick_R++;
-		if (foc_tick_R >= FOC_DECIMATION) {
-			foc_tick_R = 0;
-			FOC_Execute_Loop(&foc_R);
-		}
+		FOC_Execute_Loop(&foc_R);
 	} else if (hadc->Instance == ADC2) {
-		foc_tick_L++;
-		if (foc_tick_L >= FOC_DECIMATION) {
-			foc_tick_L = 0;
-			FOC_Execute_Loop(&foc_L);
-		}
+		FOC_Execute_Loop(&foc_L);
 	}
 }
 
@@ -366,13 +359,107 @@ static const SDCard_ConfigEntry foc_param_table[] = {
 };
 
 FRESULT Save_FOC_Parameters(void) {
+<<<<<<< HEAD
 	return SDCard_SaveConfig(FOC_PARAM_PATH, foc_param_table, FOC_PARAM_COUNT);
+=======
+	char buf[1024];
+	int len = 0;
+
+	len += sprintf(buf + len, "L_offset_a=%f\n", foc_L.offset_a);
+	len += sprintf(buf + len, "L_offset_c=%f\n", foc_L.offset_c);
+	len += sprintf(buf + len, "L_theta_offset=%f\n", foc_L.theta_offset);
+	len += sprintf(buf + len, "L_id_Kp=%f\n", foc_L.pid_id.Kp);
+	len += sprintf(buf + len, "L_id_Ki=%f\n", foc_L.pid_id.Ki);
+	len += sprintf(buf + len, "L_iq_Kp=%f\n", foc_L.pid_iq.Kp);
+	len += sprintf(buf + len, "L_iq_Ki=%f\n", foc_L.pid_iq.Ki);
+	len += sprintf(buf + len, "L_spd_Kp=%f\n", foc_L.spd_Kp);
+	len += sprintf(buf + len, "L_spd_Ki=%f\n", foc_L.spd_Ki);
+	len += sprintf(buf + len, "L_iq_limit=%f\n", foc_L.iq_limit);
+	len += sprintf(buf + len, "L_enc_dir=%d\n", foc_L.enc_dir);
+
+	len += sprintf(buf + len, "R_offset_a=%f\n", foc_R.offset_a);
+	len += sprintf(buf + len, "R_offset_c=%f\n", foc_R.offset_c);
+	len += sprintf(buf + len, "R_theta_offset=%f\n", foc_R.theta_offset);
+	len += sprintf(buf + len, "R_id_Kp=%f\n", foc_R.pid_id.Kp);
+	len += sprintf(buf + len, "R_id_Ki=%f\n", foc_R.pid_id.Ki);
+	len += sprintf(buf + len, "R_iq_Kp=%f\n", foc_R.pid_iq.Kp);
+	len += sprintf(buf + len, "R_iq_Ki=%f\n", foc_R.pid_iq.Ki);
+	len += sprintf(buf + len, "R_spd_Kp=%f\n", foc_R.spd_Kp);
+	len += sprintf(buf + len, "R_spd_Ki=%f\n", foc_R.spd_Ki);
+	len += sprintf(buf + len, "R_iq_limit=%f\n", foc_R.iq_limit);
+	len += sprintf(buf + len, "R_enc_dir=%d\n", foc_R.enc_dir);
+
+	return SDCard_Save(FOC_PARAM_PATH, buf, len);
+}
+
+static int FOC_FindValue(const char *text, const char *key, float *out) {
+	const char *p = strstr(text, key);
+	if (!p)
+		return 0;
+	p += strlen(key);
+	if (*p != '=')
+		return 0;
+	*out = strtof(p + 1, NULL);
+	return 1;
+>>>>>>> refs/heads/Bug/SDcard
 }
 
 FRESULT Load_FOC_Parameters(void) {
 	FRESULT res = SDCard_LoadConfig(FOC_PARAM_PATH, foc_param_table, FOC_PARAM_COUNT);
 	if (res != FR_OK)
 		return res;
+<<<<<<< HEAD
+=======
+	buf[sizeof(buf) - 1] = '\0';
+
+	float v;
+
+	if (FOC_FindValue(buf, "L_offset_a", &v))
+		foc_L.offset_a = v;
+	if (FOC_FindValue(buf, "L_offset_c", &v))
+		foc_L.offset_c = v;
+	if (FOC_FindValue(buf, "L_theta_offset", &v))
+		foc_L.theta_offset = v;
+	if (FOC_FindValue(buf, "L_id_Kp", &v))
+		foc_L.pid_id.Kp = v;
+	if (FOC_FindValue(buf, "L_id_Ki", &v))
+		foc_L.pid_id.Ki = v;
+	if (FOC_FindValue(buf, "L_iq_Kp", &v))
+		foc_L.pid_iq.Kp = v;
+	if (FOC_FindValue(buf, "L_iq_Ki", &v))
+		foc_L.pid_iq.Ki = v;
+	if (FOC_FindValue(buf, "L_spd_Kp", &v))
+		foc_L.spd_Kp = v;
+	if (FOC_FindValue(buf, "L_spd_Ki", &v))
+		foc_L.spd_Ki = v;
+	if (FOC_FindValue(buf, "L_iq_limit", &v))
+		foc_L.iq_limit = v;
+	if (FOC_FindValue(buf, "L_enc_dir", &v))
+		foc_L.enc_dir = (int8_t) v;
+
+	if (FOC_FindValue(buf, "R_offset_a", &v))
+		foc_R.offset_a = v;
+	if (FOC_FindValue(buf, "R_offset_c", &v))
+		foc_R.offset_c = v;
+	if (FOC_FindValue(buf, "R_theta_offset", &v))
+		foc_R.theta_offset = v;
+	if (FOC_FindValue(buf, "R_id_Kp", &v))
+		foc_R.pid_id.Kp = v;
+	if (FOC_FindValue(buf, "R_id_Ki", &v))
+		foc_R.pid_id.Ki = v;
+	if (FOC_FindValue(buf, "R_iq_Kp", &v))
+		foc_R.pid_iq.Kp = v;
+	if (FOC_FindValue(buf, "R_iq_Ki", &v))
+		foc_R.pid_iq.Ki = v;
+	if (FOC_FindValue(buf, "R_spd_Kp", &v))
+		foc_R.spd_Kp = v;
+	if (FOC_FindValue(buf, "R_spd_Ki", &v))
+		foc_R.spd_Ki = v;
+	if (FOC_FindValue(buf, "R_iq_limit", &v))
+		foc_R.iq_limit = v;
+	if (FOC_FindValue(buf, "R_enc_dir", &v))
+		foc_R.enc_dir = (int8_t) v;
+>>>>>>> refs/heads/Bug/SDcard
 
 	arm_pid_init_f32(&foc_L.pid_id, 1);
 	arm_pid_init_f32(&foc_L.pid_iq, 1);

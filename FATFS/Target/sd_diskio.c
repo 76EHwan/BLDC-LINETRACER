@@ -397,6 +397,7 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
 
         memcpy((void *)scratch, (void *)buff, BLOCKSIZE);
         buff += BLOCKSIZE;
+<<<<<<< HEAD
 
 #if (ENABLE_SD_DMA_CACHE_MAINTENANCE == 1)
         /*
@@ -406,6 +407,8 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
         */
         SCB_CleanDCache_by_Addr((uint32_t*)scratch, BLOCKSIZE);
 #endif
+=======
+>>>>>>> refs/heads/Bug/SDcard
 
         ret = BSP_SD_WriteBlocks_DMA((uint32_t*)scratch, (uint32_t)sector++, 1);
         if (ret == MSD_OK) {
