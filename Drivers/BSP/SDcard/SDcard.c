@@ -21,16 +21,12 @@ FRESULT SDCard_Write(const char *filename, const char *data) {
 		return res;
 
 	res = f_write(&SDFile_NC, data, strlen(data), &bytesWritten);
-<<<<<<< HEAD
 	res_close = f_close(&SDFile_NC);
 
 	/* f_close()에서 실제 디스크 커밋(FAT/디렉토리 엔트리 flush)이 실패할 수 있으므로
 	 * f_write()의 결과보다 우선해서 확인해야 진짜 실패를 놓치지 않는다. */
 	if (res_close != FR_OK)
 		return res_close;
-=======
-	f_close(&SDFile_NC);
->>>>>>> refs/heads/Bug/SDcard
 
 	if (res == FR_OK && bytesWritten == 0)
 		return FR_DENIED;
@@ -120,14 +116,10 @@ FRESULT SDCard_WriteBinary(const char *filename, const void *data, UINT size) {
 		return res;
 
 	res = f_write(&SDFile_NC, data, size, &bytesWritten);
-<<<<<<< HEAD
 	res_close = f_close(&SDFile_NC);
 
 	if (res_close != FR_OK)
 		return res_close;
-=======
-	f_close(&SDFile_NC);
->>>>>>> refs/heads/Bug/SDcard
 
 	if (res == FR_OK && bytesWritten != size)
 		return FR_DENIED;

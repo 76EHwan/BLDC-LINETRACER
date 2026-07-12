@@ -29,13 +29,10 @@ __attribute__((section(".ram_d2_nocache"), aligned(32))) FILINFO fno;
 __attribute__((section(".ram_d2_nocache"), aligned(32))) DIR dir;
 __attribute__((section(".ram_d2_nocache"), aligned(32))) FATFS SDFatFS_NC;
 __attribute__((section(".ram_d2_nocache"), aligned(32))) FIL SDFile_NC;
-<<<<<<< HEAD
 
 static long long days_from_civil(int y, int m, int d);
 static void civil_from_days(long long z, int *y, int *m, int *d);
 
-=======
->>>>>>> refs/heads/Bug/SDcard
 /* USER CODE END Variables */
 
 void MX_FATFS_Init(void)
