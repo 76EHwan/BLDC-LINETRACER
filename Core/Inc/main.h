@@ -58,6 +58,7 @@ extern "C" {
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+void LED_Blink(uint32_t delay);
 void LED_Test();
 
 /* USER CODE END EFP */

@@ -58,19 +58,21 @@ MEMORY
 /* Define output sections */
 SECTIONS
 {
-  .non_cacheable_d2 :
+  .ram_d2_nocache :
   {
-    . = ALIGN(4);
+    . = ALIGN(32);
+    *(.ram_d2_nocache)
     *(.non_cacheable_d2)
-    . = ALIGN(4);
+    . = ALIGN(32);
   } >RAM_D2_NC
 
-  /* ADC3 DMA 버퍼를 위한 캐시 불가 섹션 */
-  .non_cacheable_d3 :
+  /* ADC3 / SPI4 DMA 버퍼를 위한 캐시 불가 섹션 */
+  .ram_d3 :
   {
-    . = ALIGN(4);
+    . = ALIGN(32);
+    *(.ram_d3)
     *(.non_cacheable_d3)
-    . = ALIGN(4);
+    . = ALIGN(32);
   } >RAM_D3_NC
   /* The startup code goes first into RAM_EXEC */
   .isr_vector :

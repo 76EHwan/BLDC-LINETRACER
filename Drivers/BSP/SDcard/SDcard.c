@@ -5,7 +5,7 @@
 uint8_t sdcard_err = 1;
 
 FRESULT SDCard_Mount(void) {
-	return f_mount(&SDFatFS, "", 1);
+	return f_mount(&SDFatFS_NC, "", 1);
 }
 
 void SDCard_Unmount(void) {
@@ -13,15 +13,20 @@ void SDCard_Unmount(void) {
 }
 
 FRESULT SDCard_Write(const char *filename, const char *data) {
-	FRESULT res;
+	FRESULT res, res_close;
 	UINT bytesWritten;
 
-	res = f_open(&file, filename, FA_CREATE_ALWAYS | FA_WRITE);
+	res = f_open(&SDFile_NC, filename, FA_CREATE_ALWAYS | FA_WRITE);
 	if (res != FR_OK)
 		return res;
 
-	res = f_write(&file, data, strlen(data), &bytesWritten);
-	f_close(&file);
+	res = f_write(&SDFile_NC, data, strlen(data), &bytesWritten);
+	res_close = f_close(&SDFile_NC);
+
+	/* f_close()에서 실제 디스크 커밋(FAT/디렉토리 엔트리 flush)이 실패할 수 있으므로
+	 * f_write()의 결과보다 우선해서 확인해야 진짜 실패를 놓치지 않는다. */
+	if (res_close != FR_OK)
+		return res_close;
 
 	if (res == FR_OK && bytesWritten == 0)
 		return FR_DENIED;
@@ -32,20 +37,32 @@ FRESULT SDCard_Read(const char *filename, char *buffer, UINT bufSize) {
 	FRESULT res;
 	UINT bytesRead;
 
-	res = f_open(&file, filename, FA_READ);
+	res = f_open(&SDFile_NC, filename, FA_READ);
 	if (res != FR_OK)
 		return res;
 
 	memset(buffer, 0, bufSize);
-	res = f_read(&file, buffer, bufSize - 1, &bytesRead);
-	f_close(&file);
+	res = f_read(&SDFile_NC, buffer, bufSize - 1, &bytesRead);
+	f_close(&SDFile_NC);
 
 	if (res == FR_OK && bytesRead == 0)
 		return FR_DENIED;
 	return res;
 }
 
-void SDCard_Test(void) {
+uint8_t SDCard_FileExists(const char *path) {
+	FRESULT res = SDCard_Mount();
+	if (res != FR_OK)
+		return 0;
+
+	FILINFO fno;
+	res = f_stat(path, &fno);
+	SDCard_Unmount();
+
+	return (res == FR_OK) ? 1 : 0;
+}
+
+FRESULT SDCard_Test(void) {
 	FRESULT res;
 	char writeData[] = "STM32 FATFS Write & Read Test Success!";
 	char readBuffer[50];
@@ -55,32 +72,32 @@ void SDCard_Test(void) {
 	res = SDCard_Mount();
 	if (res != FR_OK) {
 		LCD_Printf(0, 1, "FAIL: Mount %d", res);
-		return;
+		return res;
 	}
 
 	res = SDCard_Write("test.txt", writeData);
 	if (res != FR_OK) {
 		LCD_Printf(0, 1, "FAIL: Write %d", res);
 		SDCard_Unmount();
-		return;
+		return res;
 	}
 
 	res = SDCard_Read("test.txt", readBuffer, sizeof(readBuffer));
 	if (res != FR_OK) {
 		LCD_Printf(0, 1, "FAIL: Read %d", res);
 		SDCard_Unmount();
-		return;
+		return res;
 	}
 
-	if (strcmp(writeData, readBuffer) == 0) {
-		LCD_Printf(0, 1, "SUCCESS!");
-	} else {
+	if (strcmp(writeData, readBuffer) != 0) {
 		LCD_Printf(0, 1, "FAIL: Mismatch");
+		return FR_NOT_ENABLED;
 	}
 
 	LCD_Printf(0, 2, readBuffer);
 
 	SDCard_Unmount();
+	return FR_OK;
 }
 
 FRESULT SDCard_Mkdir(const char *dirname) {
@@ -91,15 +108,18 @@ FRESULT SDCard_Mkdir(const char *dirname) {
 }
 
 FRESULT SDCard_WriteBinary(const char *filename, const void *data, UINT size) {
-	FRESULT res;
+	FRESULT res, res_close;
 	UINT bytesWritten;
 
-	res = f_open(&file, filename, FA_CREATE_ALWAYS | FA_WRITE);
+	res = f_open(&SDFile_NC, filename, FA_CREATE_ALWAYS | FA_WRITE);
 	if (res != FR_OK)
 		return res;
 
-	res = f_write(&file, data, size, &bytesWritten);
-	f_close(&file);
+	res = f_write(&SDFile_NC, data, size, &bytesWritten);
+	res_close = f_close(&SDFile_NC);
+
+	if (res_close != FR_OK)
+		return res_close;
 
 	if (res == FR_OK && bytesWritten != size)
 		return FR_DENIED;
@@ -110,12 +130,12 @@ FRESULT SDCard_ReadBinary(const char *filename, void *buffer, UINT size) {
 	FRESULT res;
 	UINT bytesRead;
 
-	res = f_open(&file, filename, FA_READ);
+	res = f_open(&SDFile_NC, filename, FA_READ);
 	if (res != FR_OK)
 		return res;
 
-	res = f_read(&file, buffer, size, &bytesRead);
-	f_close(&file);
+	res = f_read(&SDFile_NC, buffer, size, &bytesRead);
+	f_close(&SDFile_NC);
 
 	if (res == FR_OK && bytesRead != size)
 		return FR_DENIED;
@@ -172,19 +192,19 @@ void SDCard_DebugTest(void) {
 
 	static uint8_t buf[512];
 	memset(buf, 0xAA, sizeof(buf));
-	memset(&file, 0, sizeof(FIL));
+	memset(&SDFile_NC, 0, sizeof(FIL));
 
-	res = f_open(&file, "split2.bin", FA_CREATE_ALWAYS | FA_WRITE);
+	res = f_open(&SDFile_NC, "split2.bin", FA_CREATE_ALWAYS | FA_WRITE);
 	LCD_Printf(0, 4, "Open: %d", res);
 
 	UINT bw;
-	FRESULT r1 = f_write(&file, buf, 512, &bw);
+	FRESULT r1 = f_write(&SDFile_NC, buf, 512, &bw);
 	LCD_Printf(0, 5, "W1: res=%d bw=%u", r1, bw);   // bw 값도 확인
 
-	FRESULT r_sync = f_sync(&file);
+	FRESULT r_sync = f_sync(&SDFile_NC);
 	LCD_Printf(0, 9, "Sync: %d", r_sync);
 
-	FRESULT rc = f_close(&file);
+	FRESULT rc = f_close(&SDFile_NC);
 	LCD_Printf(0, 6, "Close: %d", rc);              // 반드시 확인
 	// 언마운트 없이 같은 세션에서 바로 확인
 	FRESULT chk = f_stat("split2.bin", &fno);
@@ -192,7 +212,7 @@ void SDCard_DebugTest(void) {
 
 	// 여유 클러스터 확인
 	DWORD free_clust;
-	FATFS *fs = &SDFatFS;
+	FATFS *fs = &SDFatFS_NC;
 	FRESULT gf = f_getfree("", &free_clust, &fs);
 	LCD_Printf(0, 11, "Free: %d clust=%lu", gf, free_clust);
 
@@ -210,4 +230,63 @@ FRESULT SDCard_Load(const char *path, void *buffer, UINT size) {
 	res = SDCard_ReadBinary(path, buffer, size);
 	SDCard_Unmount();
 	return res;
+}
+
+FRESULT SDCard_SaveConfig(const char *path, const SDCard_ConfigEntry *entries, int count) {
+	char buf[1024];
+	int len = 0;
+
+	for (int i = 0; i < count; i++) {
+		switch (entries[i].type) {
+		case SDCFG_FLOAT:
+			len += sprintf(buf + len, "%s=%f\n", entries[i].key, *(float*)entries[i].ptr);
+			break;
+		case SDCFG_INT8:
+			len += sprintf(buf + len, "%s=%d\n", entries[i].key, *(int8_t*)entries[i].ptr);
+			break;
+		}
+		if (len >= (int)sizeof(buf) - 64) break; // 버퍼 오버플로우 방지
+	}
+
+	return SDCard_Save(path, buf, len);
+}
+
+static int SDCard_FindValue(const char *text, const char *key, float *out) {
+	size_t keylen = strlen(key);
+	const char *p = text;
+
+	while ((p = strstr(p, key)) != NULL) {
+		// key 앞이 줄 시작(첫 글자 또는 개행 직후)인지 확인해서 부분 일치 오탐 방지
+		int atLineStart = (p == text) || (*(p - 1) == '\n');
+		if (atLineStart && p[keylen] == '=') {
+			*out = strtof(p + keylen + 1, NULL);
+			return 1;
+		}
+		p += keylen;
+	}
+	return 0;
+}
+
+FRESULT SDCard_LoadConfig(const char *path, const SDCard_ConfigEntry *entries, int count) {
+	static char buf[1024];
+	FRESULT res = SDCard_Load(path, buf, sizeof(buf) - 1);
+	if (res != FR_OK)
+		return res;
+	buf[sizeof(buf) - 1] = '\0';
+
+	float v;
+	for (int i = 0; i < count; i++) {
+		if (!SDCard_FindValue(buf, entries[i].key, &v))
+			continue;
+
+		switch (entries[i].type) {
+		case SDCFG_FLOAT:
+			*(float*)entries[i].ptr = v;
+			break;
+		case SDCFG_INT8:
+			*(int8_t*)entries[i].ptr = (int8_t)v;
+			break;
+		}
+	}
+	return FR_OK;
 }

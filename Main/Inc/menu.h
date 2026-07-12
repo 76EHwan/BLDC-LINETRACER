@@ -28,4 +28,8 @@ extern uint8_t current_menu_index; // 프로젝트에 맞춰 변수명 확인
 #define MENU_ITEM_COUNT(arr) (sizeof(arr) / sizeof((arr)[0]))
 void Menu_ProcessLoop(void);
 
+FRESULT FOC_Parameters_InitOrLoad(void);
+void FOC_Menu_SaveToSD(void);
+void FOC_Menu_LoadFromSD(void);
+
 #endif /* MENU_H_ */

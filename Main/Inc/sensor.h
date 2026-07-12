@@ -39,12 +39,16 @@ extern uint16_t adc3_buffer[3];
 
 void Sensor_Calibration();
 void Sensor_Raw_Printf();
+void Sensor_Normalize_Printf();
+void Sensor_State_Printf();
 
 void TIM7_IRQ_Handler(void);
 void ADC3_IRQ_Handler(void);
 
 void  Sensor_Line_LUT_Init(void);
 float Sensor_Line_Estimate(void);
+
+
 
 void IMU_Test(void);
 

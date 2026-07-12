@@ -42,7 +42,7 @@ static const float line_sensor_pos[LINE_N_SENSORS] = { -1.0f, -13.0f / 15.0f,
 				/ 15.0f, 7.0f / 15.0f, 9.0f / 15.0f, 11.0f / 15.0f, 13.0f
 				/ 15.0f, 1.0f };
 
-__attribute__((section(".ram_d3"), aligned(32)))    uint16_t adc3_buffer[3];
+__attribute__((section(".ram_d3"), aligned(32)))           uint16_t adc3_buffer[3];
 
 volatile uint32_t tim7_count = 0;
 volatile uint32_t adc_count = 0;
@@ -169,7 +169,8 @@ void ADC3_IRQ_Handler() {
 			// state bit: 이 센서가 라인 위인지. weight > threshold.
 			uint8_t w = LINE_WEIGHT(IR_Sensor.data.normalized[idx]);
 			IR_Sensor.data.state &= ~(1u << idx);
-			IR_Sensor.data.state |= ((uint32_t)(w > IR_Sensor.data.threshold) << idx);
+			IR_Sensor.data.state |= ((uint32_t) (w > IR_Sensor.data.threshold)
+					<< idx);
 
 			// 중앙 한 바퀴 끝 -> 라인 위치 갱신
 			if (idx == LINE_N_SENSORS - 1) {
@@ -180,7 +181,7 @@ void ADC3_IRQ_Handler() {
 		IR_Sensor.data.idx = idx + 1;   // -> 다음 중앙 또는 mark(16)
 	} else {
 		// === active high: 좌우 mark 저장 + 계산 ===
-		IR_Sensor.data.raw[LEFT_MARK_SENSOR_INDEX]  = adc3_buffer[0];
+		IR_Sensor.data.raw[LEFT_MARK_SENSOR_INDEX] = adc3_buffer[0];
 		IR_Sensor.data.raw[RIGHT_MARK_SENSOR_INDEX] = adc3_buffer[1];
 
 		if (IR_Sensor.is_calibration) {
@@ -188,16 +189,19 @@ void ADC3_IRQ_Handler() {
 			Sensor_Normalize(RIGHT_MARK_SENSOR_INDEX);
 
 			// 좌우 mark 검출 (level). normalized > threshold 이면 mark 위.
-			uint8_t left_on  =
-					IR_Sensor.data.normalized[LEFT_MARK_SENSOR_INDEX]  > IR_Sensor.data.threshold;
+			uint8_t left_on = IR_Sensor.data.normalized[LEFT_MARK_SENSOR_INDEX]
+					> IR_Sensor.data.threshold;
 			uint8_t right_on =
-					IR_Sensor.data.normalized[RIGHT_MARK_SENSOR_INDEX] > IR_Sensor.data.threshold;
+					IR_Sensor.data.normalized[RIGHT_MARK_SENSOR_INDEX]
+							> IR_Sensor.data.threshold;
 
 			// state의 bit 16/17에 저장 (state는 uint32_t 이상이어야 함)
-			IR_Sensor.data.state &=
-					~((1u << LEFT_MARK_SENSOR_INDEX) | (1u << RIGHT_MARK_SENSOR_INDEX));
-			IR_Sensor.data.state |= ((uint32_t) left_on  << LEFT_MARK_SENSOR_INDEX);
-			IR_Sensor.data.state |= ((uint32_t) right_on << RIGHT_MARK_SENSOR_INDEX);
+			IR_Sensor.data.state &= ~((1u << LEFT_MARK_SENSOR_INDEX)
+					| (1u << RIGHT_MARK_SENSOR_INDEX));
+			IR_Sensor.data.state |= ((uint32_t) left_on
+					<< LEFT_MARK_SENSOR_INDEX);
+			IR_Sensor.data.state |= ((uint32_t) right_on
+					<< RIGHT_MARK_SENSOR_INDEX);
 		}
 
 		IR_Sensor.data.idx = 0;         // 사이클 재시작
@@ -246,28 +250,51 @@ void Sensor_Calibration() {
 
 void Sensor_Raw_Printf() {
 	Sensor_Start();
-
 	uint8_t i = 0;
 	LCD_Printf(0, 0, "Sensor Raw");
-
-	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		LCD_Printf(0, 10, "%02d", IR_Sensor.data.idx);
+	UserInput_t bt;
+	while ((bt = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
 		Sensor_Printf(i, IR_Sensor.data.raw);
 		i = (i + 1) % 18;
-		HAL_GPIO_WritePin(SENSOR_LED_L_GPIO_Port, SENSOR_LED_L_Pin, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(SENSOR_LED_R_GPIO_Port, SENSOR_LED_R_Pin, GPIO_PIN_RESET);
-
-		if(Button_Get_Input() == INPUT_CMD_L_HOLD) {
-			HAL_GPIO_WritePin(SENSOR_LED_L_GPIO_Port, SENSOR_LED_L_Pin, GPIO_PIN_SET);
-		}
-
-		if(Button_Get_Input() == INPUT_CMD_R_HOLD) {
-			HAL_GPIO_WritePin(SENSOR_LED_R_GPIO_Port, SENSOR_LED_R_Pin, GPIO_PIN_SET);
-		}
 	}
+
 	LCD_Clear();
 	Sensor_Stop();
 	Button_Wait_Release(&btn_k);
+}
+
+void Sensor_Normalize_Printf() {
+	Sensor_Start();
+	uint8_t i = 0;
+	LCD_Printf(0, 0, "Sensor Normal");
+
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
+		Sensor_Printf(i, IR_Sensor.data.raw);
+		i = (i + 1) % 18;
+	}
+
+	LCD_Clear();
+	Sensor_Stop();
+	Button_Wait_Release(&btn_k);
+}
+
+void Sensor_State_Printf() {
+	Sensor_Start();
+	uint8_t i = 0;
+	LCD_Printf(0, 0, "Sensor Normal");
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
+		char state = (IR_Sensor.data.state & 0x01 << i) ? '1' : '0';
+		if (i < LINE_N_SENSORS) {
+			LCD_Printf(i, 2, "%c", state);
+		}
+		if (i == 16) {
+			LCD_Printf(0, 3, "%c", state);
+		}
+		if (i == 17) {
+			LCD_Printf(15, 3, "%c", state);
+		}
+		i = (i + 1) % 18;
+	}
 }
 
 void IMU_Test() {

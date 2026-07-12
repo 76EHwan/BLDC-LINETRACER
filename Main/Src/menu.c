@@ -3,11 +3,14 @@
  */
 #include "main.h"
 
+#include "SDcard.h"
+#include "w25qxx.h"
+
 #include "menu.h"
 #include "user_init.h"
 #include "bootloader.h"
 #include "button.h"
-#include "w25qxx.h"
+#include "foc.h"
 #include "sensor.h"
 #include "motor.h"
 
@@ -51,20 +54,22 @@ MenuItem_t main_menu_items[] = {
 MenuItem_t sensor_menu_items[] = {
     { .name = "Calibration",  .pfnActionCallback = Sensor_Calibration },
     { .name = "Raw",          .pfnActionCallback = Sensor_Raw_Printf },
-    { .name = "Normalized",   .pfnActionCallback = NULL },
-    { .name = "State",        .pfnActionCallback = NULL },
+    { .name = "Normalized",   .pfnActionCallback = Sensor_Normalize_Printf },
+    { .name = "State",        .pfnActionCallback = Sensor_State_Printf },
     { .name = "Update Thres", .pfnActionCallback = NULL },
     { .name = "IMU Test",     .pfnActionCallback = IMU_Test }
 };
 
 MenuItem_t motor_menu_items[] = {
-    { .name = "Driver Setup",  .pfnActionCallback = MTR_Read_Register },
-    { .name = "Update Setup",  .pfnActionCallback = MTR_Update_Setup },
-    { .name = "6-Step PWM",    .pfnActionCallback = MTR_Simple_Control },
-    { .name = "Simple FOC",    .pfnActionCallback = MTR_Simple_FOC },
-    { .name = "Tune Cur PI",   .pfnActionCallback = MTR_Current_Tune_Loop },
-    { .name = "Encoder Test",  .pfnActionCallback = MTR_Encoder_Test },
-    { .name = "Tune Spd PI",   .pfnActionCallback = MTR_Speed_FOC }
+    { .name = "Driver Setup",	.pfnActionCallback = MTR_Read_Register },
+    { .name = "Update Setup",	.pfnActionCallback = MTR_Update_Setup },
+    { .name = "6-Step PWM",		.pfnActionCallback = MTR_Simple_Control },
+    { .name = "Simple FOC",		.pfnActionCallback = MTR_Simple_FOC },
+    { .name = "Tune Cur PI",	.pfnActionCallback = MTR_Current_Tune_Loop },
+    { .name = "Encoder Test",	.pfnActionCallback = MTR_Encoder_Test },
+    { .name = "Tune Spd PI",	.pfnActionCallback = MTR_Speed_FOC },
+	{ .name = "Load From SD",	.pfnActionCallback = FOC_Menu_LoadFromSD},
+	{ .name = "Save To SD",	.pfnActionCallback = FOC_Menu_SaveToSD},
 };
 
 MenuItem_t drive_menu_items[] = {
@@ -311,4 +316,30 @@ void Menu_ProcessLoop() {
 	Select_Menu(current_menu);
 	Show_Menu(current_menu);
 	current_menu->prev_index = current_menu->cursor_index;
+}
+
+
+FRESULT FOC_Parameters_InitOrLoad(void) {
+	if (!SDCard_FileExists(FOC_PARAM_PATH)) {
+		return Save_FOC_Parameters();
+	}
+	return FR_OK;
+}
+
+void FOC_Menu_SaveToSD(void) {
+	FRESULT res = Save_FOC_Parameters();
+	LCD_Clear();
+	LCD_Printf(0, 0, "Save FOC Param");
+	LCD_Printf(0, 1, res == FR_OK ? "SUCCESS" : "FAIL: %d", res);
+	HAL_Delay(1000);
+	LCD_Clear();
+}
+
+void FOC_Menu_LoadFromSD(void) {
+	FRESULT res = Load_FOC_Parameters();
+	LCD_Clear();
+	LCD_Printf(0, 0, "Load FOC Param");
+	LCD_Printf(0, 1, res == FR_OK ? "SUCCESS" : "FAIL: %d", res);
+	HAL_Delay(1000);
+	LCD_Clear();
 }

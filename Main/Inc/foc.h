@@ -39,6 +39,10 @@
 #define DEFAULT_IQ_KP					DEFAULT_ID_KP
 #define DEFAULT_IQ_KI					DEFAULT_ID_KI
 
+
+#define FOC_PARAM_PATH "/FOC_DATA/foc_param.txt"
+#define FOC_PARAM_COUNT (sizeof(foc_param_table) / sizeof(foc_param_table[0]))
+
 // =========================================================
 // [FOC 제어 핸들 구조체]
 // =========================================================
@@ -112,7 +116,9 @@ void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc);
 void FOC_Execute_Loop(FOC_Handle_t *hfoc);
 void FOC_Speed_Loop(FOC_Handle_t *hfoc);
 void Speed_TIM_IRQ_Handler(void);
+
 FRESULT Save_FOC_Parameters(void);
 FRESULT Load_FOC_Parameters(void);
 
 #endif /* __FOC_H */
+
