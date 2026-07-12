@@ -109,8 +109,8 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 	hfoc->pid_iq.Ki = DEFAULT_IQ_KI;
 	hfoc->pid_iq.Kd = 0.f;
 
-	hfoc->spd_Kp = 0.00032f;
-	hfoc->spd_Ki = 0.0007f;
+	hfoc->spd_Kp = 0.00016f;
+	hfoc->spd_Ki = 0.00035f;
 	hfoc->iq_limit = SPD_IQ_LIMIT;
 
 	// SD 카드에서 Kp, Ki를 불러왔으므로 PID 구조체에 한 번 반영해 줍니다.
@@ -357,17 +357,6 @@ static const SDCard_ConfigEntry foc_param_table[] = {
 
 FRESULT Save_FOC_Parameters(void) {
 	return SDCard_SaveConfig(FOC_PARAM_PATH, foc_param_table, FOC_PARAM_COUNT);
-}
-
-static int FOC_FindValue(const char *text, const char *key, float *out) {
-	const char *p = strstr(text, key);
-	if (!p)
-		return 0;
-	p += strlen(key);
-	if (*p != '=')
-		return 0;
-	*out = strtof(p + 1, NULL);
-	return 1;
 }
 
 FRESULT Load_FOC_Parameters(void) {
