@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file   fatfs.h
-  * @brief  Header for fatfs applications
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file   fatfs.h
+ * @brief  Header for fatfs applications
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __fatfs_H
@@ -28,7 +28,8 @@
 #include "sd_diskio.h" /* defines SD_Driver as external */
 
 /* USER CODE BEGIN Includes */
-
+#include "sd_diskio_patch.h"
+#include "stm32h7xx_hal.h"
 /* USER CODE END Includes */
 
 extern uint8_t retSD; /* Return value for SD */
@@ -39,7 +40,10 @@ extern FIL SDFile; /* File object for SD */
 void MX_FATFS_Init(void);
 
 /* USER CODE BEGIN Prototypes */
-
+extern FILINFO fno;
+extern DIR dir;
+extern FATFS SDFatFS_NC;
+extern FIL SDFile_NC;
 /* USER CODE END Prototypes */
 #ifdef __cplusplus
 }

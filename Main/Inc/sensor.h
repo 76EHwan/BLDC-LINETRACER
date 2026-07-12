@@ -24,7 +24,7 @@ typedef struct {
 	uint16_t blackmax[NUM_SENSORS];
 	uint16_t normalized_coef_bias[NUM_SENSORS];
 	uint16_t normalized[NUM_SENSORS];
-	uint16_t state;
+	uint32_t state;
 	float_t line_position;
 	uint16_t threshold;
 } SensorDataTypeDef;
@@ -35,16 +35,20 @@ typedef struct {
 } Sensor_TypeDef;
 
 extern volatile Sensor_TypeDef IR_Sensor;
-
+extern uint16_t adc3_buffer[3];
 
 void Sensor_Calibration();
 void Sensor_Raw_Printf();
+void Sensor_Normalize_Printf();
+void Sensor_State_Printf();
 
 void TIM7_IRQ_Handler(void);
 void ADC3_IRQ_Handler(void);
 
 void  Sensor_Line_LUT_Init(void);
 float Sensor_Line_Estimate(void);
+
+
 
 void IMU_Test(void);
 

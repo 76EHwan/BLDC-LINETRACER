@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file    sd_diskio.c
-  * @brief   SD Disk I/O driver
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file    sd_diskio.c
+ * @brief   SD Disk I/O driver
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 
 /* Note: code generation based on sd_diskio_dma_template_bspv1.c v2.1.4
@@ -22,6 +22,14 @@
 
 /* USER CODE BEGIN firstSection */
 /* can be used to modify / undefine following code or add new definitions */
+#if defined(ENABLE_SCRATCH_BUFFER)
+#if defined (ENABLE_SD_DMA_CACHE_MAINTENANCE)
+__attribute__((section(".ram_d2_nocache"), aligned(32))) static uint8_t scratch[BLOCKSIZE];
+#else
+__ALIGN_BEGIN static uint8_t scratch[BLOCKSIZE] __ALIGN_END;
+#endif
+#endif
+
 /* USER CODE END firstSection*/
 
 /* Includes ------------------------------------------------------------------*/
@@ -390,6 +398,15 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
         memcpy((void *)scratch, (void *)buff, BLOCKSIZE);
         buff += BLOCKSIZE;
 
+#if (ENABLE_SD_DMA_CACHE_MAINTENANCE == 1)
+        /*
+        * CPU가 memcpy로 scratch에 쓴 내용은 D-Cache에만 있을 수 있으므로,
+        * DMA가 물리 메모리를 직접 읽기 전에 캐시 내용을 강제로 flush해야 한다.
+        * 이걸 빼먹으면 DMA가 이전에 남아있던 쓰레기 값을 카드에 써버린다.
+        */
+        SCB_CleanDCache_by_Addr((uint32_t*)scratch, BLOCKSIZE);
+#endif
+
         ret = BSP_SD_WriteBlocks_DMA((uint32_t*)scratch, (uint32_t)sector++, 1);
         if (ret == MSD_OK) {
           /* wait for a message from the queue or a timeout */
@@ -500,18 +517,18 @@ void BSP_SD_ReadCpltCallback(void)
 
 /* USER CODE BEGIN ErrorAbortCallbacks */
 /*
-==============================================================================================
-  depending on the SD_HAL_Driver version, either the HAL_SD_ErrorCallback() or HAL_SD_AbortCallback()
-  or both could be defined, activate the callbacks below when suitable and needed
-==============================================================================================
-void BSP_SD_AbortCallback(void)
-{
-}
+ ==============================================================================================
+ depending on the SD_HAL_Driver version, either the HAL_SD_ErrorCallback() or HAL_SD_AbortCallback()
+ or both could be defined, activate the callbacks below when suitable and needed
+ ==============================================================================================
+ void BSP_SD_AbortCallback(void)
+ {
+ }
 
-void BSP_SD_ErrorCallback(void)
-{
-}
-*/
+ void BSP_SD_ErrorCallback(void)
+ {
+ }
+ */
 /* USER CODE END ErrorAbortCallbacks */
 
 /* USER CODE BEGIN lastSection */
