@@ -547,14 +547,14 @@ void LCD7789_Display_Random_BMP_From_SD(const TCHAR *address) {
 	UINT bytesRead;
 	uint8_t header[54];
 
-	res = f_open(&file, full_path, FA_READ);
+	res = f_open(&SDFile_NC, full_path, FA_READ);
 	if (res != FR_OK) {
 		LCD7789_Printf(0, y_pos, "ERR: File Open %d", res);
 		SDCard_Unmount();
 		return;
 	}
 
-	f_read(&file, header, 54, &bytesRead);
+	f_read(&SDFile_NC, header, 54, &bytesRead);
 
 	uint32_t dataOffset = header[10] | (header[11] << 8) | (header[12] << 16)
 			| (header[13] << 24);
@@ -566,17 +566,17 @@ void LCD7789_Display_Random_BMP_From_SD(const TCHAR *address) {
 
 	if (bitDepth != 24) {
 		LCD7789_Printf(0, y_pos, "ERR: Not 24bit!");
-		f_close(&file);
+		f_close(&SDFile_NC);
 		SDCard_Unmount();
 		return;
 	}
 
-	f_lseek(&file, dataOffset);
+	f_lseek(&SDFile_NC, dataOffset);
 
 	int padding = (4 - ((width * 3) % 4)) % 4;
 
 	for (int y = height - 1; y >= 0; y--) {
-		f_read(&file, sd_row_buffer, (width * 3) + padding, &bytesRead);
+		f_read(&SDFile_NC, sd_row_buffer, (width * 3) + padding, &bytesRead);
 
 		for (int x = 0; x < width; x++) {
 			uint8_t b = sd_row_buffer[x * 3];
@@ -592,7 +592,7 @@ void LCD7789_Display_Random_BMP_From_SD(const TCHAR *address) {
 		}
 	}
 
-	f_close(&file);
+	f_close(&SDFile_NC);
 	SDCard_Unmount();
 }
 

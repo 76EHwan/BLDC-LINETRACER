@@ -15,6 +15,7 @@
   *
   ******************************************************************************
   */
+#include "sd_diskio_patch.h"
 /* USER CODE END Header */
 #include "fatfs.h"
 
@@ -24,10 +25,10 @@ FATFS SDFatFS;    /* File system object for SD logical drive */
 FIL SDFile;       /* File object for SD */
 
 /* USER CODE BEGIN Variables */
-__attribute__((section(".ram_d2_nocache"), aligned(32))) FIL file;
 __attribute__((section(".ram_d2_nocache"), aligned(32))) FILINFO fno;
 __attribute__((section(".ram_d2_nocache"), aligned(32))) DIR dir;
-
+__attribute__((section(".ram_d2_nocache"), aligned(32))) FATFS SDFatFS_NC;
+__attribute__((section(".ram_d2_nocache"), aligned(32))) FIL SDFile_NC;
 /* USER CODE END Variables */
 
 void MX_FATFS_Init(void)
@@ -36,6 +37,8 @@ void MX_FATFS_Init(void)
   retSD = FATFS_LinkDriver(&SD_Driver, SDPath);
 
   /* USER CODE BEGIN Init */
+  FATFS_UnLinkDriver(SDPath);
+  retSD = FATFS_LinkDriver(&SD_Driver_Fixed, SDPath);
   /* additional user code for init */
   /* USER CODE END Init */
 }

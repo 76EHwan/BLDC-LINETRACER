@@ -5,7 +5,7 @@
 uint8_t sdcard_err = 1;
 
 FRESULT SDCard_Mount(void) {
-	return f_mount(&SDFatFS, "", 1);
+	return f_mount(&SDFatFS_NC, "", 1);
 }
 
 void SDCard_Unmount(void) {
@@ -16,12 +16,12 @@ FRESULT SDCard_Write(const char *filename, const char *data) {
 	FRESULT res;
 	UINT bytesWritten;
 
-	res = f_open(&file, filename, FA_CREATE_ALWAYS | FA_WRITE);
+	res = f_open(&SDFile_NC, filename, FA_CREATE_ALWAYS | FA_WRITE);
 	if (res != FR_OK)
 		return res;
 
-	res = f_write(&file, data, strlen(data), &bytesWritten);
-	f_close(&file);
+	res = f_write(&SDFile_NC, data, strlen(data), &bytesWritten);
+	f_close(&SDFile_NC);
 
 	if (res == FR_OK && bytesWritten == 0)
 		return FR_DENIED;
@@ -32,13 +32,13 @@ FRESULT SDCard_Read(const char *filename, char *buffer, UINT bufSize) {
 	FRESULT res;
 	UINT bytesRead;
 
-	res = f_open(&file, filename, FA_READ);
+	res = f_open(&SDFile_NC, filename, FA_READ);
 	if (res != FR_OK)
 		return res;
 
 	memset(buffer, 0, bufSize);
-	res = f_read(&file, buffer, bufSize - 1, &bytesRead);
-	f_close(&file);
+	res = f_read(&SDFile_NC, buffer, bufSize - 1, &bytesRead);
+	f_close(&SDFile_NC);
 
 	if (res == FR_OK && bytesRead == 0)
 		return FR_DENIED;
@@ -94,12 +94,12 @@ FRESULT SDCard_WriteBinary(const char *filename, const void *data, UINT size) {
 	FRESULT res;
 	UINT bytesWritten;
 
-	res = f_open(&file, filename, FA_CREATE_ALWAYS | FA_WRITE);
+	res = f_open(&SDFile_NC, filename, FA_CREATE_ALWAYS | FA_WRITE);
 	if (res != FR_OK)
 		return res;
 
-	res = f_write(&file, data, size, &bytesWritten);
-	f_close(&file);
+	res = f_write(&SDFile_NC, data, size, &bytesWritten);
+	f_close(&SDFile_NC);
 
 	if (res == FR_OK && bytesWritten != size)
 		return FR_DENIED;
@@ -110,12 +110,12 @@ FRESULT SDCard_ReadBinary(const char *filename, void *buffer, UINT size) {
 	FRESULT res;
 	UINT bytesRead;
 
-	res = f_open(&file, filename, FA_READ);
+	res = f_open(&SDFile_NC, filename, FA_READ);
 	if (res != FR_OK)
 		return res;
 
-	res = f_read(&file, buffer, size, &bytesRead);
-	f_close(&file);
+	res = f_read(&SDFile_NC, buffer, size, &bytesRead);
+	f_close(&SDFile_NC);
 
 	if (res == FR_OK && bytesRead != size)
 		return FR_DENIED;
@@ -172,19 +172,19 @@ void SDCard_DebugTest(void) {
 
 	static uint8_t buf[512];
 	memset(buf, 0xAA, sizeof(buf));
-	memset(&file, 0, sizeof(FIL));
+	memset(&SDFile_NC, 0, sizeof(FIL));
 
-	res = f_open(&file, "split2.bin", FA_CREATE_ALWAYS | FA_WRITE);
+	res = f_open(&SDFile_NC, "split2.bin", FA_CREATE_ALWAYS | FA_WRITE);
 	LCD_Printf(0, 4, "Open: %d", res);
 
 	UINT bw;
-	FRESULT r1 = f_write(&file, buf, 512, &bw);
+	FRESULT r1 = f_write(&SDFile_NC, buf, 512, &bw);
 	LCD_Printf(0, 5, "W1: res=%d bw=%u", r1, bw);   // bw 값도 확인
 
-	FRESULT r_sync = f_sync(&file);
+	FRESULT r_sync = f_sync(&SDFile_NC);
 	LCD_Printf(0, 9, "Sync: %d", r_sync);
 
-	FRESULT rc = f_close(&file);
+	FRESULT rc = f_close(&SDFile_NC);
 	LCD_Printf(0, 6, "Close: %d", rc);              // 반드시 확인
 	// 언마운트 없이 같은 세션에서 바로 확인
 	FRESULT chk = f_stat("split2.bin", &fno);
@@ -192,7 +192,7 @@ void SDCard_DebugTest(void) {
 
 	// 여유 클러스터 확인
 	DWORD free_clust;
-	FATFS *fs = &SDFatFS;
+	FATFS *fs = &SDFatFS_NC;
 	FRESULT gf = f_getfree("", &free_clust, &fs);
 	LCD_Printf(0, 11, "Free: %d clust=%lu", gf, free_clust);
 
