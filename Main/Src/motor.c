@@ -463,8 +463,8 @@ void MTR_Current_Tune_Loop() {
 	uint8_t toggle_state = 0;
 
 	uint8_t sel = 0; // 0: Kp, 1: Ki
-	const float step_kp = 0.001f;
-	const float step_ki = 0.001f;
+	const float step_kp = 0.00001f;
+	const float step_ki = 0.00001f;
 
 	while (1) {
 		bt = Button_Get_Input();
@@ -547,8 +547,8 @@ void MTR_Speed_FOC() {
 
 	const float step_iq_kp = 0.05f;
 	const float step_iq_ki = 0.005f;
-	const float step_spd_kp = 0.0001f;
-	const float step_spd_ki = 0.0001f;
+	const float step_spd_kp = 0.00001f;
+	const float step_spd_ki = 0.00001f;
 
 	while (1) {
 		bt = Button_Get_Input();
