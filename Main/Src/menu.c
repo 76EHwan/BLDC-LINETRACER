@@ -3,16 +3,17 @@
  */
 #include "main.h"
 
+#include "button.h"
 #include "SDcard.h"
 #include "w25qxx.h"
 
 #include "menu.h"
 #include "user_init.h"
 #include "bootloader.h"
-#include "button.h"
 #include "foc.h"
 #include "sensor.h"
 #include "motor.h"
+#include "drive.h"
 
 /* ===== Last-Used (STM32H743 internal flash, Bank2 last sector) ===== */
 #define LU_FLASH_ADDR     0x081E0000UL          /* Bank2 / Sector7 start */
@@ -56,6 +57,7 @@ MenuItem_t sensor_menu_items[] = {
     { .name = "Raw",          .pfnActionCallback = Sensor_Raw_Printf },
     { .name = "Normalized",   .pfnActionCallback = Sensor_Normalize_Printf },
     { .name = "State",        .pfnActionCallback = Sensor_State_Printf },
+	{ .name = "Position",     .pfnActionCallback = Sensor_Position_Printf },
     { .name = "Update Thres", .pfnActionCallback = NULL },
     { .name = "IMU Test",     .pfnActionCallback = IMU_Test }
 };
@@ -73,7 +75,7 @@ MenuItem_t motor_menu_items[] = {
 };
 
 MenuItem_t drive_menu_items[] = {
-    { .name = "1st Drive",    .pfnActionCallback = NULL },
+    { .name = "1st Drive",    .pfnActionCallback = Line_Follow_Drive },
     { .name = "2nd Drive",    .pfnActionCallback = NULL },
     { .name = "3rd Drive",    .pfnActionCallback = NULL },
     { .name = "4th Drive",    .pfnActionCallback = NULL },

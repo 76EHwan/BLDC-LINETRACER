@@ -87,6 +87,10 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 	foc_L.enc_dir = -1;
 	foc_R.enc_dir = -1;
 
+	foc_L.omega_ramp_rate = 3000;
+	foc_R.omega_ramp_rate = 3000;
+
+
 	Encoder_Start();
 	FOC_ADC_Start();
 
@@ -95,17 +99,11 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 
 	if (mode != FOC_MODE_SVPWM_NO_SPIN) {
 		MTR_Start();
-
-		// PWM 출력 인가 후 전류 증폭기(CSA) 영점 안정화 대기
 		HAL_Delay(50);
-
-		LCD_Printf(0, 0, "Calibrating...");
-		FOC_Calibrate_Offset(&foc_L);
-		FOC_Calibrate_Offset(&foc_R);
 
 		LCD_Printf(0, 0, "Aligning L... ");
 		FOC_Calibrate_Encoder_Offset(&foc_L);
-		LCD_Printf(0, 0, "Aligning R... ");
+		LCD_Printf(0, 1, "Aligning R... ");
 		FOC_Calibrate_Encoder_Offset(&foc_R);
 		LCD_Clear();
 	}
@@ -288,6 +286,15 @@ void MTR_Simple_Control() {
 	static int16_t angle = 0;
 	static uint16_t half_pwm = 2400;
 	static uint16_t max_pwm = 1000;
+
+	// ==== [추가] 방향 확인용 변수 ====
+	int16_t prev_angle = angle;
+	uint16_t enc_L_prev = (uint16_t) hlptim2.Instance->CNT; // foc_L.LPTIMx
+	uint16_t enc_R_prev = (uint16_t) hlptim1.Instance->CNT; // foc_R.LPTIMx
+	int8_t dir_L_ok = 1; // 1: 명령방향과 일치, -1: 반전
+	int8_t dir_R_ok = 1;
+	// ================================
+
 	while (1) {
 		bt = Button_Get_Input();
 		switch (bt) {
@@ -342,7 +349,34 @@ void MTR_Simple_Control() {
 		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, (uint32_t )v_calc);
 		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, (uint32_t )w_calc);
 
-		LCD_Printf(0, 0, "Ang:%3d Max:%4d", angle, max_pwm);
+		// ==== [추가] 방향 판정 로직 ====
+		int16_t angle_delta = angle - prev_angle;
+		if (angle_delta != 0) {
+			uint16_t enc_L_now = (uint16_t) hlptim2.Instance->CNT;
+			uint16_t enc_R_now = (uint16_t) hlptim1.Instance->CNT;
+
+			// 16비트 카운터 롤오버까지 자연스럽게 처리되도록 unsigned 뺄셈 후 signed 캐스팅
+			int16_t enc_L_delta = (int16_t) (enc_L_now - enc_L_prev);
+			int16_t enc_R_delta = (int16_t) (enc_R_now - enc_R_prev);
+
+			if (enc_L_delta != 0) {
+				dir_L_ok = ((angle_delta > 0) == (enc_L_delta > 0)) ? 1 : -1;
+			}
+			if (enc_R_delta != 0) {
+				dir_R_ok = ((angle_delta > 0) == (enc_R_delta > 0)) ? 1 : -1;
+			}
+
+			enc_L_prev = enc_L_now;
+			enc_R_prev = enc_R_now;
+			prev_angle = angle;
+		}
+		// ================================
+
+		LCD_Printf(0, 0, "Ang:%3d", angle);
+		LCD_Printf(0, 1, "Max:%4d", max_pwm);
+		LCD_Printf(0, 2, "DirL:%s", dir_L_ok > 0 ? "OK " : "REV");
+		LCD_Printf(0, 3, "DirR:%s", dir_R_ok > 0 ? "OK " : "REV");
+
 	}
 }
 
@@ -350,11 +384,11 @@ void MTR_Simple_FOC() {
 	UserInput_t bt = INPUT_CMD_NONE;
 
 	// 모터 구동 및 SVPWM 활성화 모드
-	MTR_Setup_And_Start(FOC_MODE_SVPWM_SPIN);
+	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
 
 	// 기본 Iq 값 부여
-	foc_L.target_Iq = 0.5f;
-	foc_R.target_Iq = 0.5f;
+	foc_L.target_Iq = 0.001f;
+	foc_R.target_Iq = 0.001f;
 
 	float omega = 0.0f;
 
@@ -419,6 +453,8 @@ void MTR_Simple_FOC() {
 				(uint16_t) ADC1->JDR2);
 		LCD_Printf(0, 12, "r2:%5d %5d", (uint16_t) ADC2->JDR1,
 				(uint16_t) ADC2->JDR2);
+		LCD_Printf(0, 13, "wmeasL:%6.1f", foc_L.omega_e_meas);
+
 	}
 }
 
@@ -429,10 +465,11 @@ void MTR_Encoder_Test() {
 	while (1) {
 		LCD_Printf(0, 0, "L:%5d R:%5d", (uint16_t) hlptim2.Instance->CNT,
 				(uint16_t) hlptim1.Instance->CNT);
-		LCD_Printf(0, 1, "eL:%6.3f eR:%6.3f", foc_L.theta_e, foc_R.theta_e);
-		LCD_Printf(0, 2, "AL:%5d AR:%5d", (uint16_t) ADC2->JDR1,
-				(uint16_t) ADC1->JDR1);
-		LCD_Printf(0, 3, "NFL: %d NFR: %d",
+		LCD_Printf(0, 1, "eL:%6.3f", foc_L.theta_e);
+		LCD_Printf(0, 2, "eR:%6.3f", foc_R.theta_e);
+		LCD_Printf(0, 3, "AL:%5d", (uint16_t) ADC2->JDR1);
+		LCD_Printf(0, 4, "AR:%5d", (uint16_t) ADC1->JDR1);
+		LCD_Printf(0, 5, "NFL: %d NFR: %d",
 				HAL_GPIO_ReadPin(MTR_nFAULT_L_GPIO_Port, MTR_nFAULT_L_Pin),
 				HAL_GPIO_ReadPin(MTR_nFAULT_R_GPIO_Port, MTR_nFAULT_R_Pin));
 		if (Button_Get_Input() == INPUT_CMD_K_HOLD) {
@@ -463,8 +500,8 @@ void MTR_Current_Tune_Loop() {
 	uint8_t toggle_state = 0;
 
 	uint8_t sel = 0; // 0: Kp, 1: Ki
-	const float step_kp = 0.00001f;
-	const float step_ki = 0.00001f;
+	const float step_kp = 0.000001f;
+	const float step_ki = 0.000001f;
 
 	while (1) {
 		bt = Button_Get_Input();
@@ -537,18 +574,16 @@ void MTR_Current_Tune_Loop() {
 void MTR_Speed_FOC() {
 	UserInput_t bt = INPUT_CMD_NONE;
 
-	// 통합 시작 함수: 정상 FOC 속도 제어 모드
 	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
-
-	// 속도 루프 제어를 위해 IT 타이머 및 루프 플래그 활성화
 
 	float omega = 0.0f;
 	uint8_t sel = 0;
 
 	const float step_iq_kp = 0.05f;
-	const float step_iq_ki = 0.005f;
+	const float step_iq_ki = 0.025f;
 	const float step_spd_kp = 0.00001f;
 	const float step_spd_ki = 0.00001f;
+	const float step_spd_kd = 0.000001f;
 
 	while (1) {
 		bt = Button_Get_Input();
@@ -556,18 +591,18 @@ void MTR_Speed_FOC() {
 		switch (bt) {
 		case INPUT_CMD_R_SINGLE:
 		case INPUT_CMD_R_HOLD:
-			omega += 25.0f;
+			omega += 50.0f;
 			if (omega > 2000.0f)
 				omega = 2000.0f;
 			break;
 		case INPUT_CMD_L_SINGLE:
 		case INPUT_CMD_L_HOLD:
-			omega -= 25.0f;
+			omega -= 50.0f;
 			if (omega < -2000.0f)
 				omega = -2000.0f;
 			break;
 		case INPUT_CMD_K_SINGLE:
-			sel = (sel + 1) % 4;
+			sel = (sel + 1) % 5;   // 4 -> 5로 변경 (Kd 항목 추가)
 			break;
 		case INPUT_CMD_U_SINGLE:
 		case INPUT_CMD_U_HOLD:
@@ -591,6 +626,10 @@ void MTR_Speed_FOC() {
 			case 3:
 				foc_L.spd_Ki += step_spd_ki;
 				foc_R.spd_Ki += step_spd_ki;
+				break;
+			case 4:                          // 추가
+				foc_L.spd_Kd += step_spd_kd;
+				foc_R.spd_Kd += step_spd_kd;
 				break;
 			}
 			break;
@@ -625,6 +664,12 @@ void MTR_Speed_FOC() {
 					foc_L.spd_Ki = 0.0f;
 				foc_R.spd_Ki = foc_L.spd_Ki;
 				break;
+			case 4:
+				foc_L.spd_Kd -= step_spd_kd;
+				if (foc_L.spd_Kd < 0.0f)
+					foc_L.spd_Kd = 0.0f;
+				foc_R.spd_Kd = foc_L.spd_Kd;
+				break;
 			}
 			break;
 		case INPUT_CMD_K_HOLD:
@@ -643,17 +688,15 @@ void MTR_Speed_FOC() {
 				foc_L.spd_Kp * 1000);
 		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ',
 				foc_L.spd_Ki * 1000);
-		LCD_Printf(0, 5, "ref:%6.1f", omega);
-		LCD_Printf(0, 6, "wL :%6.1f", foc_L.omega_e_meas);
-		LCD_Printf(0, 7, "wR :%6.1f", foc_R.omega_e_meas);
-		LCD_Printf(0, 8, "IqL:%6.3f", foc_L.target_Iq);
-		LCD_Printf(0, 9, "IqcL:%6.3f", foc_L.I_q);
-		LCD_Printf(0, 10, "IqR:%6.3f", foc_R.target_Iq);
-		LCD_Printf(0, 11, "IqcR:%6.3f", foc_R.I_q);
+		LCD_Printf(0, 4, "%cSpKd:%6.3f", sel == 4 ? '>' : ' ',
+				foc_L.spd_Kd * 1000);   // 추가 (기존 4번 줄 이하는 한 칸씩 밀림)
+		LCD_Printf(0, 6, "ref:%6.1f", omega);
+		LCD_Printf(0, 7, "SpdL:%6.1f", foc_L.omega_e_meas);
+		LCD_Printf(0, 8, "SpdR :%6.1f", foc_R.omega_e_meas);
+		LCD_Printf(0, 9, "IqL:%8.5f", foc_L.target_Iq);
+		LCD_Printf(0, 10, "IqcL:%8.5f", foc_L.I_q);
+		LCD_Printf(0, 11, "IqR:%8.5f", foc_R.target_Iq);
+		LCD_Printf(0, 12, "IqcR:%8.5f", foc_R.I_q);
+		LCD_Printf(0, 13, "Vbus:%5.3f", FOC_Get_VBus());
 	}
-}
-
-void MTR_Set_Speed(float mps_L, float mps_R) {
-	foc_L.target_omega = mps_L * INV_TIRE_RADIUS;
-	foc_R.target_omega = -mps_R * INV_TIRE_RADIUS;
 }

@@ -17,4 +17,6 @@ typedef struct {
 	float mps;
 } DriveParam_t;
 
+void Line_Follow_Drive(void);
+
 #endif /* INC_DRIVE_H_ */

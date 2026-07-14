@@ -10,6 +10,10 @@
 #include "button.h"
 #include "lsm6ds3tr-c.h"
 #include "cmsis_gcc.h"
+#include "SDcard.h"
+
+#define SENSOR_CALIB_PATH "/Sensor_Data/calibration_result.txt"
+#define SENSOR_CALIB_COUNT (sizeof(sensor_calib_table) / sizeof(sensor_calib_table[0]))
 
 #define SENSOR_TRIG_TIM &htim2
 
@@ -42,7 +46,7 @@ static const float line_sensor_pos[LINE_N_SENSORS] = { -1.0f, -13.0f / 15.0f,
 				/ 15.0f, 7.0f / 15.0f, 9.0f / 15.0f, 11.0f / 15.0f, 13.0f
 				/ 15.0f, 1.0f };
 
-__attribute__((section(".ram_d3"), aligned(32)))           uint16_t adc3_buffer[3];
+__attribute__((section(".ram_d3"), aligned(32)))             uint16_t adc3_buffer[3];
 
 volatile uint32_t tim7_count = 0;
 volatile uint32_t adc_count = 0;
@@ -74,18 +78,29 @@ void Sensor_Stop() {
 }
 
 __STATIC_INLINE void Set_Mux_Channel_Fast(uint8_t index) {
-	(index & 0x01) ?
-			(SENSOR_MUX0_GPIO_Port->BSRR = SENSOR_MUX0_Pin) :
-			(SENSOR_MUX0_GPIO_Port->BSRR = ((uint32_t) SENSOR_MUX0_Pin << 16U));
-	(index & 0x02) ?
-			(SENSOR_MUX1_GPIO_Port->BSRR = SENSOR_MUX1_Pin) :
-			(SENSOR_MUX1_GPIO_Port->BSRR = ((uint32_t) SENSOR_MUX1_Pin << 16U));
-	(index & 0x04) ?
-			(SENSOR_MUX2_GPIO_Port->BSRR = SENSOR_MUX2_Pin) :
-			(SENSOR_MUX2_GPIO_Port->BSRR = ((uint32_t) SENSOR_MUX2_Pin << 16U));
-	(index & 0x08) ?
-			(SENSOR_MUX3_GPIO_Port->BSRR = SENSOR_MUX3_Pin) :
-			(SENSOR_MUX3_GPIO_Port->BSRR = ((uint32_t) SENSOR_MUX3_Pin << 16U));
+	// MUX0 (Bit 0: 가중치 1)
+	if (index & 0x01)
+		SENSOR_MUX0_GPIO_Port->BSRR = SENSOR_MUX0_Pin;
+	else
+		SENSOR_MUX0_GPIO_Port->BSRR = (uint32_t) SENSOR_MUX0_Pin << 16U;
+
+	// MUX1 (Bit 1: 가중치 2)
+	if (index & 0x02)
+		SENSOR_MUX1_GPIO_Port->BSRR = SENSOR_MUX1_Pin;
+	else
+		SENSOR_MUX1_GPIO_Port->BSRR = (uint32_t) SENSOR_MUX1_Pin << 16U;
+
+	// MUX2 (Bit 2: 가중치 4)
+	if (index & 0x04)
+		SENSOR_MUX2_GPIO_Port->BSRR = SENSOR_MUX2_Pin;
+	else
+		SENSOR_MUX2_GPIO_Port->BSRR = (uint32_t) SENSOR_MUX2_Pin << 16U;
+
+	// MUX3 (Bit 3: 가중치 8)
+	if (index & 0x08)
+		SENSOR_MUX3_GPIO_Port->BSRR = SENSOR_MUX3_Pin;
+	else
+		SENSOR_MUX3_GPIO_Port->BSRR = (uint32_t) SENSOR_MUX3_Pin << 16U;
 }
 
 __STATIC_INLINE void Sensor_Normalize(uint8_t idx) {
@@ -154,7 +169,6 @@ void TIM7_IRQ_Handler() {
  * adc3_buffer는 SRAM4(D3) + MPU non-cacheable이므로 invalidate 불필요.
  */
 void ADC3_IRQ_Handler() {
-	adc_count++;
 	ADC3->ISR = (ADC_FLAG_EOC | ADC_FLAG_EOS | ADC_FLAG_OVR);
 
 	const uint8_t idx = IR_Sensor.data.idx;
@@ -177,8 +191,8 @@ void ADC3_IRQ_Handler() {
 				IR_Sensor.data.line_position = Sensor_Line_Estimate();
 			}
 		}
-
 		IR_Sensor.data.idx = idx + 1;   // -> 다음 중앙 또는 mark(16)
+
 	} else {
 		// === active high: 좌우 mark 저장 + 계산 ===
 		IR_Sensor.data.raw[LEFT_MARK_SENSOR_INDEX] = adc3_buffer[0];
@@ -208,7 +222,89 @@ void ADC3_IRQ_Handler() {
 	}
 }
 
+// =========================================================
+// [SD카드 저장 및 불러오기] - FOC와 동일한 key=value 텍스트 포맷
+// =========================================================
+// @formatter:off
+static const SDCard_ConfigEntry sensor_calib_table[] = {
+		{ "whitemax_00",	&IR_Sensor.data.whitemax[0],			SDCFG_UINT16 },
+		{ "whitemax_01",	&IR_Sensor.data.whitemax[1],			SDCFG_UINT16 },
+		{ "whitemax_02",	&IR_Sensor.data.whitemax[2],			SDCFG_UINT16 },
+		{ "whitemax_03",	&IR_Sensor.data.whitemax[3],			SDCFG_UINT16 },
+		{ "whitemax_04",	&IR_Sensor.data.whitemax[4],			SDCFG_UINT16 },
+		{ "whitemax_05",	&IR_Sensor.data.whitemax[5],			SDCFG_UINT16 },
+		{ "whitemax_06",	&IR_Sensor.data.whitemax[6],			SDCFG_UINT16 },
+		{ "whitemax_07",	&IR_Sensor.data.whitemax[7],			SDCFG_UINT16 },
+		{ "whitemax_08",	&IR_Sensor.data.whitemax[8],			SDCFG_UINT16 },
+		{ "whitemax_09",	&IR_Sensor.data.whitemax[9],			SDCFG_UINT16 },
+		{ "whitemax_10",	&IR_Sensor.data.whitemax[10],			SDCFG_UINT16 },
+		{ "whitemax_11",	&IR_Sensor.data.whitemax[11],			SDCFG_UINT16 },
+		{ "whitemax_12",	&IR_Sensor.data.whitemax[12],			SDCFG_UINT16 },
+		{ "whitemax_13",	&IR_Sensor.data.whitemax[13],			SDCFG_UINT16 },
+		{ "whitemax_14",	&IR_Sensor.data.whitemax[14],			SDCFG_UINT16 },
+		{ "whitemax_15",	&IR_Sensor.data.whitemax[15],			SDCFG_UINT16 },
+		{ "whitemax_16",	&IR_Sensor.data.whitemax[16],			SDCFG_UINT16 },
+		{ "whitemax_17",	&IR_Sensor.data.whitemax[17],			SDCFG_UINT16 },
+		{ "blackmax_00",	&IR_Sensor.data.blackmax[0],			SDCFG_UINT16 },
+		{ "blackmax_01",	&IR_Sensor.data.blackmax[1],			SDCFG_UINT16 },
+		{ "blackmax_02",	&IR_Sensor.data.blackmax[2],			SDCFG_UINT16 },
+		{ "blackmax_03",	&IR_Sensor.data.blackmax[3],			SDCFG_UINT16 },
+		{ "blackmax_04",	&IR_Sensor.data.blackmax[4],			SDCFG_UINT16 },
+		{ "blackmax_05",	&IR_Sensor.data.blackmax[5],			SDCFG_UINT16 },
+		{ "blackmax_06",	&IR_Sensor.data.blackmax[6],			SDCFG_UINT16 },
+		{ "blackmax_07",	&IR_Sensor.data.blackmax[7],			SDCFG_UINT16 },
+		{ "blackmax_08",	&IR_Sensor.data.blackmax[8],			SDCFG_UINT16 },
+		{ "blackmax_09",	&IR_Sensor.data.blackmax[9],			SDCFG_UINT16 },
+		{ "blackmax_10",	&IR_Sensor.data.blackmax[10],			SDCFG_UINT16 },
+		{ "blackmax_11",	&IR_Sensor.data.blackmax[11],			SDCFG_UINT16 },
+		{ "blackmax_12",	&IR_Sensor.data.blackmax[12],			SDCFG_UINT16 },
+		{ "blackmax_13",	&IR_Sensor.data.blackmax[13],			SDCFG_UINT16 },
+		{ "blackmax_14",	&IR_Sensor.data.blackmax[14],			SDCFG_UINT16 },
+		{ "blackmax_15",	&IR_Sensor.data.blackmax[15],			SDCFG_UINT16 },
+		{ "blackmax_16",	&IR_Sensor.data.blackmax[16],			SDCFG_UINT16 },
+		{ "blackmax_17",	&IR_Sensor.data.blackmax[17],			SDCFG_UINT16 },
+		{ "coef_bias_00",	&IR_Sensor.data.normalized_coef_bias[0],	SDCFG_UINT16 },
+		{ "coef_bias_01",	&IR_Sensor.data.normalized_coef_bias[1],	SDCFG_UINT16 },
+		{ "coef_bias_02",	&IR_Sensor.data.normalized_coef_bias[2],	SDCFG_UINT16 },
+		{ "coef_bias_03",	&IR_Sensor.data.normalized_coef_bias[3],	SDCFG_UINT16 },
+		{ "coef_bias_04",	&IR_Sensor.data.normalized_coef_bias[4],	SDCFG_UINT16 },
+		{ "coef_bias_05",	&IR_Sensor.data.normalized_coef_bias[5],	SDCFG_UINT16 },
+		{ "coef_bias_06",	&IR_Sensor.data.normalized_coef_bias[6],	SDCFG_UINT16 },
+		{ "coef_bias_07",	&IR_Sensor.data.normalized_coef_bias[7],	SDCFG_UINT16 },
+		{ "coef_bias_08",	&IR_Sensor.data.normalized_coef_bias[8],	SDCFG_UINT16 },
+		{ "coef_bias_09",	&IR_Sensor.data.normalized_coef_bias[9],	SDCFG_UINT16 },
+		{ "coef_bias_10",	&IR_Sensor.data.normalized_coef_bias[10],	SDCFG_UINT16 },
+		{ "coef_bias_11",	&IR_Sensor.data.normalized_coef_bias[11],	SDCFG_UINT16 },
+		{ "coef_bias_12",	&IR_Sensor.data.normalized_coef_bias[12],	SDCFG_UINT16 },
+		{ "coef_bias_13",	&IR_Sensor.data.normalized_coef_bias[13],	SDCFG_UINT16 },
+		{ "coef_bias_14",	&IR_Sensor.data.normalized_coef_bias[14],	SDCFG_UINT16 },
+		{ "coef_bias_15",	&IR_Sensor.data.normalized_coef_bias[15],	SDCFG_UINT16 },
+		{ "coef_bias_16",	&IR_Sensor.data.normalized_coef_bias[16],	SDCFG_UINT16 },
+		{ "coef_bias_17",	&IR_Sensor.data.normalized_coef_bias[17],	SDCFG_UINT16 },
+};
+// @formatter:on
+
+FRESULT Sensor_Save_Calibration(void) {
+	return SDCard_SaveConfig(SENSOR_CALIB_PATH, sensor_calib_table, SENSOR_CALIB_COUNT);
+}
+
+FRESULT Sensor_Load_Calibration(void) {
+	FRESULT res = SDCard_LoadConfig(SENSOR_CALIB_PATH, sensor_calib_table, SENSOR_CALIB_COUNT);
+	if (res != FR_OK)
+		return res;
+
+	IR_Sensor.is_calibration = 1;
+	return FR_OK;
+}
+
 void Sensor_Calibration() {
+	// 캘리브레이션 시작 시 기존 SD카드 저장값을 먼저 불러온다.
+	// (없으면 그냥 무시하고 새로 캘리브레이션 진행)
+	FRESULT load_res = Sensor_Load_Calibration();
+	LCD_Printf(0, 0, "Load:%d", load_res);
+	HAL_Delay(500);
+	LCD_Clear();
+
 	Sensor_Start();
 	uint8_t i = 0;
 	LCD_Printf(0, 0, "White Max");
@@ -243,9 +339,19 @@ void Sensor_Calibration() {
 				(range > 0) ? (uint16_t) ((255U << 8) / range) : 0;
 	}
 	IR_Sensor.is_calibration = 1;
+
 	LCD_Clear();
-	Button_Wait_Release(&btn_k);
 	Sensor_Stop();
+	Button_Wait_Release(&btn_k);
+
+	// 캘리브레이션 결과를 SD카드에 저장
+	FRESULT save_res = Sensor_Save_Calibration();
+	LCD_Printf(0, 0, "Save:%d", save_res);
+	HAL_Delay(500);
+	LCD_Clear();
+
+	// 저장 직후 센서 상태(라인 인식 여부) 확인 화면으로 바로 진입
+	Sensor_State_Printf();
 }
 
 void Sensor_Raw_Printf() {
@@ -255,6 +361,7 @@ void Sensor_Raw_Printf() {
 	UserInput_t bt;
 	while ((bt = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
 		Sensor_Printf(i, IR_Sensor.data.raw);
+		LCD_Printf(0, 13, "%2d", IR_Sensor.data.idx);
 		i = (i + 1) % 18;
 	}
 
@@ -281,7 +388,7 @@ void Sensor_Normalize_Printf() {
 void Sensor_State_Printf() {
 	Sensor_Start();
 	uint8_t i = 0;
-	LCD_Printf(0, 0, "Sensor Normal");
+	LCD_Printf(0, 0, "Sensor State");
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
 		char state = (IR_Sensor.data.state & 0x01 << i) ? '1' : '0';
 		if (i < LINE_N_SENSORS) {
@@ -295,6 +402,20 @@ void Sensor_State_Printf() {
 		}
 		i = (i + 1) % 18;
 	}
+	LCD_Clear();
+	Sensor_Stop();
+	Button_Wait_Release(&btn_k);
+}
+
+void Sensor_Position_Printf() {
+	Sensor_Start();
+	LCD_Printf(0, 0, "Sensor Pos");
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
+		LCD_Printf(0, 1, "%6.3f", IR_Sensor.data.line_position);
+	}
+	LCD_Clear();
+	Sensor_Stop();
+	Button_Wait_Release(&btn_k);
 }
 
 void IMU_Test() {

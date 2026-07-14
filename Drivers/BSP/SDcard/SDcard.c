@@ -233,16 +233,19 @@ FRESULT SDCard_Load(const char *path, void *buffer, UINT size) {
 }
 
 FRESULT SDCard_SaveConfig(const char *path, const SDCard_ConfigEntry *entries, int count) {
-	char buf[1024];
+	char buf[2048];
 	int len = 0;
 
 	for (int i = 0; i < count; i++) {
 		switch (entries[i].type) {
 		case SDCFG_FLOAT:
-			len += sprintf(buf + len, "%s=%f\n", entries[i].key, *(float*)entries[i].ptr);
+			len += sprintf(buf + len, "%s=%f\n", entries[i].key, *(volatile float*)entries[i].ptr);
 			break;
 		case SDCFG_INT8:
-			len += sprintf(buf + len, "%s=%d\n", entries[i].key, *(int8_t*)entries[i].ptr);
+			len += sprintf(buf + len, "%s=%d\n", entries[i].key, *(volatile int8_t*)entries[i].ptr);
+			break;
+		case SDCFG_UINT16:
+			len += sprintf(buf + len, "%s=%u\n", entries[i].key, *(volatile uint16_t*)entries[i].ptr);
 			break;
 		}
 		if (len >= (int)sizeof(buf) - 64) break; // 버퍼 오버플로우 방지
@@ -268,7 +271,7 @@ static int SDCard_FindValue(const char *text, const char *key, float *out) {
 }
 
 FRESULT SDCard_LoadConfig(const char *path, const SDCard_ConfigEntry *entries, int count) {
-	static char buf[1024];
+	static char buf[2048];
 	FRESULT res = SDCard_Load(path, buf, sizeof(buf) - 1);
 	if (res != FR_OK)
 		return res;
@@ -281,10 +284,13 @@ FRESULT SDCard_LoadConfig(const char *path, const SDCard_ConfigEntry *entries, i
 
 		switch (entries[i].type) {
 		case SDCFG_FLOAT:
-			*(float*)entries[i].ptr = v;
+			*(volatile float*)entries[i].ptr = v;
 			break;
 		case SDCFG_INT8:
-			*(int8_t*)entries[i].ptr = (int8_t)v;
+			*(volatile int8_t*)entries[i].ptr = (int8_t)v;
+			break;
+		case SDCFG_UINT16:
+			*(volatile uint16_t*)entries[i].ptr = (uint16_t)v;
 			break;
 		}
 	}

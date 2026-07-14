@@ -54,8 +54,8 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOE, SENSOR_LED_R_Pin|SENSOR_PT_EN_Pin|SENSOR_IR_EN_Pin|SENSOR_MUX1_Pin
-                          |SENSOR_MUX2_Pin|SENSOR_MUX3_Pin|LCD_CS_Pin|LCD_WR_RS_Pin
+  HAL_GPIO_WritePin(GPIOE, SENSOR_LED_R_Pin|SENSOR_PT_EN_Pin|SENSOR_IR_EN_Pin|SENSOR_MUX2_Pin
+                          |SENSOR_MUX1_Pin|SENSOR_MUX3_Pin|LCD_CS_Pin|LCD_WR_RS_Pin
                           |SENSOR_LED_L_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
@@ -70,15 +70,20 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, MTR_nSLEEP_R_Pin|MTR_DRVOFF_R_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : SENSOR_LED_R_Pin E3_Pin SENSOR_PT_EN_Pin SENSOR_IR_EN_Pin
-                           SENSOR_MUX1_Pin SENSOR_MUX2_Pin SENSOR_MUX3_Pin LCD_CS_Pin
-                           LCD_WR_RS_Pin SENSOR_LED_L_Pin */
-  GPIO_InitStruct.Pin = SENSOR_LED_R_Pin|E3_Pin|SENSOR_PT_EN_Pin|SENSOR_IR_EN_Pin
-                          |SENSOR_MUX1_Pin|SENSOR_MUX2_Pin|SENSOR_MUX3_Pin|LCD_CS_Pin
-                          |LCD_WR_RS_Pin|SENSOR_LED_L_Pin;
+  /*Configure GPIO pins : SENSOR_LED_R_Pin E3_Pin SENSOR_MUX2_Pin SENSOR_MUX1_Pin
+                           SENSOR_MUX3_Pin LCD_CS_Pin LCD_WR_RS_Pin SENSOR_LED_L_Pin */
+  GPIO_InitStruct.Pin = SENSOR_LED_R_Pin|E3_Pin|SENSOR_MUX2_Pin|SENSOR_MUX1_Pin
+                          |SENSOR_MUX3_Pin|LCD_CS_Pin|LCD_WR_RS_Pin|SENSOR_LED_L_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : SENSOR_PT_EN_Pin SENSOR_IR_EN_Pin */
+  GPIO_InitStruct.Pin = SENSOR_PT_EN_Pin|SENSOR_IR_EN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
   /*Configure GPIO pin : KEY_Pin */
