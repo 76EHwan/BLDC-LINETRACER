@@ -40,28 +40,61 @@
 #define LINE_W_DEADBAND     30u     // 이하 weight는 배경 residual로 보고 무시
 #define LINE_LOST_SUM_MIN   160u    // weight 합이 이하면 라인 상실로 판단
 
-static const float line_sensor_pos[LINE_N_SENSORS] = { -1.0f, -13.0f / 15.0f,
-		-11.0f / 15.0f, -9.0f / 15.0f, -7.0f / 15.0f, -5.0f / 15.0f, -3.0f
-				/ 15.0f, -1.0f / 15.0f, 1.0f / 15.0f, 3.0f / 15.0f, 5.0f
-				/ 15.0f, 7.0f / 15.0f, 9.0f / 15.0f, 11.0f / 15.0f, 13.0f
-				/ 15.0f, 1.0f };
+// @formatter:off
 
-__attribute__((section(".ram_d3"), aligned(32)))                uint16_t adc3_buffer[3];
+static const float line_sensor_pos[LINE_N_SENSORS] = {
+		-1.0f,
+		-13.0f / 15.0f,
+		-11.0f / 15.0f,
+		-9.0f / 15.0f,
+		-7.0f / 15.0f,
+		-5.0f / 15.0f,
+		-3.0f / 15.0f,
+		-1.0f / 15.0f,
+		1.0f / 15.0f,
+		3.0f / 15.0f,
+		5.0f / 15.0f,
+		7.0f / 15.0f,
+		9.0f / 15.0f,
+		11.0f / 15.0f,
+		13.0f / 15.0f,
+		1.0f
+};
+
+__attribute__((section(".ram_d3"), aligned(32)))                 uint16_t adc3_buffer[3];
 
 volatile uint32_t tim7_count = 0;
 volatile uint32_t adc_count = 0;
 
-volatile Sensor_TypeDef IR_Sensor = { .data = { .idx = 0, .raw = { 0 },
-		.blackmax = { 0 }, .whitemax = { 0 }, .normalized = { 0 }, .state = 0,
-		.threshold = 50, .pos_center_idx = (LINE_N_SENSORS - 1) / 2, .cross_left = 0,
-		.cross_right = 0 }, .is_calibration = 0 };
+volatile SensorDataTypeDef sensorData = {
+		.idx = 0,
+		.raw = { 0 },
+		.blackmax = { 0 },
+		.whitemax = { 0 },
+		.normalized = { 0 },
+		.state = 0,
+		.threshold = 50,
+		.pos_center_idx = (LINE_N_SENSORS - 1) / 2,
+		.cross_left = 0,
+		.cross_right = 0,
+		.line_w_bandwidth = 25,
+		.line_lost_sum_min = 100,
+};
+
+volatile Sensor_TypeDef IR_Sensor = {
+		.is_calibration = 0,
+		.is_lost_position = 0,
+		.data = &sensorData,
+};
+
+// @formatter:on
 
 void Sensor_Printf(uint8_t idx, volatile uint16_t *sensor_data) {
 	LCD_Printf(8 * (idx & 0x1), idx / 2 + 1, "0x%03X", *(sensor_data + idx));
 }
 
 void Sensor_Start() {
-	IR_Sensor.data.idx = 0;
+	IR_Sensor.data->idx = 0;
 	HAL_ADCEx_Calibration_Start(&hadc3, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
 	HAL_StatusTypeDef ret = HAL_ADC_Start_DMA(&hadc3, (uint32_t*) adc3_buffer,
 			3);
@@ -105,12 +138,12 @@ __STATIC_INLINE void Set_Mux_Channel_Fast(uint8_t index) {
 }
 
 __STATIC_INLINE void Sensor_Normalize(uint8_t idx) {
-	const uint16_t raw = IR_Sensor.data.raw[idx];
-	const uint16_t bmax = IR_Sensor.data.blackmax[idx];
-	const uint16_t bias = IR_Sensor.data.normalized_coef_bias[idx];
+	const uint16_t raw = IR_Sensor.data->raw[idx];
+	const uint16_t bmax = IR_Sensor.data->blackmax[idx];
+	const uint16_t bias = IR_Sensor.data->normalized_coef_bias[idx];
 	uint16_t diff = (raw > bmax) ? (raw - bmax) : 0;
 	uint32_t result = ((uint32_t) diff * bias) >> 8;
-	IR_Sensor.data.normalized[idx] = (result > 255U) ? 255U : (uint8_t) result;
+	IR_Sensor.data->normalized[idx] = (result > 255U) ? 255U : (uint8_t) result;
 }
 
 // weighted centroid, but restricted to an 8-sensor window centered on the
@@ -118,10 +151,10 @@ __STATIC_INLINE void Sensor_Normalize(uint8_t idx) {
 // to act as cross(교차로) marker candidates instead of polluting the centroid.
 // 라인 상실(window 내 weight 합 부족) 시 마지막 위치/중심 유지.
 float Sensor_Line_Estimate(void) {
-	int center = IR_Sensor.data.pos_center_idx;
+	int center = IR_Sensor.data->pos_center_idx;
 
 	int start = center - POS_WINDOW_HALF;
-	int end = center + (POS_WINDOW_HALF - 1);   // POS_WINDOW_SIZE(8)개: [center-4, center+3]
+	int end = center + (POS_WINDOW_HALF - 1); // POS_WINDOW_SIZE(8)개: [center-4, center+3]
 	if (start < 0) {
 		end -= start;
 		start = 0;
@@ -139,7 +172,7 @@ float Sensor_Line_Estimate(void) {
 	uint8_t peak_w = 0;
 
 	for (int i = start; i <= end; i++) {
-		uint8_t w = LINE_WEIGHT(IR_Sensor.data.normalized[i]);
+		uint8_t w = LINE_WEIGHT(IR_Sensor.data->normalized[i]);
 		if (w < LINE_W_DEADBAND) {
 			continue;
 		}
@@ -154,27 +187,27 @@ float Sensor_Line_Estimate(void) {
 	// 창 바깥쪽: 좌/우 교차로 마커 후보 검출 (deadband 초과 시 후보로 간주)
 	uint8_t cross_left = 0;
 	for (int i = 0; i < start; i++) {
-		if (LINE_WEIGHT(IR_Sensor.data.normalized[i]) >= LINE_W_DEADBAND) {
+		if (LINE_WEIGHT(IR_Sensor.data->normalized[i]) >= LINE_W_DEADBAND) {
 			cross_left = 1;
 			break;
 		}
 	}
 	uint8_t cross_right = 0;
 	for (int i = end + 1; i < LINE_N_SENSORS; i++) {
-		if (LINE_WEIGHT(IR_Sensor.data.normalized[i]) >= LINE_W_DEADBAND) {
+		if (LINE_WEIGHT(IR_Sensor.data->normalized[i]) >= LINE_W_DEADBAND) {
 			cross_right = 1;
 			break;
 		}
 	}
-	IR_Sensor.data.cross_left = cross_left;
-	IR_Sensor.data.cross_right = cross_right;
+	IR_Sensor.data->cross_left = cross_left;
+	IR_Sensor.data->cross_right = cross_right;
 
 	if (den < LINE_LOST_SUM_MIN) {
-		IR_Sensor.is_lose_position = 1;
-		return IR_Sensor.data.line_position;   // 상실: 마지막 위치/중심 hold
+		IR_Sensor.is_lost_position = 1;
+		return IR_Sensor.data->line_position;   // 상실: 마지막 위치/중심 hold
 	}
-	IR_Sensor.is_lose_position = 0;
-	IR_Sensor.data.pos_center_idx = (uint8_t) peak_idx;   // 다음 프레임 창 재중심
+	IR_Sensor.is_lost_position = 0;
+	IR_Sensor.data->pos_center_idx = (uint8_t) peak_idx;   // 다음 프레임 창 재중심
 	return num / (float) den;
 }
 
@@ -187,7 +220,7 @@ float Sensor_Line_Estimate(void) {
 void TIM7_IRQ_Handler() {
 	tim7_count++;
 
-	const uint8_t idx = IR_Sensor.data.idx;
+	const uint8_t idx = IR_Sensor.data->idx;
 
 	if (idx < LINE_N_SENSORS) {
 		// 중앙 phase (active low)
@@ -216,54 +249,54 @@ void TIM7_IRQ_Handler() {
 void ADC3_IRQ_Handler() {
 	ADC3->ISR = (ADC_FLAG_EOC | ADC_FLAG_EOS | ADC_FLAG_OVR);
 
-	const uint8_t idx = IR_Sensor.data.idx;
+	const uint8_t idx = IR_Sensor.data->idx;
 
 	if (idx < LINE_N_SENSORS) {
 		// === active low: 중앙 채널 idx 저장 + 계산 ===
-		IR_Sensor.data.raw[idx] = adc3_buffer[2];
+		IR_Sensor.data->raw[idx] = adc3_buffer[2];
 
 		if (IR_Sensor.is_calibration) {
 			Sensor_Normalize(idx);
 
 			// state bit: 이 센서가 라인 위인지. weight > threshold.
-			uint8_t w = LINE_WEIGHT(IR_Sensor.data.normalized[idx]);
-			IR_Sensor.data.state &= ~(1u << idx);
-			IR_Sensor.data.state |= ((uint32_t) (w > IR_Sensor.data.threshold)
+			uint8_t w = LINE_WEIGHT(IR_Sensor.data->normalized[idx]);
+			IR_Sensor.data->state &= ~(1u << idx);
+			IR_Sensor.data->state |= ((uint32_t) (w > IR_Sensor.data->threshold)
 					<< idx);
 
 			// 중앙 한 바퀴 끝 -> 라인 위치 갱신
 			if (idx == LINE_N_SENSORS - 1) {
-				IR_Sensor.data.line_position = Sensor_Line_Estimate();
+				IR_Sensor.data->line_position = Sensor_Line_Estimate();
 			}
 		}
-		IR_Sensor.data.idx = idx + 1;   // -> 다음 중앙 또는 mark(16)
+		IR_Sensor.data->idx = idx + 1;   // -> 다음 중앙 또는 mark(16)
 
 	} else {
 		// === active high: 좌우 mark 저장 + 계산 ===
-		IR_Sensor.data.raw[LEFT_MARK_SENSOR_INDEX] = adc3_buffer[0];
-		IR_Sensor.data.raw[RIGHT_MARK_SENSOR_INDEX] = adc3_buffer[1];
+		IR_Sensor.data->raw[LEFT_MARK_SENSOR_INDEX] = adc3_buffer[0];
+		IR_Sensor.data->raw[RIGHT_MARK_SENSOR_INDEX] = adc3_buffer[1];
 
 		if (IR_Sensor.is_calibration) {
 			Sensor_Normalize(LEFT_MARK_SENSOR_INDEX);
 			Sensor_Normalize(RIGHT_MARK_SENSOR_INDEX);
 
 			// 좌우 mark 검출 (level). normalized > threshold 이면 mark 위.
-			uint8_t left_on = IR_Sensor.data.normalized[LEFT_MARK_SENSOR_INDEX]
-					> IR_Sensor.data.threshold;
+			uint8_t left_on = IR_Sensor.data->normalized[LEFT_MARK_SENSOR_INDEX]
+					> IR_Sensor.data->threshold;
 			uint8_t right_on =
-					IR_Sensor.data.normalized[RIGHT_MARK_SENSOR_INDEX]
-							> IR_Sensor.data.threshold;
+					IR_Sensor.data->normalized[RIGHT_MARK_SENSOR_INDEX]
+							> IR_Sensor.data->threshold;
 
 			// state의 bit 16/17에 저장 (state는 uint32_t 이상이어야 함)
-			IR_Sensor.data.state &= ~((1u << LEFT_MARK_SENSOR_INDEX)
+			IR_Sensor.data->state &= ~((1u << LEFT_MARK_SENSOR_INDEX)
 					| (1u << RIGHT_MARK_SENSOR_INDEX));
-			IR_Sensor.data.state |= ((uint32_t) left_on
+			IR_Sensor.data->state |= ((uint32_t) left_on
 					<< LEFT_MARK_SENSOR_INDEX);
-			IR_Sensor.data.state |= ((uint32_t) right_on
+			IR_Sensor.data->state |= ((uint32_t) right_on
 					<< RIGHT_MARK_SENSOR_INDEX);
 		}
 
-		IR_Sensor.data.idx = 0;         // 사이클 재시작
+		IR_Sensor.data->idx = 0;         // 사이클 재시작
 	}
 }
 
@@ -272,60 +305,60 @@ void ADC3_IRQ_Handler() {
 // =========================================================
 // @formatter:off
 static const SDCard_ConfigEntry sensor_calib_table[] = {
-		{ "whitemax_00",	&IR_Sensor.data.whitemax[0],			SDCFG_UINT16 },
-		{ "whitemax_01",	&IR_Sensor.data.whitemax[1],			SDCFG_UINT16 },
-		{ "whitemax_02",	&IR_Sensor.data.whitemax[2],			SDCFG_UINT16 },
-		{ "whitemax_03",	&IR_Sensor.data.whitemax[3],			SDCFG_UINT16 },
-		{ "whitemax_04",	&IR_Sensor.data.whitemax[4],			SDCFG_UINT16 },
-		{ "whitemax_05",	&IR_Sensor.data.whitemax[5],			SDCFG_UINT16 },
-		{ "whitemax_06",	&IR_Sensor.data.whitemax[6],			SDCFG_UINT16 },
-		{ "whitemax_07",	&IR_Sensor.data.whitemax[7],			SDCFG_UINT16 },
-		{ "whitemax_08",	&IR_Sensor.data.whitemax[8],			SDCFG_UINT16 },
-		{ "whitemax_09",	&IR_Sensor.data.whitemax[9],			SDCFG_UINT16 },
-		{ "whitemax_10",	&IR_Sensor.data.whitemax[10],			SDCFG_UINT16 },
-		{ "whitemax_11",	&IR_Sensor.data.whitemax[11],			SDCFG_UINT16 },
-		{ "whitemax_12",	&IR_Sensor.data.whitemax[12],			SDCFG_UINT16 },
-		{ "whitemax_13",	&IR_Sensor.data.whitemax[13],			SDCFG_UINT16 },
-		{ "whitemax_14",	&IR_Sensor.data.whitemax[14],			SDCFG_UINT16 },
-		{ "whitemax_15",	&IR_Sensor.data.whitemax[15],			SDCFG_UINT16 },
-		{ "whitemax_16",	&IR_Sensor.data.whitemax[16],			SDCFG_UINT16 },
-		{ "whitemax_17",	&IR_Sensor.data.whitemax[17],			SDCFG_UINT16 },
-		{ "blackmax_00",	&IR_Sensor.data.blackmax[0],			SDCFG_UINT16 },
-		{ "blackmax_01",	&IR_Sensor.data.blackmax[1],			SDCFG_UINT16 },
-		{ "blackmax_02",	&IR_Sensor.data.blackmax[2],			SDCFG_UINT16 },
-		{ "blackmax_03",	&IR_Sensor.data.blackmax[3],			SDCFG_UINT16 },
-		{ "blackmax_04",	&IR_Sensor.data.blackmax[4],			SDCFG_UINT16 },
-		{ "blackmax_05",	&IR_Sensor.data.blackmax[5],			SDCFG_UINT16 },
-		{ "blackmax_06",	&IR_Sensor.data.blackmax[6],			SDCFG_UINT16 },
-		{ "blackmax_07",	&IR_Sensor.data.blackmax[7],			SDCFG_UINT16 },
-		{ "blackmax_08",	&IR_Sensor.data.blackmax[8],			SDCFG_UINT16 },
-		{ "blackmax_09",	&IR_Sensor.data.blackmax[9],			SDCFG_UINT16 },
-		{ "blackmax_10",	&IR_Sensor.data.blackmax[10],			SDCFG_UINT16 },
-		{ "blackmax_11",	&IR_Sensor.data.blackmax[11],			SDCFG_UINT16 },
-		{ "blackmax_12",	&IR_Sensor.data.blackmax[12],			SDCFG_UINT16 },
-		{ "blackmax_13",	&IR_Sensor.data.blackmax[13],			SDCFG_UINT16 },
-		{ "blackmax_14",	&IR_Sensor.data.blackmax[14],			SDCFG_UINT16 },
-		{ "blackmax_15",	&IR_Sensor.data.blackmax[15],			SDCFG_UINT16 },
-		{ "blackmax_16",	&IR_Sensor.data.blackmax[16],			SDCFG_UINT16 },
-		{ "blackmax_17",	&IR_Sensor.data.blackmax[17],			SDCFG_UINT16 },
-		{ "coef_bias_00",	&IR_Sensor.data.normalized_coef_bias[0],	SDCFG_UINT16 },
-		{ "coef_bias_01",	&IR_Sensor.data.normalized_coef_bias[1],	SDCFG_UINT16 },
-		{ "coef_bias_02",	&IR_Sensor.data.normalized_coef_bias[2],	SDCFG_UINT16 },
-		{ "coef_bias_03",	&IR_Sensor.data.normalized_coef_bias[3],	SDCFG_UINT16 },
-		{ "coef_bias_04",	&IR_Sensor.data.normalized_coef_bias[4],	SDCFG_UINT16 },
-		{ "coef_bias_05",	&IR_Sensor.data.normalized_coef_bias[5],	SDCFG_UINT16 },
-		{ "coef_bias_06",	&IR_Sensor.data.normalized_coef_bias[6],	SDCFG_UINT16 },
-		{ "coef_bias_07",	&IR_Sensor.data.normalized_coef_bias[7],	SDCFG_UINT16 },
-		{ "coef_bias_08",	&IR_Sensor.data.normalized_coef_bias[8],	SDCFG_UINT16 },
-		{ "coef_bias_09",	&IR_Sensor.data.normalized_coef_bias[9],	SDCFG_UINT16 },
-		{ "coef_bias_10",	&IR_Sensor.data.normalized_coef_bias[10],	SDCFG_UINT16 },
-		{ "coef_bias_11",	&IR_Sensor.data.normalized_coef_bias[11],	SDCFG_UINT16 },
-		{ "coef_bias_12",	&IR_Sensor.data.normalized_coef_bias[12],	SDCFG_UINT16 },
-		{ "coef_bias_13",	&IR_Sensor.data.normalized_coef_bias[13],	SDCFG_UINT16 },
-		{ "coef_bias_14",	&IR_Sensor.data.normalized_coef_bias[14],	SDCFG_UINT16 },
-		{ "coef_bias_15",	&IR_Sensor.data.normalized_coef_bias[15],	SDCFG_UINT16 },
-		{ "coef_bias_16",	&IR_Sensor.data.normalized_coef_bias[16],	SDCFG_UINT16 },
-		{ "coef_bias_17",	&IR_Sensor.data.normalized_coef_bias[17],	SDCFG_UINT16 },
+		{ "whitemax_00",	(void*)&sensorData.whitemax[0],					SDCFG_UINT16 },
+		{ "whitemax_01",	(void*)&sensorData.whitemax[1],					SDCFG_UINT16 },
+		{ "whitemax_02",	(void*)&sensorData.whitemax[2],					SDCFG_UINT16 },
+		{ "whitemax_03",	(void*)&sensorData.whitemax[3],					SDCFG_UINT16 },
+		{ "whitemax_04",	(void*)&sensorData.whitemax[4],					SDCFG_UINT16 },
+		{ "whitemax_05",	(void*)&sensorData.whitemax[5],					SDCFG_UINT16 },
+		{ "whitemax_06",	(void*)&sensorData.whitemax[6],					SDCFG_UINT16 },
+		{ "whitemax_07",	(void*)&sensorData.whitemax[7],					SDCFG_UINT16 },
+		{ "whitemax_08",	(void*)&sensorData.whitemax[8],					SDCFG_UINT16 },
+		{ "whitemax_09",	(void*)&sensorData.whitemax[9],					SDCFG_UINT16 },
+		{ "whitemax_10",	(void*)&sensorData.whitemax[10],				SDCFG_UINT16 },
+		{ "whitemax_11",	(void*)&sensorData.whitemax[11],				SDCFG_UINT16 },
+		{ "whitemax_12",	(void*)&sensorData.whitemax[12],				SDCFG_UINT16 },
+		{ "whitemax_13",	(void*)&sensorData.whitemax[13],				SDCFG_UINT16 },
+		{ "whitemax_14",	(void*)&sensorData.whitemax[14],				SDCFG_UINT16 },
+		{ "whitemax_15",	(void*)&sensorData.whitemax[15],				SDCFG_UINT16 },
+		{ "whitemax_16",	(void*)&sensorData.whitemax[16],				SDCFG_UINT16 },
+		{ "whitemax_17",	(void*)&sensorData.whitemax[17],				SDCFG_UINT16 },
+		{ "blackmax_00",	(void*)&sensorData.blackmax[0],					SDCFG_UINT16 },
+		{ "blackmax_01",	(void*)&sensorData.blackmax[1],					SDCFG_UINT16 },
+		{ "blackmax_02",	(void*)&sensorData.blackmax[2],					SDCFG_UINT16 },
+		{ "blackmax_03",	(void*)&sensorData.blackmax[3],					SDCFG_UINT16 },
+		{ "blackmax_04",	(void*)&sensorData.blackmax[4],					SDCFG_UINT16 },
+		{ "blackmax_05",	(void*)&sensorData.blackmax[5],					SDCFG_UINT16 },
+		{ "blackmax_06",	(void*)&sensorData.blackmax[6],					SDCFG_UINT16 },
+		{ "blackmax_07",	(void*)&sensorData.blackmax[7],					SDCFG_UINT16 },
+		{ "blackmax_08",	(void*)&sensorData.blackmax[8],					SDCFG_UINT16 },
+		{ "blackmax_09",	(void*)&sensorData.blackmax[9],					SDCFG_UINT16 },
+		{ "blackmax_10",	(void*)&sensorData.blackmax[10],				SDCFG_UINT16 },
+		{ "blackmax_11",	(void*)&sensorData.blackmax[11],				SDCFG_UINT16 },
+		{ "blackmax_12",	(void*)&sensorData.blackmax[12],				SDCFG_UINT16 },
+		{ "blackmax_13",	(void*)&sensorData.blackmax[13],				SDCFG_UINT16 },
+		{ "blackmax_14",	(void*)&sensorData.blackmax[14],				SDCFG_UINT16 },
+		{ "blackmax_15",	(void*)&sensorData.blackmax[15],				SDCFG_UINT16 },
+		{ "blackmax_16",	(void*)&sensorData.blackmax[16],				SDCFG_UINT16 },
+		{ "blackmax_17",	(void*)&sensorData.blackmax[17],				SDCFG_UINT16 },
+		{ "coef_bias_00",	(void*)&sensorData.normalized_coef_bias[0],		SDCFG_UINT16 },
+		{ "coef_bias_01",	(void*)&sensorData.normalized_coef_bias[1],		SDCFG_UINT16 },
+		{ "coef_bias_02",	(void*)&sensorData.normalized_coef_bias[2],		SDCFG_UINT16 },
+		{ "coef_bias_03",	(void*)&sensorData.normalized_coef_bias[3],		SDCFG_UINT16 },
+		{ "coef_bias_04",	(void*)&sensorData.normalized_coef_bias[4],		SDCFG_UINT16 },
+		{ "coef_bias_05",	(void*)&sensorData.normalized_coef_bias[5],		SDCFG_UINT16 },
+		{ "coef_bias_06",	(void*)&sensorData.normalized_coef_bias[6],		SDCFG_UINT16 },
+		{ "coef_bias_07",	(void*)&sensorData.normalized_coef_bias[7],		SDCFG_UINT16 },
+		{ "coef_bias_08",	(void*)&sensorData.normalized_coef_bias[8],		SDCFG_UINT16 },
+		{ "coef_bias_09",	(void*)&sensorData.normalized_coef_bias[9],		SDCFG_UINT16 },
+		{ "coef_bias_10",	(void*)&sensorData.normalized_coef_bias[10],	SDCFG_UINT16 },
+		{ "coef_bias_11",	(void*)&sensorData.normalized_coef_bias[11],	SDCFG_UINT16 },
+		{ "coef_bias_12",	(void*)&sensorData.normalized_coef_bias[12],	SDCFG_UINT16 },
+		{ "coef_bias_13",	(void*)&sensorData.normalized_coef_bias[13],	SDCFG_UINT16 },
+		{ "coef_bias_14",	(void*)&sensorData.normalized_coef_bias[14],	SDCFG_UINT16 },
+		{ "coef_bias_15",	(void*)&sensorData.normalized_coef_bias[15],	SDCFG_UINT16 },
+		{ "coef_bias_16",	(void*)&sensorData.normalized_coef_bias[16],	SDCFG_UINT16 },
+		{ "coef_bias_17",	(void*)&sensorData.normalized_coef_bias[17],	SDCFG_UINT16 },
 };
 // @formatter:on
 
@@ -356,11 +389,11 @@ void Sensor_Calibration() {
 	uint8_t i = 0;
 	LCD_Printf(0, 0, "White Max");
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		LCD_Printf(0, 10, "%02d", IR_Sensor.data.idx);
-		if (IR_Sensor.data.whitemax[i] < IR_Sensor.data.raw[i]) {
-			IR_Sensor.data.whitemax[i] = IR_Sensor.data.raw[i];
+		LCD_Printf(0, 10, "%02d", IR_Sensor.data->idx);
+		if (IR_Sensor.data->whitemax[i] < IR_Sensor.data->raw[i]) {
+			IR_Sensor.data->whitemax[i] = IR_Sensor.data->raw[i];
 		}
-		Sensor_Printf(i, IR_Sensor.data.whitemax);
+		Sensor_Printf(i, IR_Sensor.data->whitemax);
 		i = (i + 1) % 18;
 	}
 	LCD_Clear();
@@ -370,19 +403,19 @@ void Sensor_Calibration() {
 	LCD_Printf(0, 0, "Black Max");
 
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		LCD_Printf(0, 10, "%02d", IR_Sensor.data.idx);
+		LCD_Printf(0, 10, "%02d", IR_Sensor.data->idx);
 
-		if (IR_Sensor.data.blackmax[i] < IR_Sensor.data.raw[i]) {
-			IR_Sensor.data.blackmax[i] = IR_Sensor.data.raw[i];
+		if (IR_Sensor.data->blackmax[i] < IR_Sensor.data->raw[i]) {
+			IR_Sensor.data->blackmax[i] = IR_Sensor.data->raw[i];
 		}
-		Sensor_Printf(i, IR_Sensor.data.blackmax);
+		Sensor_Printf(i, IR_Sensor.data->blackmax);
 		i = (i + 1) % 18;
 	}
 	for (i = 0; i < 18; i++) {
-		const uint16_t wmax = IR_Sensor.data.whitemax[i];
-		const uint16_t bmax = IR_Sensor.data.blackmax[i];
+		const uint16_t wmax = IR_Sensor.data->whitemax[i];
+		const uint16_t bmax = IR_Sensor.data->blackmax[i];
 		uint16_t range = (wmax > bmax) ? (wmax - bmax) : 0;
-		IR_Sensor.data.normalized_coef_bias[i] =
+		IR_Sensor.data->normalized_coef_bias[i] =
 				(range > 0) ? (uint16_t) ((255U << 8) / range) : 0;
 	}
 	IR_Sensor.is_calibration = 1;
@@ -407,8 +440,8 @@ void Sensor_Raw_Printf() {
 	LCD_Printf(0, 0, "Sensor Raw");
 	UserInput_t bt;
 	while ((bt = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
-		Sensor_Printf(i, IR_Sensor.data.raw);
-		LCD_Printf(0, 13, "%2d", IR_Sensor.data.idx);
+		Sensor_Printf(i, IR_Sensor.data->raw);
+		LCD_Printf(0, 13, "%2d", IR_Sensor.data->idx);
 		i = (i + 1) % 18;
 	}
 
@@ -420,10 +453,16 @@ void Sensor_Raw_Printf() {
 void Sensor_Normalize_Printf() {
 	Sensor_Start();
 	uint8_t i = 0;
+	uint32_t sum = 0;
 	LCD_Printf(0, 0, "Sensor Normal");
-
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		Sensor_Printf(i, IR_Sensor.data.raw);
+		if (!i)
+			sum = 0;
+		sum = IR_Sensor.data->normalized[i];
+		Sensor_Printf(i, IR_Sensor.data->normalized);
+		if (i == 15) {
+			LCD_Printf(0, 13, "%-3d", sum);
+		}
 		i = (i + 1) % 18;
 	}
 
@@ -437,7 +476,7 @@ void Sensor_State_Printf() {
 	uint8_t i = 0;
 	LCD_Printf(0, 0, "Sensor State");
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		char state = (IR_Sensor.data.state & 0x01 << i) ? '1' : '0';
+		char state = (IR_Sensor.data->state & 0x01 << i) ? '1' : '0';
 		if (i < LINE_N_SENSORS) {
 			LCD_Printf(i, 2, "%c", state);
 		}
@@ -458,7 +497,7 @@ void Sensor_Position_Printf() {
 	Sensor_Start();
 	LCD_Printf(0, 0, "Sensor Pos");
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		LCD_Printf(0, 1, "%6.3f", IR_Sensor.data.line_position);
+		LCD_Printf(0, 1, "%6.3f", IR_Sensor.data->line_position);
 	}
 	LCD_Clear();
 	Sensor_Stop();

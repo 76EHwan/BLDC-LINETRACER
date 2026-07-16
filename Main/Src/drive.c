@@ -15,20 +15,24 @@
 #include "motor.h"
 #include "drive.h"
 
+// @formatter:off
 DriveParam_t driveData = {
-		.sensor_data = (Sensor_TypeDef *)(&IR_Sensor)
+		.base_mps = 1.5f,
+		.max_mps = 6.f,
+		.steer_gain = 0.75,
+		.pos_atten_gain = 0.25f,
 };
-
-static float g_steer_gain = 0.75f;   // 라인 위치 -> 좌우 속도차 게인
-static float g_max_mps = 3.f;   // 좌/우 바퀴 속도 상한
+// @formatter:on
 
 __STATIC_INLINE void Ramp_Omega(FOC_Handle_t *hfoc) {
 	float d = hfoc->omega_setpoint - hfoc->target_omega;
-	float step = hfoc->omega_ramp_rate * SPD_DT;
-	if (d > step)
-		hfoc->target_omega += step;
-	else if (d < -step)
-		hfoc->target_omega -= step;
+	const float_t accel_step = driveData.accel * SPD_DT;
+	const float_t decel_step = driveData.decel * SPD_DT;
+
+	if (d > accel_step)
+		hfoc->target_omega += accel_step;
+	else if (d < -decel_step)
+		hfoc->target_omega -= decel_step;
 	else
 		hfoc->target_omega = hfoc->omega_setpoint;
 }
@@ -80,8 +84,8 @@ __STATIC_INLINE void Cross_Log_Push(CrossEvent_t type) {
 static CrossEvent_t Cross_Detect_Update(void) {
 	static uint8_t prev_left = 0, prev_right = 0;
 
-	uint8_t left = IR_Sensor.data.cross_left;
-	uint8_t right = IR_Sensor.data.cross_right;
+	uint8_t left = IR_Sensor.data->cross_left;
+	uint8_t right = IR_Sensor.data->cross_right;
 
 	CrossEvent_t event = CROSS_NONE;
 
@@ -127,7 +131,7 @@ void Ramp_Stop() {
 }
 
 void Line_Follow_Drive(void) {
-	UserInput_t bt = INPUT_CMD_NONE;
+
 	if (!IR_Sensor.is_calibration) {
 		FRESULT res = Sensor_Load_Calibration();
 		if (res == FR_OK) {
@@ -136,11 +140,13 @@ void Line_Follow_Drive(void) {
 			LCD_Printf(0, 0, "Fail: %d", res);
 			HAL_Delay(1000);
 			return;
-
 		}
 	}
 
-	static float g_base_mps = 1.5f;   // 기준 직진 속도 (m/s)
+	float_t g_base_mps = driveData.base_mps;
+	float_t g_steer_gain = driveData.steer_gain;
+//	float_t g_max_mps = driveData.max_mps;
+	float_t g_pos_atten_gain = driveData.pos_atten_gain;
 
 	Sensor_Start();
 	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
@@ -148,16 +154,14 @@ void Line_Follow_Drive(void) {
 
 	HAL_Delay(10);
 
-	uint8_t sel = 0;
-	const float step_base = 0.05f;
-	const float step_steer = 0.05f;
 	MTR_Set_Speed(g_base_mps, g_base_mps);
 
 	Odom_Reset();
 	g_cross_log_count = 0;
+
 	uint32_t last_tick = HAL_GetTick();
 
-	while (!IR_Sensor.is_lose_position) {
+	while (!IR_Sensor.is_lost_position) {
 		uint32_t now_tick = HAL_GetTick();
 		Odom_Accumulate(now_tick - last_tick);
 		last_tick = now_tick;
@@ -171,47 +175,14 @@ void Line_Follow_Drive(void) {
 			count++;
 		}
 
-		bt = Button_Get_Input();
-
-		switch (bt) {
-		case INPUT_CMD_K_SINGLE:
-			sel = (sel + 1) % 2;
-			break;
-
-		case INPUT_CMD_U_SINGLE:
-		case INPUT_CMD_U_HOLD:
-			if (sel == 0) {
-				g_base_mps += step_base;
-				if (g_base_mps > g_max_mps)
-					g_base_mps = g_max_mps;
-			} else {
-				g_steer_gain += step_steer;
-			}
-			break;
-
-		case INPUT_CMD_D_SINGLE:
-		case INPUT_CMD_D_HOLD:
-			if (sel == 0) {
-				g_base_mps -= step_base;
-				if (g_base_mps < 0.0f)
-					g_base_mps = 0.0f;
-			} else {
-				g_steer_gain -= step_steer;
-				if (g_steer_gain < 0.0f)
-					g_steer_gain = 0.0f;
-			}
-			break;
-
-		default:
-			break;
-		}
-
-		float line_pos = IR_Sensor.data.line_position;
+		float line_pos = IR_Sensor.data->line_position;
 		float line_pos_abs = fabsf(line_pos);
 		float steer = g_steer_gain * line_pos;
 
-		float mps_L = g_base_mps * (1 + steer) * (1 - line_pos_abs * 0.25);
-		float mps_R = g_base_mps * (1 - steer) * (1 - line_pos_abs * 0.25);
+		float mps_L = g_base_mps * (1 + steer)
+				* (1 - line_pos_abs * g_pos_atten_gain);
+		float mps_R = g_base_mps * (1 - steer)
+				* (1 - line_pos_abs * g_pos_atten_gain);
 
 		MTR_Set_Speed(mps_L, mps_R);
 

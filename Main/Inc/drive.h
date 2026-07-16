@@ -15,10 +15,14 @@
 #define Ramp_TIM_IRQ_Handler TIM14_IRQ_Handler
 
 typedef struct {
-	float mpsL;
-	float mpsR;
-	Sensor_TypeDef *sensor_data;
-
+	float_t mpsL;
+	float_t mpsR;
+	float_t base_mps;
+	float_t accel;
+	float_t decel;
+	float_t max_mps;
+	float_t steer_gain;
+	float_t pos_atten_gain;
 } DriveParam_t;
 
 // === 교차로(cross) 마커 이벤트 ==============================================
@@ -40,6 +44,7 @@ typedef struct {
 	float dist_from_prev_m;   // 이전 마커로부터의 주행 거리 (엔코더/FOC 속도 적분 기반, m)
 } CrossMarkerLog_t;
 
+extern DriveParam_t driveData;
 extern CrossMarkerLog_t g_cross_log[CROSS_LOG_MAX];
 extern uint8_t g_cross_log_count;   // 누적 기록 횟수 (버퍼는 CROSS_LOG_MAX에서 순환)
 

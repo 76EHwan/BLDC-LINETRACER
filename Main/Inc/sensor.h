@@ -37,12 +37,14 @@ typedef struct {
 	uint8_t pos_center_idx;   // 현재 위치 창의 중심 인덱스 (0~15), 다음 프레임 창 재중심에 사용
 	uint8_t cross_left;       // 창 바깥 좌측(idx < window_start)에서 마커 후보 검출됨
 	uint8_t cross_right;      // 창 바깥 우측(idx > window_end)에서 마커 후보 검출됨
+	uint8_t line_w_bandwidth;
+	uint8_t line_lost_sum_min;
 } SensorDataTypeDef;
 
 typedef struct {
 	uint32_t is_calibration;
-	uint32_t is_lose_position;
-	volatile SensorDataTypeDef data;
+	uint32_t is_lost_position;
+	volatile SensorDataTypeDef *data;
 } Sensor_TypeDef;
 
 extern volatile Sensor_TypeDef IR_Sensor;

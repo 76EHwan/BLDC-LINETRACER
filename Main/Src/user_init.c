@@ -52,6 +52,10 @@ void User_Init() {
 		LCD_Printf(0, 7, "FOC param save Fail");
 	}
 
-	HAL_Delay(2500);
+	HAL_Delay(500);
+
+}
+
+void Change_Drive_Setting(){
 
 }
