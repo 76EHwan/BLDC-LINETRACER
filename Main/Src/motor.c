@@ -90,7 +90,6 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 	foc_L.omega_ramp_rate = 3000;
 	foc_R.omega_ramp_rate = 3000;
 
-
 	Encoder_Start();
 	FOC_ADC_Start();
 
@@ -699,4 +698,28 @@ void MTR_Speed_FOC() {
 		LCD_Printf(0, 12, "IqcR:%8.5f", foc_R.I_q);
 		LCD_Printf(0, 13, "Vbus:%5.3f", FOC_Get_VBus());
 	}
+}
+
+void FAN_Test() {
+	HAL_TIM_PWM_Start(&htim15, TIM_CHANNEL_2);
+	uint16_t duty = 100;
+	UserInput_t bt;
+	while ((bt = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
+		__HAL_TIM_SET_COMPARE(&htim15, TIM_CHANNEL_2, duty);
+		switch (bt) {
+		case INPUT_CMD_U_SINGLE:
+		case INPUT_CMD_U_HOLD:
+			duty += 10;
+			break;
+		case INPUT_CMD_D_SINGLE:
+		case INPUT_CMD_D_HOLD:
+			duty -= 10;
+			break;
+		default:
+			break;
+		}
+		LCD_Printf(0, 0, "%4d", duty);
+	}
+	__HAL_TIM_SET_COMPARE(&htim15, TIM_CHANNEL_2, 0);
+	HAL_TIM_PWM_Stop(&htim15, TIM_CHANNEL_2);
 }

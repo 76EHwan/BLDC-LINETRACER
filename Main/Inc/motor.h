@@ -32,5 +32,6 @@ void MTR_Simple_FOC(void);
 void MTR_Encoder_Test(void);
 void MTR_Speed_FOC(void);
 void MTR_Current_Tune_Loop();
+void FAN_Test(void);
 
 #endif /* INC_MOTOR_H_ */

@@ -38,7 +38,7 @@
 
 #define LINE_WEIGHT(n)      (uint8_t)(n)
 #define LINE_W_DEADBAND     30u     // 이하 weight는 배경 residual로 보고 무시
-#define LINE_LOST_SUM_MIN   200u    // weight 합이 이하면 라인 상실로 판단
+#define LINE_LOST_SUM_MIN   160u    // weight 합이 이하면 라인 상실로 판단
 
 static const float line_sensor_pos[LINE_N_SENSORS] = { -1.0f, -13.0f / 15.0f,
 		-11.0f / 15.0f, -9.0f / 15.0f, -7.0f / 15.0f, -5.0f / 15.0f, -3.0f
@@ -46,14 +46,15 @@ static const float line_sensor_pos[LINE_N_SENSORS] = { -1.0f, -13.0f / 15.0f,
 				/ 15.0f, 7.0f / 15.0f, 9.0f / 15.0f, 11.0f / 15.0f, 13.0f
 				/ 15.0f, 1.0f };
 
-__attribute__((section(".ram_d3"), aligned(32)))             uint16_t adc3_buffer[3];
+__attribute__((section(".ram_d3"), aligned(32)))                uint16_t adc3_buffer[3];
 
 volatile uint32_t tim7_count = 0;
 volatile uint32_t adc_count = 0;
 
 volatile Sensor_TypeDef IR_Sensor = { .data = { .idx = 0, .raw = { 0 },
 		.blackmax = { 0 }, .whitemax = { 0 }, .normalized = { 0 }, .state = 0,
-		.threshold = 100 }, .is_calibration = 0 };
+		.threshold = 50, .pos_center_idx = (LINE_N_SENSORS - 1) / 2, .cross_left = 0,
+		.cross_right = 0 }, .is_calibration = 0 };
 
 void Sensor_Printf(uint8_t idx, volatile uint16_t *sensor_data) {
 	LCD_Printf(8 * (idx & 0x1), idx / 2 + 1, "0x%03X", *(sensor_data + idx));
@@ -112,24 +113,68 @@ __STATIC_INLINE void Sensor_Normalize(uint8_t idx) {
 	IR_Sensor.data.normalized[idx] = (result > 255U) ? 255U : (uint8_t) result;
 }
 
-// weighted centroid. weight = 라인에서 커지는 값, 위치를 weight로 가중 평균.
-// 라인 상실(weight 합 부족) 시 마지막 위치 유지.
+// weighted centroid, but restricted to an 8-sensor window centered on the
+// last known line position (pos_center_idx). This keeps outer sensors free
+// to act as cross(교차로) marker candidates instead of polluting the centroid.
+// 라인 상실(window 내 weight 합 부족) 시 마지막 위치/중심 유지.
 float Sensor_Line_Estimate(void) {
+	int center = IR_Sensor.data.pos_center_idx;
+
+	int start = center - POS_WINDOW_HALF;
+	int end = center + (POS_WINDOW_HALF - 1);   // POS_WINDOW_SIZE(8)개: [center-4, center+3]
+	if (start < 0) {
+		end -= start;
+		start = 0;
+	}
+	if (end > LINE_N_SENSORS - 1) {
+		start -= (end - (LINE_N_SENSORS - 1));
+		end = LINE_N_SENSORS - 1;
+	}
+	if (start < 0)
+		start = 0;
+
 	float num = 0.0f;
 	uint32_t den = 0;
+	int peak_idx = center;
+	uint8_t peak_w = 0;
 
-	for (int i = 0; i < LINE_N_SENSORS; i++) {
+	for (int i = start; i <= end; i++) {
 		uint8_t w = LINE_WEIGHT(IR_Sensor.data.normalized[i]);
 		if (w < LINE_W_DEADBAND) {
 			continue;
 		}
 		num += (float) w * line_sensor_pos[i];
 		den += w;
+		if (w > peak_w) {
+			peak_w = w;
+			peak_idx = i;
+		}
 	}
 
-	if (den < LINE_LOST_SUM_MIN) {
-		return IR_Sensor.data.line_position;   // 상실: 마지막 위치 hold
+	// 창 바깥쪽: 좌/우 교차로 마커 후보 검출 (deadband 초과 시 후보로 간주)
+	uint8_t cross_left = 0;
+	for (int i = 0; i < start; i++) {
+		if (LINE_WEIGHT(IR_Sensor.data.normalized[i]) >= LINE_W_DEADBAND) {
+			cross_left = 1;
+			break;
+		}
 	}
+	uint8_t cross_right = 0;
+	for (int i = end + 1; i < LINE_N_SENSORS; i++) {
+		if (LINE_WEIGHT(IR_Sensor.data.normalized[i]) >= LINE_W_DEADBAND) {
+			cross_right = 1;
+			break;
+		}
+	}
+	IR_Sensor.data.cross_left = cross_left;
+	IR_Sensor.data.cross_right = cross_right;
+
+	if (den < LINE_LOST_SUM_MIN) {
+		IR_Sensor.is_lose_position = 1;
+		return IR_Sensor.data.line_position;   // 상실: 마지막 위치/중심 hold
+	}
+	IR_Sensor.is_lose_position = 0;
+	IR_Sensor.data.pos_center_idx = (uint8_t) peak_idx;   // 다음 프레임 창 재중심
 	return num / (float) den;
 }
 
@@ -285,11 +330,13 @@ static const SDCard_ConfigEntry sensor_calib_table[] = {
 // @formatter:on
 
 FRESULT Sensor_Save_Calibration(void) {
-	return SDCard_SaveConfig(SENSOR_CALIB_PATH, sensor_calib_table, SENSOR_CALIB_COUNT);
+	return SDCard_SaveConfig(SENSOR_CALIB_PATH, sensor_calib_table,
+	SENSOR_CALIB_COUNT);
 }
 
 FRESULT Sensor_Load_Calibration(void) {
-	FRESULT res = SDCard_LoadConfig(SENSOR_CALIB_PATH, sensor_calib_table, SENSOR_CALIB_COUNT);
+	FRESULT res = SDCard_LoadConfig(SENSOR_CALIB_PATH, sensor_calib_table,
+	SENSOR_CALIB_COUNT);
 	if (res != FR_OK)
 		return res;
 
@@ -419,14 +466,23 @@ void Sensor_Position_Printf() {
 }
 
 void IMU_Test() {
-	for (uint16_t a = 0; a < 128; a++) {
-		if (HAL_I2C_IsDeviceReady(IMU_I2C, a << 1, 2, 10) == HAL_OK) {
-			LCD_Printf(0, 0, "found:%02x", a);
-			break;
+	LCD_Printf(0, 0, "IMU Test");
+	uint32_t last_tick = HAL_GetTick();
+
+	LSM6DS3_ReadGyroZ_DMA_Start();   // 최초 요청 kick
+
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
+		uint32_t now = HAL_GetTick();
+		float dt = (now - last_tick) / 1000.0f;
+		last_tick = now;
+
+		if (imu_gyro_z_ready) {
+			imu_gyro_z_ready = 0;
+			LSM6DS3_UpdateYaw(&imu_data, dt);
+			LSM6DS3_ReadGyroZ_DMA_Start();
 		}
-		LCD_Printf(0, 1, "Not fount 404");
+
+		LCD_Printf(0, 1, "%6.3f", imu_data.Yaw_Angle);
 	}
-	while (1) {
-		LED_Test();
-	}
+	Button_Wait_Release(&btn_k);
 }

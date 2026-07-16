@@ -69,9 +69,10 @@ MenuItem_t motor_menu_items[] = {
     { .name = "Simple FOC",		.pfnActionCallback = MTR_Simple_FOC },
     { .name = "Tune Cur PI",	.pfnActionCallback = MTR_Current_Tune_Loop },
     { .name = "Encoder Test",	.pfnActionCallback = MTR_Encoder_Test },
-    { .name = "Tune Spd PI",	.pfnActionCallback = MTR_Speed_FOC },
+    { .name = "Tune Spd PID",	.pfnActionCallback = MTR_Speed_FOC },
+	{ .name = "Fan Test",		.pfnActionCallback = FAN_Test },
 	{ .name = "Load From SD",	.pfnActionCallback = FOC_Menu_LoadFromSD},
-	{ .name = "Save To SD",	.pfnActionCallback = FOC_Menu_SaveToSD},
+	{ .name = "Save To SD",		.pfnActionCallback = FOC_Menu_SaveToSD},
 };
 
 MenuItem_t drive_menu_items[] = {

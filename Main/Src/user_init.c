@@ -26,12 +26,17 @@ void User_Init() {
 	LSM6DS3_Init();
 	Buzzer_Stop();
 	MX_DRV8316C_Init();
-
+	LCD_Printf(0, 6, "DRV8316 SET OK");
 	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
 	FOC_Init_Motor(&foc_R, &htim4, &hadc1, &hlptim1);
 
+	LCD_Printf(0, 7, "FOC L ADC Cali");
 	FOC_Calibrate_Offset(&foc_L);
+	LCD_Printf(0, 8, "FOC R ADC Cali");
 	FOC_Calibrate_Offset(&foc_R);
+
+	LCD_Printf(0, 9, "IMU Cali");
+	LSM6DS3_Gyro_Calibrate_Z_Only();
 
 //	SDCard_DebugTest();
 
