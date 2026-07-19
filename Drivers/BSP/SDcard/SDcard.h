@@ -18,11 +18,12 @@ extern uint8_t sdcard_err;
 typedef enum {
     SDCFG_FLOAT,
     SDCFG_INT8,
+    SDCFG_UINT16,
 } SDCard_ConfigType;
 
 typedef struct {
     const char *key;       // "L_offset_a" 같은 이름
-    void *ptr;              // 실제 변수 주소 (float* 또는 int8_t*)
+    volatile void *ptr;     // 실제 변수 주소 (float*, int8_t*, uint16_t* 등). volatile 변수도 그대로 받도록 volatile void*로 선언
     SDCard_ConfigType type;
 } SDCard_ConfigEntry;
 

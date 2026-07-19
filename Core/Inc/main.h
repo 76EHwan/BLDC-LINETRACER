@@ -108,10 +108,10 @@ void LED_Test();
 #define MTR_ADC_SOA_L_GPIO_Port GPIOB
 #define SENSOR_MUX0_Pin GPIO_PIN_2
 #define SENSOR_MUX0_GPIO_Port GPIOB
-#define SENSOR_MUX1_Pin GPIO_PIN_7
-#define SENSOR_MUX1_GPIO_Port GPIOE
-#define SENSOR_MUX2_Pin GPIO_PIN_8
+#define SENSOR_MUX2_Pin GPIO_PIN_7
 #define SENSOR_MUX2_GPIO_Port GPIOE
+#define SENSOR_MUX1_Pin GPIO_PIN_8
+#define SENSOR_MUX1_GPIO_Port GPIOE
 #define SENSOR_MUX3_Pin GPIO_PIN_9
 #define SENSOR_MUX3_GPIO_Port GPIOE
 #define LCD_BK_Pin GPIO_PIN_10
@@ -192,6 +192,10 @@ void LED_Test();
 #define MTR_FGOUT_R_Pin MTR_ADC_SOA_R_Pin
 #define MTR_BRAKE_R_GPIO_Port MTR_ADC_SOC_R_GPIO_Port
 #define MTR_BRAKE_R_Pin MTR_ADC_SOC_R_Pin
+#define ENC_CS_L_GPIO_Port	ENC_IN2_L_GPIO_Port
+#define ENC_CS_L_Pin		ENC_IN2_L_Pin
+#define ENC_CS_R_GPIO_Port	ENC_IN2_R_GPIO_Port
+#define ENC_CS_R_Pin		ENC_IN2_R_Pin
 
 /* USER CODE END Private defines */
 

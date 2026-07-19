@@ -58,10 +58,16 @@ typedef struct {
 } LSM6DS3_Data_t;
 
 extern LSM6DS3_Data_t imu_data;
+extern volatile uint8_t imu_dma_busy;
+extern volatile uint8_t imu_gyro_z_ready;
 
 // Function Prototypes
-HAL_StatusTypeDef LSM6DS3_Init();
-void LSM6DS3_ReadAll(LSM6DS3_Data_t *data);
+HAL_StatusTypeDef LSM6DS3_Init(void);
 void LSM6DS3_ReadGyro_Z_Only(LSM6DS3_Data_t *data);
-void Gyro_Calibrate_Z_Only(void);
+void LSM6DS3_ReadGyroZ_DMA_Start(void);
+HAL_StatusTypeDef LSM6DS3_ReadGyroZ_DMA_Wait(uint32_t timeout_ms);
+void LSM6DS3_ReadAll(LSM6DS3_Data_t *data);
+void LSM6DS3_Gyro_Calibrate_Z_Only(void);
+void LSM6DS3_UpdateYaw(LSM6DS3_Data_t *data, float dt);
+
 #endif /* INC_LSM6DS3TR_H_ */

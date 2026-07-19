@@ -49,9 +49,13 @@ void MX_ADC3_Init(void);
 
 /* USER CODE BEGIN Prototypes */
 
-__weak void ADC1_IRQ_Handler();
-__weak void ADC2_IRQ_Handler();
-__weak void ADC3_IRQ_Handler();
+__weak void ADC1_IRQ_Half_Handler();
+__weak void ADC2_IRQ_Half_Handler();
+__weak void ADC3_IRQ_Half_Handler();
+
+__weak void ADC1_IRQ_Cplt_Handler();
+__weak void ADC2_IRQ_Cplt_Handler();
+__weak void ADC3_IRQ_Cplt_Handler();
 
 /* USER CODE END Prototypes */
 

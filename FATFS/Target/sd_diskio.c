@@ -398,15 +398,6 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
         memcpy((void *)scratch, (void *)buff, BLOCKSIZE);
         buff += BLOCKSIZE;
 
-#if (ENABLE_SD_DMA_CACHE_MAINTENANCE == 1)
-        /*
-        * CPU가 memcpy로 scratch에 쓴 내용은 D-Cache에만 있을 수 있으므로,
-        * DMA가 물리 메모리를 직접 읽기 전에 캐시 내용을 강제로 flush해야 한다.
-        * 이걸 빼먹으면 DMA가 이전에 남아있던 쓰레기 값을 카드에 써버린다.
-        */
-        SCB_CleanDCache_by_Addr((uint32_t*)scratch, BLOCKSIZE);
-#endif
-
         ret = BSP_SD_WriteBlocks_DMA((uint32_t*)scratch, (uint32_t)sector++, 1);
         if (ret == MSD_OK) {
           /* wait for a message from the queue or a timeout */

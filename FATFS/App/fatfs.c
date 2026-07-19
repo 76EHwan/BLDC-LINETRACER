@@ -15,6 +15,7 @@
   *
   ******************************************************************************
   */
+#include "sd_diskio_patch.h"
 /* USER CODE END Header */
 #include "fatfs.h"
 
@@ -40,6 +41,8 @@ void MX_FATFS_Init(void)
   retSD = FATFS_LinkDriver(&SD_Driver, SDPath);
 
   /* USER CODE BEGIN Init */
+  FATFS_UnLinkDriver(SDPath);
+  retSD = FATFS_LinkDriver(&SD_Driver_Fixed, SDPath);
   /* additional user code for init */
   /* USER CODE END Init */
 }

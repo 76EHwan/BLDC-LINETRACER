@@ -3,6 +3,8 @@
 #include "SDcard.h"
 #include <stdio.h>
 
+#define FOC_PARAM_PATH "/FOC_DATA/foc_param.txt"
+
 // 모터 핸들 전역 인스턴스 (좌/우)
 FOC_Handle_t foc_L;
 FOC_Handle_t foc_R;
@@ -12,27 +14,20 @@ typedef struct {
 	uint32_t magic_number;
 	float L_offset_a, L_offset_c, L_theta_offset;
 	float L_id_Kp, L_id_Ki, L_iq_Kp, L_iq_Ki;
-	float L_spd_Kp, L_spd_Ki, L_iq_limit;
+	float L_spd_Kp, L_spd_Ki, L_spd_Kd, L_iq_limit;
 	int8_t L_enc_dir;
 
 	float R_offset_a, R_offset_c, R_theta_offset;
 	float R_id_Kp, R_id_Ki, R_iq_Kp, R_iq_Ki;
-	float R_spd_Kp, R_spd_Ki, R_iq_limit;
+	float R_spd_Kp, R_spd_Ki, R_spd_Kd, R_iq_limit;
 	int8_t R_enc_dir;
 } FOC_SaveData_t;
 #pragma pack(pop)
 
 // regular(배터리) DMA 버퍼. 상전류는 injected(JDR)로 읽으므로 여기 안 들어감.
 // 배터리만 쓰면 FOC_ADC_DMA_LENGTH는 1로 줄여도 됨.
-__attribute__((section(".ram_d2_nocache"), aligned(32)))         uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
-__attribute__((section(".ram_d2_nocache"), aligned(32)))         uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
-
-#define FOC_DECIMATION 2
-static uint8_t foc_tick_L = 0;
-static uint8_t foc_tick_R = 0;
-
-// 속도 루프 파라미터
-#define SPD_IQ_LIMIT     2.5f        // Iq 지령 상한 (A)
+__attribute__((section(".ram_d2_nocache"), aligned(32)))                     uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
+__attribute__((section(".ram_d2_nocache"), aligned(32)))                     uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
 // 엔코더 방향 보정: 반전 시 (RES - raw)로 미러링한 카운트 반환
 static inline float32_t FOC_Enc_Cnt(FOC_Handle_t *hfoc) {
@@ -41,6 +36,27 @@ static inline float32_t FOC_Enc_Cnt(FOC_Handle_t *hfoc) {
 		return (float32_t) ENCODER_RESOLUTION - (float32_t) raw;
 	}
 	return (float32_t) raw;
+}
+
+volatile float32_t g_vbus_filt = MOTOR_RATED_VOLTAGE;
+
+__STATIC_INLINE void FOC_Update_VBus(void) {
+	// adc1_dma_buf, adc2_dma_buf 둘 다 배터리를 보고 있다면 평균, 아니면 하나만 사용
+	uint32_t raw = (adc1_dma_buf[0] + adc2_dma_buf[0]) / 2; // 실제로 배터리를 읽는 채널로 교체
+	float32_t vbus_raw = (float32_t) raw * VBUS_ADC_SCALE;
+
+	const float32_t alpha = 0.05f; // 필터 계수 (2kHz 기준 튜닝)
+	g_vbus_filt += alpha * (vbus_raw - g_vbus_filt);
+
+	// 안전 클램프: 너무 낮으면 0으로 나누기 방지, 너무 높으면 이상값 방지
+	if (g_vbus_filt < 3.0f)
+		g_vbus_filt = 3.0f;
+	if (g_vbus_filt > 30.0f)
+		g_vbus_filt = 30.0f;
+}
+
+float32_t FOC_Get_VBus(void) {
+	return g_vbus_filt;
 }
 
 // 1. regular(배터리) DMA + injected(상전류) IT 동시 구동 시작
@@ -55,6 +71,11 @@ void FOC_ADC_Start() {
 
 	HAL_ADCEx_InjectedStart_IT(&hadc1);
 	HAL_ADCEx_InjectedStart_IT(&hadc2);
+
+	HAL_Delay(50);
+
+	g_vbus_filt = (float32_t) (adc1_dma_buf[0] + adc2_dma_buf[0])
+			/ 2.f* VBUS_ADC_SCALE;
 }
 
 void FOC_Reset_State(FOC_Handle_t *hfoc) {
@@ -73,6 +94,10 @@ void FOC_Reset_State(FOC_Handle_t *hfoc) {
 
 	// 3. I항(적분기) 누적 오차 리셋
 	hfoc->spd_integ = 0.0f;
+
+	// D항 상태 리셋 (계단 지령/재기동 시 미분 스파이크 방지)
+	hfoc->spd_prev_meas = 0.0f;
+	hfoc->spd_deriv_filt = 0.0f;
 
 	// [중요] 4. 인코더 카운트 동기화
 	// 모터가 꺼져있는 동안 외부 힘에 의해 축이 돌아갔을 수 있으므로,
@@ -111,8 +136,9 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 	hfoc->pid_iq.Ki = DEFAULT_IQ_KI;
 	hfoc->pid_iq.Kd = 0.f;
 
-	hfoc->spd_Kp = 0.0006f;
-	hfoc->spd_Ki = 0.003f;
+	hfoc->spd_Kp = 0.0007f;
+	hfoc->spd_Ki = 0.0015f;
+	hfoc->spd_Kd = 0.000001f;      // 기본은 0에서 시작, 필요 시 튜닝
 	hfoc->iq_limit = SPD_IQ_LIMIT;
 
 	// SD 카드에서 Kp, Ki를 불러왔으므로 PID 구조체에 한 번 반영해 줍니다.
@@ -137,6 +163,7 @@ void FOC_Calibrate_Offset(FOC_Handle_t *hfoc) {
 // 4. 엔코더 영점(D축) 정렬 캘리브레이션
 void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc) {
 	// 4-1. 강제 정렬을 위한 직류 전압 인가 (정격의 10% 수준)
+
 	float32_t align_voltage = MOTOR_RATED_VOLTAGE * 0.1f;
 	float32_t v_a, v_b, v_c;
 
@@ -187,6 +214,83 @@ void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc) {
 	hfoc->enc_prev_cnt = (uint16_t) hfoc->LPTIMx->Instance->CNT;
 }
 
+void FOC_Calibrate_Encoder_Offset_Both(FOC_Handle_t *hfoc_L, FOC_Handle_t *hfoc_R) {
+	// 4-1. 강제 정렬을 위한 직류 전압 인가 (정격의 10% 수준)
+	float32_t align_voltage = MOTOR_RATED_VOLTAGE * 0.1f;
+	float32_t v_a, v_b, v_c;
+
+	arm_inv_clarke_f32(align_voltage, 0.0f, &v_a, &v_b);
+	v_c = -(v_a + v_b);
+
+	float32_t duty_a = (v_a / MOTOR_RATED_VOLTAGE) * PWM_PERIOD + PWM_HALF_PERIOD;
+	float32_t duty_b = (v_b / MOTOR_RATED_VOLTAGE) * PWM_PERIOD + PWM_HALF_PERIOD;
+	float32_t duty_c = (v_c / MOTOR_RATED_VOLTAGE) * PWM_PERIOD + PWM_HALF_PERIOD;
+
+	// [좌측 모터] PWM 인가
+	hfoc_L->TIMx->Instance->CCR1 = (uint32_t) duty_a;
+	hfoc_L->TIMx->Instance->CCR2 = (uint32_t) duty_b;
+	hfoc_L->TIMx->Instance->CCR3 = (uint32_t) duty_c;
+	hfoc_L->foc_svpwm_en = 1;
+
+	// [우측 모터] PWM 인가
+	hfoc_R->TIMx->Instance->CCR1 = (uint32_t) duty_a;
+	hfoc_R->TIMx->Instance->CCR2 = (uint32_t) duty_b;
+	hfoc_R->TIMx->Instance->CCR3 = (uint32_t) duty_c;
+	hfoc_R->foc_svpwm_en = 1;
+
+	// 4-2. 두 모터의 회전자가 끌려와 물리적으로 멈출 때까지 대기
+	HAL_Delay(500);
+
+	// 4-3. 정렬된 상태(전기각 0도)에서 양쪽 LPTIM 카운터 가독 및 오프셋 계산
+
+	// --- [좌측 모터 오프셋 계산] ---
+	float32_t cnt_L = FOC_Enc_Cnt(hfoc_L);
+	float32_t theta_m_L = (cnt_L / ENCODER_RESOLUTION) * (2.0f * M_PI);
+	float32_t theta_e_raw_L = theta_m_L * MOTOR_POLE_PAIRS;
+
+	while (theta_e_raw_L >= (float32_t) (2.0 * M_PI))
+		theta_e_raw_L -= (float32_t) (2.0 * M_PI);
+	while (theta_e_raw_L < 0.0f)
+		theta_e_raw_L += (float32_t) (2.0 * M_PI);
+
+	hfoc_L->theta_offset = (float32_t) (2.0 * M_PI) - theta_e_raw_L;
+	if (hfoc_L->theta_offset >= (float32_t) (2.0 * M_PI)) {
+		hfoc_L->theta_offset -= (float32_t) (2.0 * M_PI);
+	}
+
+	// --- [우측 모터 오프셋 계산] ---
+	float32_t cnt_R = FOC_Enc_Cnt(hfoc_R);
+	float32_t theta_m_R = (cnt_R / ENCODER_RESOLUTION) * (2.0f * M_PI);
+	float32_t theta_e_raw_R = theta_m_R * MOTOR_POLE_PAIRS;
+
+	while (theta_e_raw_R >= (float32_t) (2.0 * M_PI))
+		theta_e_raw_R -= (float32_t) (2.0 * M_PI);
+	while (theta_e_raw_R < 0.0f)
+		theta_e_raw_R += (float32_t) (2.0 * M_PI);
+
+	hfoc_R->theta_offset = (float32_t) (2.0 * M_PI) - theta_e_raw_R;
+	if (hfoc_R->theta_offset >= (float32_t) (2.0 * M_PI)) {
+		hfoc_R->theta_offset -= (float32_t) (2.0 * M_PI);
+	}
+
+	// 4-5. 정렬 종료 및 출력 중립(0V) 복구
+	hfoc_L->TIMx->Instance->CCR1 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_L->TIMx->Instance->CCR2 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_L->TIMx->Instance->CCR3 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_L->foc_svpwm_en = 0;
+
+	hfoc_R->TIMx->Instance->CCR1 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_R->TIMx->Instance->CCR2 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_R->TIMx->Instance->CCR3 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_R->foc_svpwm_en = 0;
+
+	HAL_Delay(500);
+
+	// 정렬 중 변한 양쪽 CNT를 속도 루프 기준으로 동기화
+	hfoc_L->enc_prev_cnt = (uint16_t) hfoc_L->LPTIMx->Instance->CNT;
+	hfoc_R->enc_prev_cnt = (uint16_t) hfoc_R->LPTIMx->Instance->CNT;
+}
+
 // 5. 실시간 LPTIM 엔코더 전기각 갱신 함수 (방향 보정 적용)
 void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc) {
 	float32_t cnt = FOC_Enc_Cnt(hfoc);
@@ -226,19 +330,50 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	arm_park_f32(hfoc->I_alpha, hfoc->I_beta, &hfoc->I_d, &hfoc->I_q, sin_theta,
 			cos_theta);
 
-	// [5] PI 전류 제어 및 전압 포화 제한
-	hfoc->V_d = arm_pid_f32(&hfoc->pid_id, hfoc->target_Id - hfoc->I_d);
-	hfoc->V_q = arm_pid_f32(&hfoc->pid_iq, hfoc->target_Iq - hfoc->I_q);
+	// [5] PI 전류 제어
+	float32_t Vd_pi = arm_pid_f32(&hfoc->pid_id, hfoc->target_Id - hfoc->I_d);
+	float32_t Vq_pi = arm_pid_f32(&hfoc->pid_iq, hfoc->target_Iq - hfoc->I_q);
 
-	if (hfoc->V_d > MOTOR_RATED_VOLTAGE)
-		hfoc->V_d = MOTOR_RATED_VOLTAGE;
-	else if (hfoc->V_d < -MOTOR_RATED_VOLTAGE)
-		hfoc->V_d = -MOTOR_RATED_VOLTAGE;
+	// [5-1] 역기전력 및 상호 간섭(cross-coupling) 디커플링 feedforward
+	//   coreless 모터는 돌극성이 없어 Ld = Lq = L 이 정확히 성립하므로
+	//   Vd_ff = -we * L * Iq
+	//   Vq_ff =  we * L * Id + we * λ   (λ: 자속쇄교수, 토크상수에서 역산)
+	//   omega_e_meas는 속도 루프(2kHz)에서 갱신되는 값을 그대로 재사용합니다.
 
-	if (hfoc->V_q > MOTOR_RATED_VOLTAGE)
-		hfoc->V_q = MOTOR_RATED_VOLTAGE;
-	else if (hfoc->V_q < -MOTOR_RATED_VOLTAGE)
-		hfoc->V_q = -MOTOR_RATED_VOLTAGE;
+	float32_t we = hfoc->omega_e_meas;
+
+	// 1. 역기전력(Back-EMF) 항: 회전 속도에 비례
+	float32_t Vq_bemf = we * MOTOR_FLUX_LINKAGE;
+
+	// 2. 인덕턴스 디커플링(Cross-coupling) 항
+	float32_t Vd_cross = -we * MOTOR_PHASE_INDUCTANCE_H * hfoc->I_q;
+	float32_t Vq_cross = we * MOTOR_PHASE_INDUCTANCE_H * hfoc->I_d;
+
+	// [디버깅 스위치] 처음에는 ff_gain을 0.05 ~ 0.1 정도로 매우 작게 주고 시작합니다.
+	// 안정적이면 1.0까지 서서히 올립니다. 만약 0.1만 넣었는데도 덜덜거리면 부호나 파라미터가 틀린 것입니다.
+	float32_t ff_bemf_gain = 0.01f; // TODO: 0.1f로 올려서 테스트
+	float32_t ff_cross_gain = 0.01f; // BEMF가 완벽해지면 시도
+
+	float32_t Vd_ff = Vd_cross * ff_cross_gain;
+	float32_t Vq_ff = (Vq_bemf * ff_bemf_gain) + (Vq_cross * ff_cross_gain);
+
+	hfoc->V_d = Vd_pi + Vd_ff;
+	hfoc->V_q = Vq_pi + Vq_ff;
+
+//	hfoc->V_d = Vd_pi;
+//	hfoc->V_q = Vq_pi;
+
+	// [5-2] 전압 포화 제한
+	float32_t v_limit = g_vbus_filt;
+	if (hfoc->V_d > v_limit)
+		hfoc->V_d = v_limit;
+	else if (hfoc->V_d < -v_limit)
+		hfoc->V_d = -v_limit;
+
+	if (hfoc->V_q > v_limit)
+		hfoc->V_q = v_limit;
+	else if (hfoc->V_q < -v_limit)
+		hfoc->V_q = -v_limit;
 
 	// [6] Inverse Park Transform
 	arm_inv_park_f32(hfoc->V_d, hfoc->V_q, &hfoc->V_alpha, &hfoc->V_beta,
@@ -250,12 +385,9 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	float32_t v_c = -(v_a + v_b);
 
 	// [8] SVPWM 기반 Duty 연산 (0 ~ PWM_PERIOD)
-	float32_t duty_a = (v_a / MOTOR_RATED_VOLTAGE) * PWM_PERIOD
-			+ PWM_HALF_PERIOD;
-	float32_t duty_b = (v_b / MOTOR_RATED_VOLTAGE) * PWM_PERIOD
-			+ PWM_HALF_PERIOD;
-	float32_t duty_c = (v_c / MOTOR_RATED_VOLTAGE) * PWM_PERIOD
-			+ PWM_HALF_PERIOD;
+	float32_t duty_a = (v_a / g_vbus_filt) * PWM_PERIOD + PWM_HALF_PERIOD;
+	float32_t duty_b = (v_b / g_vbus_filt) * PWM_PERIOD + PWM_HALF_PERIOD;
+	float32_t duty_c = (v_c / g_vbus_filt) * PWM_PERIOD + PWM_HALF_PERIOD;
 
 	// 하드웨어 타이머 범위를 벗어나지 않도록 클램핑
 	duty_a = duty_a < 0.0f ? 0.0f : (duty_a > PWM_PERIOD ? PWM_PERIOD : duty_a);
@@ -270,7 +402,7 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	}
 }
 
-// 7. 속도 PI 루프 (1kHz 타이머에서 모터별 호출, 위치형 + anti-windup)
+// 7. 속도 PID 루프 (2kHz 타이머에서 모터별 호출, 위치형 + anti-windup)
 void FOC_Speed_Loop(FOC_Handle_t *hfoc) {
 	if (hfoc->speed_loop_en == 0)
 		return;
@@ -282,12 +414,21 @@ void FOC_Speed_Loop(FOC_Handle_t *hfoc) {
 	if (hfoc->enc_dir < 0)
 		delta = -delta;
 
-	// [2] 기계각속도 -> 전기각속도 (rad/s)
-	float32_t omega_m = ((float32_t) delta / ENCODER_RESOLUTION)
-			* (2.0f * M_PI)/ SPD_DT;
-	hfoc->omega_e_meas = omega_m * MOTOR_POLE_PAIRS;
+	// [2] 기계각속도 -> 전기각속도 (rad/s) 계산
+	float32_t omega_m_raw = ((float32_t) delta / ENCODER_RESOLUTION)
+			* (2.0f * M_PI) / SPD_DT;
+	float32_t omega_e_raw = omega_m_raw * MOTOR_POLE_PAIRS;
 
-	// [3] 속도 PI
+	hfoc->spd_history[hfoc->spd_hist_idx] = omega_e_raw;
+		hfoc->spd_hist_idx = (hfoc->spd_hist_idx + 1) % SPD_MA_WINDOW;
+
+		float32_t sum = 0.0f;
+		for(uint8_t i = 0; i < SPD_MA_WINDOW; i++) {
+			sum += hfoc->spd_history[i];
+		}
+		hfoc->omega_e_meas = sum / (float32_t)SPD_MA_WINDOW;
+
+	// [3] 속도 PID - P항, I항 계산
 	float32_t err = hfoc->target_omega - hfoc->omega_e_meas;
 	hfoc->spd_integ += hfoc->spd_Ki * err * SPD_DT;
 
@@ -297,7 +438,23 @@ void FOC_Speed_Loop(FOC_Handle_t *hfoc) {
 	if (hfoc->spd_integ < -hfoc->iq_limit)
 		hfoc->spd_integ = -hfoc->iq_limit;
 
-	float32_t iq_cmd = hfoc->spd_Kp * err + hfoc->spd_integ;
+	// =======================================================
+	// [3-1] D항: 측정값 미분 (Derivative-on-measurement) + 전용 LPF
+	// =======================================================
+	// 이미 LPF를 거친 omega_e_meas를 사용하여 미분 (안정성 증가)
+	float32_t raw_deriv = -(hfoc->omega_e_meas - hfoc->spd_prev_meas) / SPD_DT;
+
+	// D항 전용 필터 계수 계산 (변수명 d_alpha로 변경)
+	float32_t d_alpha = SPD_DT / (SPD_D_TAU + SPD_DT);
+	hfoc->spd_deriv_filt += d_alpha * (raw_deriv - hfoc->spd_deriv_filt);
+
+	hfoc->spd_prev_meas = hfoc->omega_e_meas; // 다음 스텝을 위해 현재 속도 저장
+
+	float32_t d_term = hfoc->spd_Kd * hfoc->spd_deriv_filt;
+	// =======================================================
+
+	// 최종 Iq 지령 계산 (P + I + D)
+	float32_t iq_cmd = hfoc->spd_Kp * err + hfoc->spd_integ + d_term;
 
 	// 출력 클램프
 	if (iq_cmd > hfoc->iq_limit)
@@ -307,6 +464,7 @@ void FOC_Speed_Loop(FOC_Handle_t *hfoc) {
 
 	// [4] 전류 루프에 Iq 지령 전달
 	hfoc->target_Iq = iq_cmd;
+	hfoc->err = err;
 }
 
 // =========================================================
@@ -316,22 +474,15 @@ void FOC_Speed_Loop(FOC_Handle_t *hfoc) {
 // ADC1=foc_R, ADC2=foc_L
 void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef *hadc) {
 	if (hadc->Instance == ADC1) {
-		foc_tick_R++;
-		if (foc_tick_R >= FOC_DECIMATION) {
-			foc_tick_R = 0;
-			FOC_Execute_Loop(&foc_R);
-		}
+		FOC_Execute_Loop(&foc_R);
 	} else if (hadc->Instance == ADC2) {
-		foc_tick_L++;
-		if (foc_tick_L >= FOC_DECIMATION) {
-			foc_tick_L = 0;
-			FOC_Execute_Loop(&foc_L);
-		}
+		FOC_Execute_Loop(&foc_L);
 	}
 }
 
 // 2kHz 타이머 IRQ. 두 모터 속도 루프를 같은 dt로 처리.
 void Speed_TIM_IRQ_Handler() {
+	FOC_Update_VBus();
 	FOC_Speed_Loop(&foc_L);
 	FOC_Speed_Loop(&foc_R);
 }
@@ -339,38 +490,44 @@ void Speed_TIM_IRQ_Handler() {
 // =========================================================
 // [SD카드 저장 및 불러오기]
 // =========================================================
+// @formatter:off
 static const SDCard_ConfigEntry foc_param_table[] = {
-	{ "L_offset_a",     &foc_L.offset_a,      SDCFG_FLOAT },
-	{ "L_offset_c",     &foc_L.offset_c,      SDCFG_FLOAT },
-	{ "L_theta_offset", &foc_L.theta_offset,  SDCFG_FLOAT },
-	{ "L_id_Kp",        &foc_L.pid_id.Kp,     SDCFG_FLOAT },
-	{ "L_id_Ki",        &foc_L.pid_id.Ki,     SDCFG_FLOAT },
-	{ "L_iq_Kp",        &foc_L.pid_iq.Kp,     SDCFG_FLOAT },
-	{ "L_iq_Ki",        &foc_L.pid_iq.Ki,     SDCFG_FLOAT },
-	{ "L_spd_Kp",       &foc_L.spd_Kp,        SDCFG_FLOAT },
-	{ "L_spd_Ki",       &foc_L.spd_Ki,        SDCFG_FLOAT },
-	{ "L_iq_limit",     &foc_L.iq_limit,      SDCFG_FLOAT },
-	{ "L_enc_dir",      &foc_L.enc_dir,       SDCFG_INT8  },
+		{ "L_offset_a",		&foc_L.offset_a, 		SDCFG_FLOAT },
+		{ "L_offset_c", 	&foc_L.offset_c, 		SDCFG_FLOAT },
+		{ "L_theta_offset", &foc_L.theta_offset, 	SDCFG_FLOAT },
+		{ "L_id_Kp", 		&foc_L.pid_id.Kp, 		SDCFG_FLOAT },
+		{ "L_id_Ki", 		&foc_L.pid_id.Ki, 		SDCFG_FLOAT },
+		{ "L_iq_Kp", 		&foc_L.pid_iq.Kp, 		SDCFG_FLOAT },
+		{ "L_iq_Ki", 		&foc_L.pid_iq.Ki, 		SDCFG_FLOAT },
+		{ "L_spd_Kp",		&foc_L.spd_Kp, 			SDCFG_FLOAT },
+		{ "L_spd_Ki",		&foc_L.spd_Ki, 			SDCFG_FLOAT },
+		{ "L_spd_Kd", 		&foc_L.spd_Kd, 			SDCFG_FLOAT },
+		{ "L_iq_limit", 	&foc_L.iq_limit, 		SDCFG_FLOAT },
+		{ "L_enc_dir", 		&foc_L.enc_dir, 		SDCFG_INT8 },
 
-	{ "R_offset_a",     &foc_R.offset_a,      SDCFG_FLOAT },
-	{ "R_offset_c",     &foc_R.offset_c,      SDCFG_FLOAT },
-	{ "R_theta_offset", &foc_R.theta_offset,  SDCFG_FLOAT },
-	{ "R_id_Kp",        &foc_R.pid_id.Kp,     SDCFG_FLOAT },
-	{ "R_id_Ki",        &foc_R.pid_id.Ki,     SDCFG_FLOAT },
-	{ "R_iq_Kp",        &foc_R.pid_iq.Kp,     SDCFG_FLOAT },
-	{ "R_iq_Ki",        &foc_R.pid_iq.Ki,     SDCFG_FLOAT },
-	{ "R_spd_Kp",       &foc_R.spd_Kp,        SDCFG_FLOAT },
-	{ "R_spd_Ki",       &foc_R.spd_Ki,        SDCFG_FLOAT },
-	{ "R_iq_limit",     &foc_R.iq_limit,      SDCFG_FLOAT },
-	{ "R_enc_dir",      &foc_R.enc_dir,       SDCFG_INT8  },
+		{ "R_offset_a",		&foc_R.offset_a, 		SDCFG_FLOAT },
+		{ "R_offset_c", 	&foc_R.offset_c, 		SDCFG_FLOAT },
+		{ "R_theta_offset", &foc_R.theta_offset, 	SDCFG_FLOAT },
+		{ "R_id_Kp", 		&foc_R.pid_id.Kp, 		SDCFG_FLOAT },
+		{ "R_id_Ki", 		&foc_R.pid_id.Ki, 		SDCFG_FLOAT },
+		{ "R_iq_Kp", 		&foc_R.pid_iq.Kp, 		SDCFG_FLOAT },
+		{ "R_iq_Ki", 		&foc_R.pid_iq.Ki, 		SDCFG_FLOAT },
+		{ "R_spd_Kp",		&foc_R.spd_Kp, 			SDCFG_FLOAT },
+		{ "R_spd_Ki",		&foc_R.spd_Ki, 			SDCFG_FLOAT },
+		{ "R_spd_Kd", 		&foc_R.spd_Kd, 			SDCFG_FLOAT },
+		{ "R_iq_limit", 	&foc_R.iq_limit, 		SDCFG_FLOAT },
+		{ "R_enc_dir", 		&foc_R.enc_dir, 		SDCFG_INT8 },
 };
+
+// @formatter:on
 
 FRESULT Save_FOC_Parameters(void) {
 	return SDCard_SaveConfig(FOC_PARAM_PATH, foc_param_table, FOC_PARAM_COUNT);
 }
 
 FRESULT Load_FOC_Parameters(void) {
-	FRESULT res = SDCard_LoadConfig(FOC_PARAM_PATH, foc_param_table, FOC_PARAM_COUNT);
+	FRESULT res = SDCard_LoadConfig(FOC_PARAM_PATH, foc_param_table,
+	FOC_PARAM_COUNT);
 	if (res != FR_OK)
 		return res;
 
