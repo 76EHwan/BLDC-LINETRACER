@@ -105,8 +105,8 @@ __STATIC_INLINE void Cross_Detect_Reset(void) {
 
 // 위치 창(POS_WINDOW) 바깥쪽 센서에서 검출되는 cross_left/cross_right 후보 플래그를 사용한다.
 static CrossEvent_t Cross_Detect_Update(void) {
-	uint8_t left = IR_Sensor.data->cross_left;
-	uint8_t right = IR_Sensor.data->cross_right;
+	uint8_t left = 0;
+	uint8_t right = 0;
 
 	// 현재 중앙 16개 센서의 상태만 추출 (하위 16비트)
 	uint16_t current_center_state = (uint16_t) (IR_Sensor.data->state & 0xFFFF);
@@ -263,21 +263,23 @@ void Line_Follow_Drive(void) {
 
 		// ★ 최적화: 센서 위치가 갱신되었을 때만 PD 연산 수행 (이전 대화 내용 반영)
 
-		float_t line_pos = IR_Sensor.data->line_position;
-		float_t line_pos_abs = fabsf(line_pos);
+		if (IR_Sensor.is_position) {
+			IR_Sensor.is_position = 0;
+			float_t line_pos = 0;
+			float_t line_pos_abs = fabsf(line_pos);
 
-		float_t d_line_pos = line_pos - prev_line_pos;
-		prev_line_pos = line_pos;
+			float_t d_line_pos = line_pos - prev_line_pos;
+			prev_line_pos = line_pos;
 
-		float_t steer = (g_steer_gain * line_pos) + (kd * d_line_pos);
+			float_t steer = (g_steer_gain * line_pos) + (kd * d_line_pos);
 
-		float_t mps_L = g_base_mps * (1.f + steer)
-				* (1.f - line_pos_abs * g_pos_atten_gain);
-		float_t mps_R = g_base_mps * (1.f - steer)
-				* (1.f - line_pos_abs * g_pos_atten_gain);
+			float_t mps_L = g_base_mps * (1.f + steer)
+					* (1.f - line_pos_abs * g_pos_atten_gain);
+			float_t mps_R = g_base_mps * (1.f - steer)
+					* (1.f - line_pos_abs * g_pos_atten_gain);
 
-		MTR_Set_Speed(mps_L, mps_R);
-
+			MTR_Set_Speed(mps_L, mps_R);
+		}
 		// 100ms (0.1초) 주기로 기본 정보 갱신
 //		if (now_tick - lcd_update_tick >= 100) {
 //			LCD_Printf(0, 0, "%d", count_irq);

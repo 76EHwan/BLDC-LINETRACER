@@ -15,7 +15,9 @@
 #define SENSOR_CALIB_PATH "/Sensor_Data/calibration_result.txt"
 #define SENSOR_CALIB_COUNT (sizeof(sensor_calib_table) / sizeof(sensor_calib_table[0]))
 
-#define SENSOR_TRIG_TIM &htim2
+#define SENSOR_ADC_HANDLE		&hadc3
+#define SENSOR_TIM_IR_HANDLE	&htim7
+#define SENSOR_TIM_TRIG_HANDLE	&htim2
 
 /*
  * IR_EN 극성 (schematic 기준):
@@ -28,84 +30,30 @@
 #define SENSOR_PT_LOW()   (SENSOR_PT_EN_GPIO_Port->BSRR = ((uint32_t)SENSOR_PT_EN_Pin << 16U))
 
 // === 라인 위치 추정 (weighted centroid, 2단계 interleaved 스캔) ==========
-#define LINE_N_SENSORS      16
-
 #define LINE_WEIGHT(n)      (uint8_t)(n)
 
-static const uint8_t scan_group1[SCAN_GROUP1_LEN] =
-		{ 7, 8, 10, 5, 3, 12, 14, 1 };
+static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1,
+		16, 17 };
 
-static const uint8_t scan_group2_candidates[SCAN_GROUP2_CANDIDATE_LEN] = { 9, 6,
-		4, 11, 13, 2, 0, 15 };
+static const uint8_t scan_group2[SCAN_GROUP_LEN] = { 9, 6, 4, 11, 13, 2, 0, 15,
+		16, 17 };
 
-// 초기화: 캘리브레이션 시작 시 배열에 쓰레기값이 들어가는 것을 방지
-static uint8_t scan_group2_active[SCAN_GROUP2_LEN] = { 9, 6, 4, 11, 13, 2 };
-
-// ★ 추가: 스킵된 센서의 인덱스를 기억하기 위한 배열
-static uint8_t scan_group2_skipped[2] = { 0, 15 };
-
-#define POS1_EDGE_THRESH  (1.0f / 15.0f)
-
-static void Select_Group2_Active(float position1) {
-	uint8_t skip_a, skip_b;
-	if (position1 < -POS1_EDGE_THRESH) {
-		skip_a = 13;
-		skip_b = 15;
-	} else if (position1 > POS1_EDGE_THRESH) {
-		skip_a = 0;
-		skip_b = 2;
-	} else {
-		skip_a = 0;
-		skip_b = 15;
-	}
-
-	// ★ 스킵 결정된 물리 센서 번호를 기록 (잔상 제거용)
-	scan_group2_skipped[0] = skip_a;
-	scan_group2_skipped[1] = skip_b;
-
-	uint8_t w = 0;
-	for (int i = 0; i < SCAN_GROUP2_CANDIDATE_LEN && w < SCAN_GROUP2_LEN; i++) {
-		uint8_t phys = scan_group2_candidates[i];
-		if (phys == skip_a || phys == skip_b)
-			continue;
-		scan_group2_active[w++] = phys;
-	}
-}
-
-static float running_num = 0.0f;
-static int32_t running_den = 0;
-volatile uint8_t sensor_pos_updated = 0;
+const float line_sensor_pos[LINE_N_SENSORS] = { -1.0f, -13.0f / 15.0f, -11.0f
+		/ 15.0f, -9.0f / 15.0f, -7.0f / 15.0f, -5.0f / 15.0f, -3.0f / 15.0f,
+		-1.0f / 15.0f, 1.0f / 15.0f, 3.0f / 15.0f, 5.0f / 15.0f, 7.0f / 15.0f,
+		9.0f / 15.0f, 11.0f / 15.0f, 13.0f / 15.0f, 1.0f };
 
 __STATIC_INLINE uint8_t Scan_Slot_To_Phys(uint8_t slot) {
-	if (slot < SCAN_GROUP1_LEN) {
+	if (slot < SCAN_CYCLE_LEN_HALF) {
 		return scan_group1[slot];
 	}
-	return scan_group2_active[slot - SCAN_SLOT_GROUP2_START];
+	return scan_group2[slot - SCAN_CYCLE_LEN_HALF];
 }
 
 // @formatter:off
 
-static const float line_sensor_pos[LINE_N_SENSORS] = {
-        -1.0f,
-        -13.0f / 15.0f,
-        -11.0f / 15.0f,
-        -9.0f / 15.0f,
-        -7.0f / 15.0f,
-        -5.0f / 15.0f,
-        -3.0f / 15.0f,
-        -1.0f / 15.0f,
-        1.0f / 15.0f,
-        3.0f / 15.0f,
-        5.0f / 15.0f,
-        7.0f / 15.0f,
-        9.0f / 15.0f,
-        11.0f / 15.0f,
-        13.0f / 15.0f,
-        1.0f
-};
-
 // DMA Circular 모드 16-rank 결과 버퍼
-__attribute__((section(".ram_d3"), aligned(32))) uint16_t adc3_buffer[16];
+__attribute__((section(".ram_d3"), aligned(32))) uint16_t adc3_buffer[1];
 
 volatile SensorDataTypeDef sensorData = {
         .idx = 0,
@@ -115,16 +63,14 @@ volatile SensorDataTypeDef sensorData = {
         .normalized = { 0 },
         .state = 0,
         .threshold = 100,
-        .pos_center_idx = (LINE_N_SENSORS - 1) / 2,
-        .cross_left = 0,
-        .cross_right = 0,
-        .line_w_bandwidth = 10,
         .line_lost_sum_min = 20,
 };
 
 volatile Sensor_TypeDef IR_Sensor = {
+		.scan_group = 0,
         .is_calibration = 0,
         .is_lost_position = 0,
+		.is_position = 0,
         .data = &sensorData,
 };
 
@@ -138,23 +84,24 @@ void Sensor_Printf(uint8_t idx, volatile uint16_t *sensor_data) {
 
 void Sensor_Start() {
 	IR_Sensor.data->idx = 0;
-	HAL_ADCEx_Calibration_Start(&hadc3, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
+	IR_Sensor.scan_group = 0;
+	HAL_ADCEx_Calibration_Start(SENSOR_ADC_HANDLE, ADC_CALIB_OFFSET,
+	ADC_SINGLE_ENDED);
 
-	// DMA만 켜고, EOC 강제 활성화 코드는 삭제합니다!
-	HAL_StatusTypeDef ret = HAL_ADC_Start_DMA(&hadc3, (uint32_t*) adc3_buffer,
-			16);
+	HAL_StatusTypeDef ret = HAL_ADC_Start_DMA(SENSOR_ADC_HANDLE,
+			(uint32_t*) adc3_buffer, 1);
 
 	if (ret != HAL_OK) {
 		LCD_Printf(0, 15, "ADC ERR:%d", ret);
 		return;
 	}
-	HAL_TIM_Base_Start_IT(&htim7);
+	HAL_TIM_Base_Start_IT(SENSOR_TIM_IR_HANDLE);
 }
 
 void Sensor_Stop() {
-	HAL_TIM_Base_Stop(&htim2);
-	HAL_TIM_Base_Stop_IT(&htim7);
-	HAL_ADC_Stop_DMA(&hadc3);
+	HAL_TIM_Base_Stop(SENSOR_TIM_TRIG_HANDLE);
+	HAL_TIM_Base_Stop_IT(SENSOR_TIM_IR_HANDLE);
+	HAL_ADC_Stop_DMA(SENSOR_ADC_HANDLE);
 }
 
 __STATIC_INLINE void Set_Mux_Channel_Fast(uint8_t index) {
@@ -179,219 +126,55 @@ __STATIC_INLINE void Set_Mux_Channel_Fast(uint8_t index) {
 		SENSOR_MUX3_GPIO_Port->BSRR = (uint32_t) SENSOR_MUX3_Pin << 16U;
 }
 
-__STATIC_INLINE void Sensor_Normalize(uint8_t idx) {
+__STATIC_INLINE uint16_t Sensor_Normalize(uint8_t idx) {
 	const uint16_t raw = IR_Sensor.data->raw[idx];
 	const uint16_t bmax = IR_Sensor.data->blackmax[idx];
 	const uint16_t bias = IR_Sensor.data->normalized_coef_bias[idx];
 	uint16_t diff = (raw > bmax) ? (raw - bmax) : 0;
 	uint32_t result = ((uint32_t) diff * bias) >> 8;
-	IR_Sensor.data->normalized[idx] = (result > 255U) ? 255U : (uint8_t) result;
-}
-
-float Sensor_Line_Estimate_Pass1(void) {
-	count_sensor_irq++;
-
-	const uint8_t line_w_deadband = IR_Sensor.data->line_w_bandwidth;
-	const uint8_t line_lost_sum_min = IR_Sensor.data->line_lost_sum_min;
-
-	int peak_idx = IR_Sensor.data->pos_center_idx;
-	uint8_t peak_w = 0;
-	for (int g = 0; g < SCAN_GROUP1_LEN; g++) {
-		uint8_t phys = scan_group1[g];
-		uint8_t w = LINE_WEIGHT(IR_Sensor.data->normalized[phys]);
-		if (w > peak_w && w >= line_w_deadband) {
-			peak_w = w;
-			peak_idx = phys;
-		}
-	}
-	IR_Sensor.data->pos_center_idx = (uint8_t) peak_idx;
-
-	int start = peak_idx - POS_WINDOW_HALF;
-	int end = peak_idx + (POS_WINDOW_HALF - 1);
-	if (start < 0) {
-		end -= start;
-		start = 0;
-	}
-	if (end > LINE_N_SENSORS - 1) {
-		start -= (end - (LINE_N_SENSORS - 1));
-		end = LINE_N_SENSORS - 1;
-	}
-	if (start < 0)
-		start = 0;
-	IR_Sensor.data->win_start = (uint8_t) start;
-	IR_Sensor.data->win_end = (uint8_t) end;
-
-	float num = 0.0f;
-	int32_t den = 0;
-	uint8_t cross_left = 0, cross_right = 0;
-	for (int g = 0; g < SCAN_GROUP1_LEN; g++) {
-		uint8_t phys = scan_group1[g];
-		uint8_t w = LINE_WEIGHT(IR_Sensor.data->normalized[phys]);
-		if (phys >= start && phys <= end) {
-			if (w >= line_w_deadband) {
-				num += (float) w * line_sensor_pos[phys];
-				den += w;
-			}
-		} else if (w >= line_w_deadband) {
-			if (phys < start)
-				cross_left = 1;
-			else
-				cross_right = 1;
-		}
-	}
-	IR_Sensor.data->cross_left = cross_left;
-	IR_Sensor.data->cross_right = cross_right;
-
-	running_num = num;
-	running_den = den;
-
-	if (running_den < line_lost_sum_min) {
-		IR_Sensor.is_lost_position = 1;
-	} else {
-		IR_Sensor.is_lost_position = 0;
-		IR_Sensor.data->line_position = running_num / (float) running_den;
-	}
-	IR_Sensor.data->line_position1 = IR_Sensor.data->line_position;
-
-	Select_Group2_Active(IR_Sensor.data->line_position1);
-
-	return IR_Sensor.data->line_position1;
-}
-
-float Sensor_Line_Estimate_Pass2(void) {
-	const uint8_t line_lost_sum_min = IR_Sensor.data->line_lost_sum_min;
-
-	count_sensor_irq++;
-	if (running_den < line_lost_sum_min) {
-		IR_Sensor.is_lost_position = 1;
-	} else {
-		IR_Sensor.is_lost_position = 0;
-		IR_Sensor.data->line_position = running_num / (float) running_den;
-	}
-
-	return IR_Sensor.data->line_position;
+	return (result > 255U) ? 255U : (uint8_t) result;
 }
 
 void TIM7_IRQ_Handler() {
-	uint8_t slot = IR_Sensor.data->idx;
-
-	if (slot == SCAN_SLOT_MARK_L) {
-		SENSOR_IR_HIGH();
-		SENSOR_PT_HIGH();
-	} else if (slot == SCAN_SLOT_MARK_R) {
-		// Mux 상태 유지
-	} else {
-		uint8_t phys = Scan_Slot_To_Phys(slot);
+	uint8_t slot = IR_Sensor.data->idx % SCAN_CYCLE_LEN_HALF;
+	if (slot < SCAN_GROUP_LEN) {
+		uint8_t phys = Scan_Slot_To_Phys(IR_Sensor.data->idx);
 		Set_Mux_Channel_Fast(phys);
 		SENSOR_IR_LOW();
 		SENSOR_PT_LOW();
+	} else {
+		SENSOR_IR_HIGH();
+		SENSOR_PT_HIGH();
 	}
 
-	// 다음 변환을 위해 슬롯 미리 증가
-	IR_Sensor.data->idx = (slot == SCAN_CYCLE_LEN - 1) ? 0 : (slot + 1);
-
-	TIM2->CR1 &= ~TIM_CR1_CEN;
-	TIM2->CNT = 0;
-	TIM2->SR = ~TIM_SR_UIF;
-	TIM2->CR1 |= TIM_CR1_CEN;
-}
-
-void ADC3_IRQ_Half_Handler() {
-	// Group1 (0~7) 데이터 일괄 처리
-	for (int i = 0; i < SCAN_GROUP1_LEN; i++) {
-		uint8_t phys = scan_group1[i];
-		IR_Sensor.data->raw[phys] = adc3_buffer[i];
-
-		if (IR_Sensor.is_calibration) {
-			Sensor_Normalize(phys);
-			uint8_t w = LINE_WEIGHT(IR_Sensor.data->normalized[phys]);
-			IR_Sensor.data->state &= ~(1u << phys);
-			IR_Sensor.data->state |= ((uint32_t) (w > IR_Sensor.data->threshold)
-					<< phys);
-		}
-	}
-
-	// Group1 처리 완료 후 Pass1 실행
-	if (IR_Sensor.is_calibration) {
-		Sensor_Line_Estimate_Pass1(); // 내부에서 count_sensor_irq++ 실행됨
-		sensor_pos_updated = 1;
-	}
+	*SENSOR_TIM_TRIG_HANDLE.Instance->CR1 &= ~TIM_CR1_CEN;
+	*SENSOR_TIM_TRIG_HANDLE.Instance->CNT = 0;
+	*SENSOR_TIM_TRIG_HANDLE.Instance->SR = ~TIM_SR_UIF;
+	*SENSOR_TIM_TRIG_HANDLE.Instance->CR1 |= TIM_CR1_CEN;
 }
 
 void ADC3_IRQ_Cplt_Handler() {
-	uint8_t m_idx[2] = { LEFT_MARK_SENSOR_INDEX, RIGHT_MARK_SENSOR_INDEX };
-	for (int i = 0; i < 2; i++) {
-		uint8_t mark = m_idx[i];
-		IR_Sensor.data->raw[mark] = adc3_buffer[8 + i];
-		if (IR_Sensor.is_calibration) {
-			Sensor_Normalize(mark);
-			uint8_t on = IR_Sensor.data->normalized[mark]
-					> IR_Sensor.data->threshold;
-			IR_Sensor.data->state &= ~(1u << mark);
-			IR_Sensor.data->state |= ((uint32_t) on << mark);
-		}
-	}
-
-	// Group2 처리 (슬롯 10~15)
+	uint8_t idx = IR_Sensor.data->idx;
+	uint32_t state = IR_Sensor.data->state;
+	uint8_t phys = Scan_Slot_To_Phys(idx);
+	uint16_t raw = *adc3_buffer;
+	static uint8_t normalized;
+	static uint32_t sum_normal;
 	if (IR_Sensor.is_calibration) {
-		const uint8_t line_w_deadband = IR_Sensor.data->line_w_bandwidth;
-		uint8_t start = IR_Sensor.data->win_start;
-		uint8_t end = IR_Sensor.data->win_end;
-
-		// ★ 스캔 제외된 센서 초기화 (잔상 제거 로직)
-		for (int i = 0; i < 2; i++) {
-			uint8_t phys = scan_group2_skipped[i];
-			IR_Sensor.data->raw[phys] = 0;
-			IR_Sensor.data->normalized[phys] = 0;
-			IR_Sensor.data->state &= ~(1u << phys);
+		normalized = Sensor_Normalize(phys);
+		state &= ~(0x01 << phys);
+		state |= ((normalized > IR_Sensor.data->threshold) << phys);
+		sum_normal += normalized;
+		IR_Sensor.data->normalized[phys] = normalized;
+		IR_Sensor.data->state = state;
+		if (idx == SCAN_CYCLE_LEN - 1) {
+			IR_Sensor.is_lost_position = (sum_normal
+					> IR_Sensor.data->line_lost_sum_min);
 		}
-
-		for (int i = 10; i < 16; i++) {
-			uint8_t phys = scan_group2_active[i - 10];
-			IR_Sensor.data->raw[phys] = adc3_buffer[i];
-			Sensor_Normalize(phys);
-			uint8_t w = LINE_WEIGHT(IR_Sensor.data->normalized[phys]);
-			IR_Sensor.data->state &= ~(1u << phys);
-			IR_Sensor.data->state |= ((uint32_t) (w > IR_Sensor.data->threshold)
-					<< phys);
-
-			// Pass2를 위한 누적 연산을 여기서 일괄 처리
-			if (phys >= start && phys <= end) {
-				if (w >= line_w_deadband) {
-					running_den += w;
-					running_num += (float) w * line_sensor_pos[phys];
-				}
-			} else if (w >= line_w_deadband) {
-				if (phys < start)
-					IR_Sensor.data->cross_left = 1;
-				else
-					IR_Sensor.data->cross_right = 1;
-			}
-		}
-
-		// 데이터 수집이 끝났으므로 Pass2 최종 확정
-		Sensor_Line_Estimate_Pass2(); // 내부에서 count_sensor_irq++ 실행됨
-		sensor_pos_updated = 1;
-
-	} else {
-		// 캘리브레이션/Raw 모드 시 Group2 센서값만 저장
-		for (int i = 10; i < 16; i++) {
-			uint8_t phys = scan_group2_active[i - 10];
-			IR_Sensor.data->raw[phys] = adc3_buffer[i];
-		}
-
-		// 전체 센서 로테이션 스캔 갱신
-		static uint8_t skip_idx = 0;
-		uint8_t w = 0;
-		for (int i = 0; i < SCAN_GROUP2_CANDIDATE_LEN && w < SCAN_GROUP2_LEN;
-				i++) {
-			if (i == skip_idx || i == (skip_idx + 1) % SCAN_GROUP2_CANDIDATE_LEN) {
-				continue;
-			}
-			scan_group2_active[w++] = scan_group2_candidates[i];
-		}
-		skip_idx = (skip_idx + 2) % SCAN_GROUP2_CANDIDATE_LEN;
 	}
+	IR_Sensor.data->raw[phys] = raw;
+	idx = (idx + 1) % SCAN_CYCLE_LEN;
+	IR_Sensor.data->idx = idx;
 }
 
 // =========================================================
@@ -477,6 +260,7 @@ void Sensor_Calibration() {
 		IR_Sensor.data->blackmax[i] = 0;
 	}
 
+	UserInput_t btn;
 	FRESULT load_res = Sensor_Load_Calibration();
 	LCD_Printf(0, 0, "Load:%d", load_res);
 	HAL_Delay(500);
@@ -488,13 +272,18 @@ void Sensor_Calibration() {
 	Sensor_Start();
 	uint8_t i = 0;
 	LCD_Printf(0, 0, "White Max");
-	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		LCD_Printf(0, 10, "%02d", IR_Sensor.data->idx);
+	LCD_Printf(0, 10, "Clear: K Double");
+	while ((btn = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
+		if (btn == INPUT_CMD_K_DOUBLE) {
+			for (uint8_t j = 0; j < NUM_SENSORS; j++) {
+				IR_Sensor.data->whitemax[j] = 0;
+			}
+		}
 		if (IR_Sensor.data->whitemax[i] < IR_Sensor.data->raw[i]) {
 			IR_Sensor.data->whitemax[i] = IR_Sensor.data->raw[i];
 		}
 		Sensor_Printf(i, IR_Sensor.data->whitemax);
-		i = (i + 1) % 18;
+		i = (i + 1) % NUM_SENSORS;
 	}
 	LCD_Clear();
 	Sensor_Stop();
@@ -502,13 +291,19 @@ void Sensor_Calibration() {
 
 	Sensor_Start();
 	LCD_Printf(0, 0, "Black Max");
-	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		LCD_Printf(0, 10, "%02d", IR_Sensor.data->idx);
+	LCD_Printf(0, 10, "Clear: K Double");
+
+	while ((btn = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
+		if (btn == INPUT_CMD_K_DOUBLE) {
+			for (uint8_t j = 0; j < NUM_SENSORS; j++) {
+				IR_Sensor.data->blackmax[j] = 0;
+			}
+		}
 		if (IR_Sensor.data->blackmax[i] < IR_Sensor.data->raw[i]) {
 			IR_Sensor.data->blackmax[i] = IR_Sensor.data->raw[i];
 		}
 		Sensor_Printf(i, IR_Sensor.data->blackmax);
-		i = (i + 1) % 18;
+		i = (i + 1) % NUM_SENSORS;
 	}
 
 	for (i = 0; i < 18; i++) {
@@ -545,7 +340,7 @@ void Sensor_Raw_Printf() {
 	UserInput_t bt;
 	while ((bt = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
 		Sensor_Printf(i, IR_Sensor.data->raw);
-		LCD_Printf(0, 13, "%2d", IR_Sensor.data->idx);
+		LCD_Printf(0, 10, "%2d", IR_Sensor.data->idx);
 		i = (i + 1) % 18;
 	}
 
@@ -603,10 +398,36 @@ void Sensor_State_Printf() {
 
 void Sensor_Position_Printf() {
 	Sensor_Start();
-	LCD_Printf(0, 0, "Sensor Pos");
+	LCD_Printf(0, 0, "Position");
+
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		LCD_Printf(0, 1, "%6.3f", IR_Sensor.data->line_position);
+		float weighted_sum = 0.0f;
+		uint32_t total_weight = 0;
+
+		// LINE_N_SENSORS (16개) 에 대해서만 가중 평균 계산
+		for (uint8_t i = 0; i < LINE_N_SENSORS; i++) {
+			uint16_t weight = IR_Sensor.data->normalized[i];
+			weighted_sum += (float)weight * line_sensor_pos[i];
+			total_weight += weight;
+		}
+
+		// 센서 측정값의 총합이 최소 기준치(line_lost_sum_min) 이상일 때만 위치 계산
+		if (total_weight > IR_Sensor.data->line_lost_sum_min) {
+			float position = weighted_sum / (float)total_weight;
+			// %+6.3f 포맷: 부호 포함하여 소수점 아래 3자리까지 출력
+			LCD_Printf(0, 2, "Pos: %+6.3f", position);
+		} else {
+			// 라인을 벗어난 경우 (총합이 부족할 때)
+			LCD_Printf(0, 2, "Pos: LOST   ");
+		}
+
+		// 디버깅을 위해 총 가중치 합(total_weight)도 함께 출력 (선택 사항)
+		LCD_Printf(0, 3, "Sum: %-5lu", total_weight);
+
+		// 화면 업데이트 주기를 조절하기 위해 약간의 딜레이 추가
+		HAL_Delay(10);
 	}
+
 	LCD_Clear();
 	Sensor_Stop();
 	Button_Wait_Release(&btn_k);

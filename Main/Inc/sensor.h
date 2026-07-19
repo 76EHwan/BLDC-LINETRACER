@@ -31,13 +31,12 @@
 // 슬롯 8    : 좌측 마커
 // 슬롯 9    : 우측 마커
 // 슬롯 10~15: group2 (8개 후보 중 동적으로 고른 6개) -> 2차 position
-#define SCAN_GROUP1_LEN         8
-#define SCAN_GROUP2_CANDIDATE_LEN 8   // group2 전체 후보 개수
-#define SCAN_GROUP2_LEN         6     // 실제로 스캔하는 개수 (후보에서 2개 제외)
+#define LINE_N_SENSORS      16
+#define SCAN_GROUP_LEN 			10
 #define SCAN_SLOT_MARK_L        8
 #define SCAN_SLOT_MARK_R        9
-#define SCAN_SLOT_GROUP2_START  10
-#define SCAN_CYCLE_LEN          16   // SCAN_GROUP1_LEN + 2(mark) + SCAN_GROUP2_LEN
+#define SCAN_CYCLE_LEN          20   // SCAN_GROUP1_LEN + 2(mark) + SCAN_GROUP2_LEN
+#define SCAN_CYCLE_LEN_HALF		(SCAN_CYCLE_LEN / 2)
 
 
 typedef struct {
@@ -48,27 +47,22 @@ typedef struct {
 	uint16_t normalized_coef_bias[NUM_SENSORS];
 	uint16_t normalized[NUM_SENSORS];
 	uint32_t state;
-	float_t line_position;    // 최신 확정값 (1차 또는 2차 갱신 결과가 그때그때 반영됨)
-	float_t line_position1;   // 이번 사이클의 1차(무윈도우, group1 8개) 추정값
 	uint16_t threshold;
-	uint8_t pos_center_idx;   // 현재 위치 창의 중심 인덱스 (0~15), 1차 패스에서 매 사이클 갱신
-	uint8_t win_start;        // 이번 사이클 윈도우 시작 인덱스 (1차 패스에서 확정)
-	uint8_t win_end;          // 이번 사이클 윈도우 끝 인덱스
-	uint8_t cross_left;       // 창 바깥 좌측에서 마커 후보 검출됨
-	uint8_t cross_right;      // 창 바깥 우측에서 마커 후보 검출됨
-	uint8_t line_w_bandwidth;
 	uint8_t line_lost_sum_min;
 } SensorDataTypeDef;
 
 typedef struct {
-	uint32_t is_calibration;
-	uint32_t is_lost_position;
+	uint8_t scan_group;
+	uint8_t is_calibration;
+	uint8_t is_lost_position;
+	uint8_t is_position;
 	volatile SensorDataTypeDef *data;
 } Sensor_TypeDef;
 
 extern volatile Sensor_TypeDef IR_Sensor;
-extern uint16_t adc3_buffer[16];   // NbrOfConversion=1 (매 슬롯 채널 1개씩 single conversion)
+extern uint16_t adc3_buffer[1];   // NbrOfConversion=1 (매 슬롯 채널 1개씩 single conversion)
 extern volatile uint32_t count_sensor_irq;
+extern const float line_sensor_pos[LINE_N_SENSORS];
 
 void Sensor_Start();
 void Sensor_Stop();

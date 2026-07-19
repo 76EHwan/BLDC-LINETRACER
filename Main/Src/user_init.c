@@ -41,22 +41,22 @@ void User_Init() {
 //	MT6701_Init(&encDataL, encBuffer);
 //	LCD_Printf(0, 8, "ENC %02X%02X%02X", encBuffer[2], encBuffer[1], encBuffer[0]);
 
-	LCD_Printf(0, 9, "IMU Cali");
-	LSM6DS3_Gyro_Calibrate_Z_Only();
+//	LCD_Printf(0, 9, "IMU Cali");
+//	LSM6DS3_Gyro_Calibrate_Z_Only();
 
 //	SDCard_DebugTest();
 
-	FRESULT res;
-	if ((res = SDCard_Test()) != FR_OK) {
-		LCD_Printf(0, 6, "SDcard Fail");
-		while (1) {
-			LED_Blink(250);
-		}
-	}
-
-	if ((res = FOC_Parameters_InitOrLoad()) != FR_OK) {
-		LCD_Printf(0, 7, "FOC param save Fail");
-	}
+//	FRESULT res;
+//	if ((res = SDCard_Test()) != FR_OK) {
+//		LCD_Printf(0, 6, "SDcard Fail");
+//		while (1) {
+//			LED_Blink(250);
+//		}
+//	}
+//
+//	if ((res = FOC_Parameters_InitOrLoad()) != FR_OK) {
+//		LCD_Printf(0, 7, "FOC param save Fail");
+//	}
 
 	HAL_Delay(500);
 

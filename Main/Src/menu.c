@@ -455,8 +455,8 @@ void Update_Threshold() {
 }
 
 void Update_Normalize_Bandwidth() {
-	Update_Param_Menu(DATA_UINT8,
-			(uint32_t*) &(IR_Sensor.data->line_w_bandwidth), NULL, "Norm BW");
+//	Update_Param_Menu(DATA_UINT8,
+//			(uint32_t*) &(IR_Sensor.data->line_w_bandwidth), NULL, "Norm BW");
 }
 
 void Update_Line_Lost_Sum_Min() {
