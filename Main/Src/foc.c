@@ -214,6 +214,83 @@ void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc) {
 	hfoc->enc_prev_cnt = (uint16_t) hfoc->LPTIMx->Instance->CNT;
 }
 
+void FOC_Calibrate_Encoder_Offset_Both(FOC_Handle_t *hfoc_L, FOC_Handle_t *hfoc_R) {
+	// 4-1. 강제 정렬을 위한 직류 전압 인가 (정격의 10% 수준)
+	float32_t align_voltage = MOTOR_RATED_VOLTAGE * 0.1f;
+	float32_t v_a, v_b, v_c;
+
+	arm_inv_clarke_f32(align_voltage, 0.0f, &v_a, &v_b);
+	v_c = -(v_a + v_b);
+
+	float32_t duty_a = (v_a / MOTOR_RATED_VOLTAGE) * PWM_PERIOD + PWM_HALF_PERIOD;
+	float32_t duty_b = (v_b / MOTOR_RATED_VOLTAGE) * PWM_PERIOD + PWM_HALF_PERIOD;
+	float32_t duty_c = (v_c / MOTOR_RATED_VOLTAGE) * PWM_PERIOD + PWM_HALF_PERIOD;
+
+	// [좌측 모터] PWM 인가
+	hfoc_L->TIMx->Instance->CCR1 = (uint32_t) duty_a;
+	hfoc_L->TIMx->Instance->CCR2 = (uint32_t) duty_b;
+	hfoc_L->TIMx->Instance->CCR3 = (uint32_t) duty_c;
+	hfoc_L->foc_svpwm_en = 1;
+
+	// [우측 모터] PWM 인가
+	hfoc_R->TIMx->Instance->CCR1 = (uint32_t) duty_a;
+	hfoc_R->TIMx->Instance->CCR2 = (uint32_t) duty_b;
+	hfoc_R->TIMx->Instance->CCR3 = (uint32_t) duty_c;
+	hfoc_R->foc_svpwm_en = 1;
+
+	// 4-2. 두 모터의 회전자가 끌려와 물리적으로 멈출 때까지 대기
+	HAL_Delay(500);
+
+	// 4-3. 정렬된 상태(전기각 0도)에서 양쪽 LPTIM 카운터 가독 및 오프셋 계산
+
+	// --- [좌측 모터 오프셋 계산] ---
+	float32_t cnt_L = FOC_Enc_Cnt(hfoc_L);
+	float32_t theta_m_L = (cnt_L / ENCODER_RESOLUTION) * (2.0f * M_PI);
+	float32_t theta_e_raw_L = theta_m_L * MOTOR_POLE_PAIRS;
+
+	while (theta_e_raw_L >= (float32_t) (2.0 * M_PI))
+		theta_e_raw_L -= (float32_t) (2.0 * M_PI);
+	while (theta_e_raw_L < 0.0f)
+		theta_e_raw_L += (float32_t) (2.0 * M_PI);
+
+	hfoc_L->theta_offset = (float32_t) (2.0 * M_PI) - theta_e_raw_L;
+	if (hfoc_L->theta_offset >= (float32_t) (2.0 * M_PI)) {
+		hfoc_L->theta_offset -= (float32_t) (2.0 * M_PI);
+	}
+
+	// --- [우측 모터 오프셋 계산] ---
+	float32_t cnt_R = FOC_Enc_Cnt(hfoc_R);
+	float32_t theta_m_R = (cnt_R / ENCODER_RESOLUTION) * (2.0f * M_PI);
+	float32_t theta_e_raw_R = theta_m_R * MOTOR_POLE_PAIRS;
+
+	while (theta_e_raw_R >= (float32_t) (2.0 * M_PI))
+		theta_e_raw_R -= (float32_t) (2.0 * M_PI);
+	while (theta_e_raw_R < 0.0f)
+		theta_e_raw_R += (float32_t) (2.0 * M_PI);
+
+	hfoc_R->theta_offset = (float32_t) (2.0 * M_PI) - theta_e_raw_R;
+	if (hfoc_R->theta_offset >= (float32_t) (2.0 * M_PI)) {
+		hfoc_R->theta_offset -= (float32_t) (2.0 * M_PI);
+	}
+
+	// 4-5. 정렬 종료 및 출력 중립(0V) 복구
+	hfoc_L->TIMx->Instance->CCR1 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_L->TIMx->Instance->CCR2 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_L->TIMx->Instance->CCR3 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_L->foc_svpwm_en = 0;
+
+	hfoc_R->TIMx->Instance->CCR1 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_R->TIMx->Instance->CCR2 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_R->TIMx->Instance->CCR3 = (uint32_t) PWM_HALF_PERIOD;
+	hfoc_R->foc_svpwm_en = 0;
+
+	HAL_Delay(500);
+
+	// 정렬 중 변한 양쪽 CNT를 속도 루프 기준으로 동기화
+	hfoc_L->enc_prev_cnt = (uint16_t) hfoc_L->LPTIMx->Instance->CNT;
+	hfoc_R->enc_prev_cnt = (uint16_t) hfoc_R->LPTIMx->Instance->CNT;
+}
+
 // 5. 실시간 LPTIM 엔코더 전기각 갱신 함수 (방향 보정 적용)
 void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc) {
 	float32_t cnt = FOC_Enc_Cnt(hfoc);

@@ -5,6 +5,10 @@
 #include "foc.h"
 
 #include "drv8316crq1.h"
+#include "mt6701.h"
+
+#define FAN_TIM		&htim15
+#define FAN_CHANNEL	TIM_CHANNEL_2
 
 #define MTR_L &DRV8316C_L
 #define MTR_R &DRV8316C_R
@@ -100,10 +104,8 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 		MTR_Start();
 		HAL_Delay(50);
 
-		LCD_Printf(0, 0, "Aligning L... ");
-		FOC_Calibrate_Encoder_Offset(&foc_L);
-		LCD_Printf(0, 1, "Aligning R... ");
-		FOC_Calibrate_Encoder_Offset(&foc_R);
+		LCD_Printf(0, 0, "Aligning");
+		FOC_Calibrate_Encoder_Offset_Both(&foc_L, &foc_R);
 		LCD_Clear();
 	}
 	MTR_Stop();
@@ -700,8 +702,18 @@ void MTR_Speed_FOC() {
 	}
 }
 
-void FAN_Test() {
-	HAL_TIM_PWM_Start(&htim15, TIM_CHANNEL_2);
+void Fan_Mtr_Start() {
+	__HAL_TIM_SET_COMPARE(FAN_TIM, FAN_CHANNEL, 300);
+	HAL_TIM_PWM_Start(FAN_TIM, FAN_CHANNEL);
+}
+
+void Fan_Mtr_Stop() {
+	__HAL_TIM_SET_COMPARE(FAN_TIM, FAN_CHANNEL, 0);
+	HAL_TIM_PWM_Stop(FAN_TIM, FAN_CHANNEL);
+}
+
+void Fan_Test() {
+	Fan_Mtr_Start();
 	uint16_t duty = 100;
 	UserInput_t bt;
 	while ((bt = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
@@ -720,6 +732,16 @@ void FAN_Test() {
 		}
 		LCD_Printf(0, 0, "%4d", duty);
 	}
-	__HAL_TIM_SET_COMPARE(&htim15, TIM_CHANNEL_2, 0);
-	HAL_TIM_PWM_Stop(&htim15, TIM_CHANNEL_2);
+	Fan_Mtr_Stop();
+}
+
+void Magnet_Encoder_Test() {
+//	Swap_MT6701_Spi_Mode();
+	UserInput_t bt;
+	while ((bt = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
+		MT6701_ReadSSI(&encDataL);
+		MT6701_ReadSSI(&encDataR);
+		LCD_Printf(0, 0, "L: %6.3f", encDataL.motor_elec_angle);
+		LCD_Printf(0, 1, "R: %6.3f", encDataR.motor_elec_angle);
+	}
 }

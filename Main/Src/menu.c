@@ -81,7 +81,8 @@ MenuItem_t motor_menu_items[] = {
     { .name = "Tune Cur PI",	.pfnActionCallback = MTR_Current_Tune_Loop 	},
     { .name = "Encoder Test",	.pfnActionCallback = MTR_Encoder_Test 		},
     { .name = "Tune Spd PID",	.pfnActionCallback = MTR_Speed_FOC 			},
-	{ .name = "Fan Test",		.pfnActionCallback = FAN_Test 				},
+	{ .name = "Fan Test",		.pfnActionCallback = Fan_Test 				},
+	{ .name = "Mag Enc Test",	.pfnActionCallback = Magnet_Encoder_Test	},
 	{ .name = "Load From SD",	.pfnActionCallback = FOC_Menu_LoadFromSD	},
 	{ .name = "Save To SD",		.pfnActionCallback = FOC_Menu_SaveToSD		},
 };
@@ -107,6 +108,7 @@ MenuItem_t drive_param_items[] = {
 	{ .name = "Max m/s", 		.pfnActionCallback = Update_Max_Mps				},
 	{ .name = "Steer Gain", 	.pfnActionCallback = Update_Steer_Gain			},
 	{ .name = "Pos Abs Gain", 	.pfnActionCallback = Update_Position_Abs_Gain	},
+	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
 };
 
 // =========================================================
@@ -221,7 +223,7 @@ static void LastUsed_Save(MenuContext_t *pCtx, uint8_t index) {
 	if (last != NULL && last->func == func)
 		return; /* 직전과 동일하면 기록 안 함 */
 
-	__attribute__((aligned(32)))                           LU_Record_t rec;
+	__attribute__((aligned(32)))                            LU_Record_t rec;
 	rec.magic = LU_MAGIC;
 	rec.func = func;
 	for (int k = 0; k < 6; k++)
@@ -389,8 +391,8 @@ __STATIC_INLINE void Update_Param_Float(Data_TypeDef param_Data_Type,
 		float_t *floatData) {
 	UserInput_t btn = INPUT_CMD_NONE;
 	uint8_t index = 0;
-	float_t step = 1.f;
 	while ((btn = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
+		float_t step = 1.f;
 		for (uint8_t i = 0; i < index; i++) {
 			step /= 10.f;
 		}
@@ -400,19 +402,28 @@ __STATIC_INLINE void Update_Param_Float(Data_TypeDef param_Data_Type,
 		switch (btn) {
 		case INPUT_CMD_L_SINGLE:
 		case INPUT_CMD_L_HOLD:
-			*floatData -= 1;
+			*floatData -= step;
 			break;
 		case INPUT_CMD_L_DOUBLE:
-			*floatData -= 5;
+			*floatData -= 5.f * step;
 			break;
 		case INPUT_CMD_R_SINGLE:
 		case INPUT_CMD_R_HOLD:
-			*floatData += 1;
+			*floatData += step;
 			break;
 		case INPUT_CMD_R_DOUBLE:
-			*floatData += 5;
+			*floatData += 5.f * step;
 			break;
-
+		case INPUT_CMD_U_SINGLE:
+			if (index == 0)
+				break;
+			index--;
+			break;
+		case INPUT_CMD_D_SINGLE:
+			if (index == 6)
+				break;
+			index++;
+			break;
 		default:
 			break;
 		}
@@ -438,10 +449,9 @@ __STATIC_INLINE void Update_Param_Menu(Data_TypeDef param_Data_Type,
 	LCD_Clear();
 }
 
-
 void Update_Threshold() {
 	Update_Param_Menu(DATA_UINT16, (uint32_t*) &(IR_Sensor.data->threshold),
-			NULL, "Threshold");
+	NULL, "Threshold");
 }
 
 void Update_Normalize_Bandwidth() {
@@ -476,7 +486,12 @@ void Update_Steer_Gain() {
 }
 
 void Update_Position_Abs_Gain() {
-	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.pos_atten_gain), "Pos Abs Gain");
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.pos_atten_gain),
+			"Pos Abs Gain");
+}
+
+void Update_Fan_Enable() {
+	Update_Param_Menu(DATA_UINT8, (uint32_t*) &(driveData.fan_en), NULL, "Fan Enable");
 }
 
 void Menu_ProcessLoop() {

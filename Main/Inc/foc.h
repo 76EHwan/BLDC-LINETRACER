@@ -151,6 +151,7 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 		ADC_HandleTypeDef *ADCx, LPTIM_HandleTypeDef *LPTIMx);
 void FOC_Calibrate_Offset(FOC_Handle_t *hfoc);
 void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc);
+void FOC_Calibrate_Encoder_Offset_Both(FOC_Handle_t *hfoc_L, FOC_Handle_t *hfoc_R);
 void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc);
 void FOC_Execute_Loop(FOC_Handle_t *hfoc);
 void FOC_Speed_Loop(FOC_Handle_t *hfoc);

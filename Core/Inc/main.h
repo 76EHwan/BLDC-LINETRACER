@@ -192,6 +192,10 @@ void LED_Test();
 #define MTR_FGOUT_R_Pin MTR_ADC_SOA_R_Pin
 #define MTR_BRAKE_R_GPIO_Port MTR_ADC_SOC_R_GPIO_Port
 #define MTR_BRAKE_R_Pin MTR_ADC_SOC_R_Pin
+#define ENC_CS_L_GPIO_Port	ENC_IN2_L_GPIO_Port
+#define ENC_CS_L_Pin		ENC_IN2_L_Pin
+#define ENC_CS_R_GPIO_Port	ENC_IN2_R_GPIO_Port
+#define ENC_CS_R_Pin		ENC_IN2_R_Pin
 
 /* USER CODE END Private defines */
 

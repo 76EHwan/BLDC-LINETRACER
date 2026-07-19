@@ -8,13 +8,11 @@
 #ifndef INC_MT6701_H_
 #define INC_MT6701_H_
 
-#ifdef MAGNETIC_ENCODER
 #include "main.h"
 #include "spi.h"
 #include "main.h"
 #include <math.h> // floorf 함수 사용
 // 기어비 (51 / 9)
-#define GEAR_RATIO (51.0f / 9.0f)
 // 극쌍수 1
 #define POLE_PAIRS 1.0f
 
@@ -39,7 +37,6 @@ extern MT6701_Data_t encDataR;
 
 HAL_StatusTypeDef MT6701_Init(MT6701_Data_t *encData, uint8_t *rxBuffer);
 void MT6701_ReadSSI(MT6701_Data_t *encData);
-
-#endif
+void Swap_MT6701_Spi_Mode(void);
 
 #endif /* INC_MT6701_H_ */

@@ -137,8 +137,9 @@ FRESULT SDCard_ReadBinary(const char *filename, void *buffer, UINT size) {
 	res = f_read(&SDFile_NC, buffer, size, &bytesRead);
 	f_close(&SDFile_NC);
 
-	if (res == FR_OK && bytesRead != size)
+	if (res == FR_OK && bytesRead == 0)
 		return FR_DENIED;
+
 	return res;
 }
 

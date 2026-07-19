@@ -23,6 +23,7 @@ typedef struct {
 	float_t max_mps;
 	float_t steer_gain;
 	float_t pos_atten_gain;
+	uint8_t fan_en;
 } DriveParam_t;
 
 // === 교차로(cross) 마커 이벤트 ==============================================
@@ -34,6 +35,7 @@ typedef enum {
 	CROSS_NONE = 0,
 	CROSS_LEFT,
 	CROSS_RIGHT,
+	CROSS_CROSS,
 	CROSS_STOP,   // 좌/우 마커 동시 검출 -> 주행 정지
 } CrossEvent_t;
 

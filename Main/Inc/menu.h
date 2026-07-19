@@ -41,5 +41,6 @@ void Update_Base_Decel(void);
 void Update_Max_Mps(void);
 void Update_Steer_Gain(void);
 void Update_Position_Abs_Gain(void);
+void Update_Fan_Enable(void);
 
 #endif /* MENU_H_ */

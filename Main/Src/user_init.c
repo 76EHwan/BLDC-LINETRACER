@@ -13,6 +13,7 @@
 #include "mct8316z.h"
 #include "lsm6ds3tr-c.h"
 #include "SDcard.h"
+#include "mt6701.h"
 
 #include "user_init.h"
 #include "menu.h"
@@ -26,14 +27,19 @@ void User_Init() {
 	LSM6DS3_Init();
 	Buzzer_Stop();
 	MX_DRV8316C_Init();
-	LCD_Printf(0, 6, "DRV8316 SET OK");
+	LCD_Printf(0, 5, "DRV8316 SET OK");
 	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
 	FOC_Init_Motor(&foc_R, &htim4, &hadc1, &hlptim1);
 
-	LCD_Printf(0, 7, "FOC L ADC Cali");
+	LCD_Printf(0, 6, "FOC L ADC Cali");
 	FOC_Calibrate_Offset(&foc_L);
-	LCD_Printf(0, 8, "FOC R ADC Cali");
+
+	LCD_Printf(0, 7, "FOC R ADC Cali");
 	FOC_Calibrate_Offset(&foc_R);
+
+//	uint8_t encBuffer[3] = { 0 };
+//	MT6701_Init(&encDataL, encBuffer);
+//	LCD_Printf(0, 8, "ENC %02X%02X%02X", encBuffer[2], encBuffer[1], encBuffer[0]);
 
 	LCD_Printf(0, 9, "IMU Cali");
 	LSM6DS3_Gyro_Calibrate_Z_Only();
@@ -53,9 +59,5 @@ void User_Init() {
 	}
 
 	HAL_Delay(500);
-
-}
-
-void Change_Drive_Setting(){
 
 }
