@@ -69,6 +69,7 @@ void Sensor_Stop();
 
 FRESULT Sensor_Save_Calibration(void);
 FRESULT Sensor_Load_Calibration(void);
+float Sensor_Get_Position(void);
 
 void Sensor_Calibration();
 void Sensor_Raw_Printf();

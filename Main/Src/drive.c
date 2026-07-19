@@ -24,9 +24,9 @@ uint32_t count_polling = 0;
 DriveParam_t driveData = {
 		.base_mps = 1.5f,
 		.max_mps = 6.f,
-		.accel = 30.f,
-		.decel = 30.f,
-		.steer_gain = 1.f,
+		.accel = 50.f,
+		.decel = 50.f,
+		.steer_gain = 0.9f,
 		.pos_atten_gain = 0.5f,
 		.fan_en = 0,
 };
@@ -227,19 +227,14 @@ void Line_Follow_Drive(void) {
 
 	Ramp_Start();
 
-	HAL_Delay(10);
-
+	HAL_Delay(100);
+	Sensor_Get_Position();
 	MTR_Set_Speed(g_base_mps, g_base_mps);
 
 //	uint32_t last_tick = HAL_GetTick();
 //	uint32_t lcd_update_tick = last_tick; // LCD 갱신용 타이머 추가
 
 	while (!IR_Sensor.is_lost_position) {
-//		count_polling++;
-//		uint32_t now_tick = HAL_GetTick();
-//		Odom_Accumulate(now_tick - last_tick);
-//		last_tick = now_tick;
-
 		CrossEvent_t cross = Cross_Detect_Update();
 
 		if (cross == CROSS_STOP) {
@@ -248,7 +243,6 @@ void Line_Follow_Drive(void) {
 			else
 				end_count++;
 		}
-		// ★ 추가된 마커 출력 로직: 마커가 감지된 순간(이벤트 발생)에만 딱 1번 출력하여 루프 지연 방지
 		else if (cross != CROSS_NONE) {
 			CrossMarkerLog_t *last = &g_cross_log[(g_cross_log_count - 1)
 					% CROSS_LOG_MAX];
@@ -256,37 +250,26 @@ void Line_Follow_Drive(void) {
 								(last->type == CROSS_RIGHT) ? "RIGHT" :
 								(last->type == CROSS_CROSS) ? "CROSS" : "UNK";
 
-			// 화면 7번째 줄에 마커 종류, 번호, 이전 마커로부터의 거리를 출력
 			LCD_Printf(0, 7, "M:%s #%d d:%4.2f", tag, g_cross_log_count,
 					last->dist_from_prev_m);
 		}
 
-		// ★ 최적화: 센서 위치가 갱신되었을 때만 PD 연산 수행 (이전 대화 내용 반영)
+		float_t line_pos = Sensor_Get_Position();
 
-		if (IR_Sensor.is_position) {
-			IR_Sensor.is_position = 0;
-			float_t line_pos = 0;
-			float_t line_pos_abs = fabsf(line_pos);
+		float_t line_pos_abs = fabsf(line_pos);
 
-			float_t d_line_pos = line_pos - prev_line_pos;
-			prev_line_pos = line_pos;
+		float_t d_line_pos = line_pos - prev_line_pos;
+		prev_line_pos = line_pos;
 
-			float_t steer = (g_steer_gain * line_pos) + (kd * d_line_pos);
+		float_t steer = (g_steer_gain * line_pos) + (kd * d_line_pos);
 
-			float_t mps_L = g_base_mps * (1.f + steer)
-					* (1.f - line_pos_abs * g_pos_atten_gain);
-			float_t mps_R = g_base_mps * (1.f - steer)
-					* (1.f - line_pos_abs * g_pos_atten_gain);
+		float_t mps_L = g_base_mps * (1.f + steer)
+				* (1.f - line_pos_abs * g_pos_atten_gain);
+		float_t mps_R = g_base_mps * (1.f - steer)
+				* (1.f - line_pos_abs * g_pos_atten_gain);
 
-			MTR_Set_Speed(mps_L, mps_R);
-		}
-		// 100ms (0.1초) 주기로 기본 정보 갱신
-//		if (now_tick - lcd_update_tick >= 100) {
-//			LCD_Printf(0, 0, "%d", count_irq);
-//			LCD_Printf(0, 1, "%d", count_polling);
-//			LCD_Printf(0, 2, "%d", count_sensor_irq);
-//			lcd_update_tick = now_tick;
-//		}
+		MTR_Set_Speed(mps_L, mps_R);
+
 	}
 	Fan_Mtr_Stop();
 	Ramp_Stop();

@@ -32,6 +32,8 @@
 // === 라인 위치 추정 (weighted centroid, 2단계 interleaved 스캔) ==========
 #define LINE_WEIGHT(n)      (uint8_t)(n)
 
+#define POS_WINDOW_HALF 3
+
 static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1,
 		16, 17 };
 
@@ -159,22 +161,80 @@ void ADC3_IRQ_Cplt_Handler() {
 	uint8_t phys = Scan_Slot_To_Phys(idx);
 	uint16_t raw = *adc3_buffer;
 	static uint8_t normalized;
-	static uint32_t sum_normal;
 	if (IR_Sensor.is_calibration) {
 		normalized = Sensor_Normalize(phys);
 		state &= ~(0x01 << phys);
 		state |= ((normalized > IR_Sensor.data->threshold) << phys);
-		sum_normal += normalized;
 		IR_Sensor.data->normalized[phys] = normalized;
 		IR_Sensor.data->state = state;
-		if (idx == SCAN_CYCLE_LEN - 1) {
-			IR_Sensor.is_lost_position = (sum_normal
-					> IR_Sensor.data->line_lost_sum_min);
-		}
+
 	}
 	IR_Sensor.data->raw[phys] = raw;
 	idx = (idx + 1) % SCAN_CYCLE_LEN;
 	IR_Sensor.data->idx = idx;
+}
+
+float Sensor_Get_Position(void) {
+	// 이전 피크(중심) 인덱스를 기억하기 위한 정적 변수
+	static int8_t prev_peak_idx = LINE_N_SENSORS / 2;
+
+	uint16_t max_val = 0;
+	int8_t current_peak_idx = LINE_N_SENSORS / 2;
+
+	// 1. 피크(가장 강한 신호) 찾기
+	if (IR_Sensor.is_lost_position) {
+		// 선을 놓친 상태 (Global Search: 전체 센서 범위 탐색)
+		for (int8_t i = 0; i < LINE_N_SENSORS; i++) {
+			if (IR_Sensor.data->normalized[i] > max_val) {
+				max_val = IR_Sensor.data->normalized[i];
+				current_peak_idx = i;
+			}
+		}
+	} else {
+		// 선을 추종 중인 상태 (Local Search: 이전 피크 주변 윈도우 내에서만 탐색)
+		int8_t search_start = prev_peak_idx - POS_WINDOW_HALF;
+		int8_t search_end = prev_peak_idx + POS_WINDOW_HALF;
+
+		// 인덱스 범위 제한
+		if (search_start < 0) search_start = 0;
+		if (search_end >= LINE_N_SENSORS) search_end = LINE_N_SENSORS - 1;
+
+		for (int8_t i = search_start; i <= search_end; i++) {
+			if (IR_Sensor.data->normalized[i] > max_val) {
+				max_val = IR_Sensor.data->normalized[i];
+				current_peak_idx = i;
+			}
+		}
+	}
+
+	// 다음 주기를 위해 피크 위치 갱신
+	prev_peak_idx = current_peak_idx;
+
+	// 2. 찾아낸 피크를 중심으로 가중 산술 평균을 구할 계산 윈도우 설정
+	int8_t calc_start = current_peak_idx - POS_WINDOW_HALF;
+	int8_t calc_end = current_peak_idx + POS_WINDOW_HALF;
+
+	if (calc_start < 0) calc_start = 0;
+	if (calc_end >= LINE_N_SENSORS) calc_end = LINE_N_SENSORS - 1;
+
+	float weighted_sum = 0.0f;
+	uint32_t total_weight = 0;
+
+	// 3. 계산 윈도우 내부에 있는 센서 값만 합산
+	for (int8_t i = calc_start; i <= calc_end; i++) {
+		uint16_t weight = IR_Sensor.data->normalized[i];
+		weighted_sum += (float) weight * line_sensor_pos[i];
+		total_weight += weight;
+	}
+
+	// 4. 작성해주신 로직 적용: 총합을 기준으로 이탈 여부 갱신 및 위치 반환
+	if (total_weight > IR_Sensor.data->line_lost_sum_min) {
+		IR_Sensor.is_lost_position = 0;
+		return weighted_sum / (float) total_weight;
+	} else {
+		IR_Sensor.is_lost_position = 1;
+		return 0.0f;
+	}
 }
 
 // =========================================================
@@ -407,13 +467,13 @@ void Sensor_Position_Printf() {
 		// LINE_N_SENSORS (16개) 에 대해서만 가중 평균 계산
 		for (uint8_t i = 0; i < LINE_N_SENSORS; i++) {
 			uint16_t weight = IR_Sensor.data->normalized[i];
-			weighted_sum += (float)weight * line_sensor_pos[i];
+			weighted_sum += (float) weight * line_sensor_pos[i];
 			total_weight += weight;
 		}
 
 		// 센서 측정값의 총합이 최소 기준치(line_lost_sum_min) 이상일 때만 위치 계산
 		if (total_weight > IR_Sensor.data->line_lost_sum_min) {
-			float position = weighted_sum / (float)total_weight;
+			float position = weighted_sum / (float) total_weight;
 			// %+6.3f 포맷: 부호 포함하여 소수점 아래 3자리까지 출력
 			LCD_Printf(0, 2, "Pos: %+6.3f", position);
 		} else {
