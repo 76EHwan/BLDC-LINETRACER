@@ -46,17 +46,17 @@ void User_Init() {
 
 //	SDCard_DebugTest();
 
-//	FRESULT res;
-//	if ((res = SDCard_Test()) != FR_OK) {
-//		LCD_Printf(0, 6, "SDcard Fail");
-//		while (1) {
-//			LED_Blink(250);
-//		}
-//	}
-//
-//	if ((res = FOC_Parameters_InitOrLoad()) != FR_OK) {
-//		LCD_Printf(0, 7, "FOC param save Fail");
-//	}
+	FRESULT res;
+	if ((res = SDCard_Test()) != FR_OK) {
+		LCD_Printf(0, 6, "SDcard Fail");
+		while (1) {
+			LED_Blink(250);
+		}
+	}
+
+	if ((res = FOC_Parameters_InitOrLoad()) != FR_OK) {
+		LCD_Printf(0, 7, "FOC param save Fail");
+	}
 
 	HAL_Delay(500);
 
