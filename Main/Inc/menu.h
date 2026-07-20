@@ -33,13 +33,13 @@ void FOC_Menu_SaveToSD(void);
 void FOC_Menu_LoadFromSD(void);
 
 void Update_Threshold(void);
-void Update_Normalize_Bandwidth(void);
 void Update_Line_Lost_Sum_Min(void);
 void Update_Base_Mps(void);
 void Update_Base_Accel(void);
 void Update_Base_Decel(void);
 void Update_Max_Mps(void);
-void Update_Steer_Gain(void);
+void Update_Steer_KP(void);
+void Update_Steer_KD(void);
 void Update_Position_Abs_Gain(void);
 void Update_Fan_Enable(void);
 

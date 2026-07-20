@@ -41,8 +41,8 @@ void User_Init() {
 //	MT6701_Init(&encDataL, encBuffer);
 //	LCD_Printf(0, 8, "ENC %02X%02X%02X", encBuffer[2], encBuffer[1], encBuffer[0]);
 
-//	LCD_Printf(0, 9, "IMU Cali");
-//	LSM6DS3_Gyro_Calibrate_Z_Only();
+	LCD_Printf(0, 9, "IMU Cali");
+	LSM6DS3_Gyro_Calibrate_Z_Only();
 
 //	SDCard_DebugTest();
 

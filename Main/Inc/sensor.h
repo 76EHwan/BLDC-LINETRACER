@@ -20,7 +20,7 @@
 // === 위치 추정에 실제로 쓰는 창(window) ======================================
 // 중앙 16개(idx 0~15) 중, 현재 라인 위치(center idx) 기준 좌우로 4개씩(총 8개)만
 // centroid 계산에 사용한다. 창 바깥쪽은 교차로(cross) 마커 후보 검출용으로 쓴다.
-#define POS_WINDOW_HALF     4
+#define POS_WINDOW_HALF     3
 #define POS_WINDOW_SIZE     (POS_WINDOW_HALF * 2)   // 8
 
 // === 2단계(interleaved) 스캔 슬롯 구조 =======================================
@@ -49,6 +49,9 @@ typedef struct {
 	uint32_t state;
 	uint16_t threshold;
 	uint8_t line_lost_sum_min;
+
+	uint8_t mark_left;
+	uint8_t mark_right;
 } SensorDataTypeDef;
 
 typedef struct {
@@ -66,6 +69,8 @@ extern const float line_sensor_pos[LINE_N_SENSORS];
 
 void Sensor_Start();
 void Sensor_Stop();
+
+void Sensor_Printf(uint8_t idx, volatile uint16_t *sensor_data);
 
 FRESULT Sensor_Save_Calibration(void);
 FRESULT Sensor_Load_Calibration(void);

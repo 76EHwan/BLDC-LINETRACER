@@ -3,6 +3,16 @@
  *
  *  Created on: 2026. 5. 2.
  *      Author: kth59
+ *
+ *  [수정 이력]
+ *  - idx16/17 전용 마커 포토인터럽터를 더 이상 쓰지 않게 되어,
+ *    Sensor_Get_Position()의 위치추정 윈도우(POS_WINDOW_HALF) 바깥쪽
+ *    idx 0~15 센서 중 활성(threshold 초과) 상태가 있으면 좌/우 마커
+ *    후보(mark_left/mark_right)로 판정하도록 변경.
+ *    drive.c의 Cross_Detect_Update()는 이제 IR_Sensor.data->mark_left,
+ *    mark_right를 사용한다.
+ *  - 동적 스케일링(Auto Gain) 추가: 센서 들림 현상 발생 시 현재 프레임의
+ *    최댓값을 기준으로 전체 센서 값을 255로 증폭시켜 라인 이탈 오판(is_lost_position) 방지.
  */
 #include "sensor.h"
 #include "main.h"
@@ -31,8 +41,6 @@
 
 // === 라인 위치 추정 (weighted centroid, 2단계 interleaved 스캔) ==========
 #define LINE_WEIGHT(n)      (uint8_t)(n)
-
-#define POS_WINDOW_HALF 3
 
 static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1,
 		16, 17 };
@@ -66,6 +74,8 @@ volatile SensorDataTypeDef sensorData = {
         .state = 0,
         .threshold = 100,
         .line_lost_sum_min = 20,
+        .mark_left = 0,
+        .mark_right = 0,
 };
 
 volatile Sensor_TypeDef IR_Sensor = {
@@ -217,14 +227,50 @@ float Sensor_Get_Position(void) {
 	if (calc_start < 0) calc_start = 0;
 	if (calc_end >= LINE_N_SENSORS) calc_end = LINE_N_SENSORS - 1;
 
+	// ★ idx16/17 전용 마커 센서 미사용 대체: 위치추정 윈도우 [calc_start, calc_end]
+	//   바깥쪽에 있는 idx 0~15 센서 중 활성(threshold 초과) 상태가 하나라도 있으면
+	//   그쪽을 좌/우 마커 후보로 판정한다. drive.c의 Cross_Detect_Update()가 이 값을 읽는다.
+	{
+		uint16_t state16 = (uint16_t) (IR_Sensor.data->state & 0xFFFF);
+		uint8_t mark_left = 0, mark_right = 0;
+
+		for (int8_t i = 0; i < calc_start; i++) {
+			if (state16 & (1U << i)) {
+				mark_left = 1;
+				break;
+			}
+		}
+		for (int8_t i = calc_end + 1; i < LINE_N_SENSORS; i++) {
+			if (state16 & (1U << i)) {
+				mark_right = 1;
+				break;
+			}
+		}
+
+		IR_Sensor.data->mark_left = mark_left;
+		IR_Sensor.data->mark_right = mark_right;
+	}
+
+	// ★ 동적 스케일링 (Auto Gain) 적용 ★
+	// max_val이 너무 낮을 때(예: 완전히 벗어남, 20 이하)는 노이즈 증폭 방지를 위해 기본 배율 사용
+	uint32_t scale_factor = 256; // 기본 배율 (1.0배 = 256)
+	if (max_val > 20 && max_val < 255) {
+		scale_factor = (255U << 8) / max_val; // 고정 소수점 연산을 위한 8비트 시프트
+	}
+
 	float weighted_sum = 0.0f;
 	uint32_t total_weight = 0;
 
-	// 3. 계산 윈도우 내부에 있는 센서 값만 합산
+	// 3. 계산 윈도우 내부에 있는 센서 값만 합산 (스케일링 적용)
 	for (int8_t i = calc_start; i <= calc_end; i++) {
-		uint16_t weight = IR_Sensor.data->normalized[i];
-		weighted_sum += (float) weight * line_sensor_pos[i];
-		total_weight += weight;
+		// 기존 normalized 값에 scale_factor를 곱해 증폭시킴
+		uint32_t amplified_val = (IR_Sensor.data->normalized[i] * scale_factor) >> 8;
+
+		// 255를 넘지 않도록 클램핑
+		if (amplified_val > 255) amplified_val = 255;
+
+		weighted_sum += (float) amplified_val * line_sensor_pos[i];
+		total_weight += amplified_val;
 	}
 
 	// 4. 작성해주신 로직 적용: 총합을 기준으로 이탈 여부 갱신 및 위치 반환

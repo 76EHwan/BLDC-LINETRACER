@@ -262,8 +262,8 @@ void MX_ADC3_Init(void)
   hadc3.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc3.Init.LeftBitShift = ADC_LEFTBITSHIFT_NONE;
   hadc3.Init.OversamplingMode = ENABLE;
-  hadc3.Init.Oversampling.Ratio = 4;
-  hadc3.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_2;
+  hadc3.Init.Oversampling.Ratio = 2;
+  hadc3.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_1;
   hadc3.Init.Oversampling.TriggeredMode = ADC_TRIGGEREDMODE_SINGLE_TRIGGER;
   hadc3.Init.Oversampling.OversamplingStopReset = ADC_REGOVERSAMPLING_RESUMED_MODE;
   if (HAL_ADC_Init(&hadc3) != HAL_OK)

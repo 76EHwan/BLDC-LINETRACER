@@ -100,13 +100,13 @@ MenuItem_t drive_menu_items[] = {
 
 MenuItem_t drive_param_items[] = {
 	{ .name = "Threshold", 		.pfnActionCallback = Update_Threshold 			},
-	{ .name = "Norm BW", 		.pfnActionCallback = Update_Normalize_Bandwidth },
 	{ .name = "Lost Pos Min", 	.pfnActionCallback = Update_Line_Lost_Sum_Min	},
 	{ .name = "Base m/s", 		.pfnActionCallback = Update_Base_Mps			},
 	{ .name = "Base Accel", 	.pfnActionCallback = Update_Base_Accel			},
 	{ .name = "Base Decel", 	.pfnActionCallback = Update_Base_Decel			},
 	{ .name = "Max m/s", 		.pfnActionCallback = Update_Max_Mps				},
-	{ .name = "Steer Gain", 	.pfnActionCallback = Update_Steer_Gain			},
+	{ .name = "Steer KP", 		.pfnActionCallback = Update_Steer_KP			},
+	{ .name = "Steer KD", 		.pfnActionCallback = Update_Steer_KD			},
 	{ .name = "Pos Abs Gain", 	.pfnActionCallback = Update_Position_Abs_Gain	},
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
 };
@@ -454,11 +454,6 @@ void Update_Threshold() {
 	NULL, "Threshold");
 }
 
-void Update_Normalize_Bandwidth() {
-//	Update_Param_Menu(DATA_UINT8,
-//			(uint32_t*) &(IR_Sensor.data->line_w_bandwidth), NULL, "Norm BW");
-}
-
 void Update_Line_Lost_Sum_Min() {
 	Update_Param_Menu(DATA_UINT8,
 			(uint32_t*) &(IR_Sensor.data->line_lost_sum_min), NULL,
@@ -481,8 +476,12 @@ void Update_Max_Mps() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.max_mps), "Max m/s");
 }
 
-void Update_Steer_Gain() {
-	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.steer_gain), "Steer Gain");
+void Update_Steer_KP() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.steer_gain_p), "Steer KP");
+}
+
+void Update_Steer_KD() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.steer_gain_d), "Steer KD");
 }
 
 void Update_Position_Abs_Gain() {

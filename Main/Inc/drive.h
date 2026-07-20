@@ -21,7 +21,8 @@ typedef struct {
 	float_t accel;
 	float_t decel;
 	float_t max_mps;
-	float_t steer_gain;
+	float_t steer_gain_p;
+	float_t steer_gain_d;
 	float_t pos_atten_gain;
 	uint8_t fan_en;
 } DriveParam_t;
