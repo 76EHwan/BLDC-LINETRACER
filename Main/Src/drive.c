@@ -3,10 +3,17 @@
  *
  *  Created on: 2026. 7. 2.
  *      Author: kth59
+ *
+ *  [수정 이력]
+ *  - 구버전 마커 감지 알고리즘 상태머신 재구성
+ *  - 좌우 모터 개별 Ramp 방식에서 중심 속도(Base Speed) Ramp 방식으로 변경
+ *  - 목표 거리 제동 함수(Drive_Stop_At_Distance) 추가 및 관성 제동 적용
+ *  - 조향 제어에 CMSIS-DSP 하드웨어 가속 PID (arm_pid_f32) 적용
  */
 
 #include "main.h"
 #include "math.h"
+#include "arm_math.h" // CMSIS-DSP 라이브러리
 
 #include "button.h"
 #include "foc.h"
@@ -22,13 +29,14 @@ uint32_t count_polling = 0;
 
 // @formatter:off
 DriveParam_t driveData = {
-		.base_mps = 1.5f,
+		.base_mps = 2.2f,
 		.max_mps = 6.f,
 		.accel = 6.f,
 		.decel = 6.f,
-		.steer_gain_p = 0.9f,
-		.steer_gain_d = 0.15f,
+		.steer_gain_p = 0.65f,
+		.steer_gain_d = 0.03f,
 		.pos_atten_gain = 0.5f,
+		.pit_in_distance_m = 0.2f,
 		.fan_en = 0,
 };
 
@@ -40,8 +48,10 @@ typedef enum {
 // @formatter:on
 
 // ============================================================================
-// 중심 속도 제어용 전역 변수
+// 조향 제어 및 중심 속도 제어용 전역 변수
 // ============================================================================
+static arm_pid_instance_f32 steer_pid;
+
 static volatile float g_target_base_mps = 0.0f;
 static volatile float g_current_base_mps = 0.0f;
 static volatile float g_current_steer = 0.0f;
@@ -154,11 +164,15 @@ static CrossEvent_t Cross_Detect_Update(void) {
 // ============================================================================
 // 모터 제어 및 Ramp 로직
 // ============================================================================
+
+float_t accel;
+float_t decel;
+
 void Ramp_TIM_IRQ_Handler() {
 	// 1. 중심 속도(Center Speed) 가감속(Ramp) 계산
 	float d_mps = g_target_base_mps - g_current_base_mps;
-	float accel_step = driveData.accel * RAMP_DT;
-	float decel_step = driveData.decel * RAMP_DT;
+	float accel_step = accel * RAMP_DT;
+	float decel_step = decel * RAMP_DT;
 
 	if (d_mps > accel_step) {
 		g_current_base_mps += accel_step;
@@ -214,6 +228,53 @@ void Ramp_Stop() {
 	HAL_TIM_Base_Stop_IT(RAMP_TIM);
 }
 
+// ============================================================================
+// 지정 거리 제동 함수 (Active Braking with Line Tracking & arm_pid)
+// ============================================================================
+void Drive_Stop_At_Distance(float target_distance_m) {
+	float v1 = g_current_base_mps;
+
+	if (v1 <= 0.0f || target_distance_m <= 0.0f) {
+		g_target_base_mps = 0.0f;
+		g_current_steer = 0.0f;
+		HAL_Delay(500);
+		return;
+	}
+
+	float required_decel = (v1 * v1) / (2.0f * target_distance_m);
+
+	decel = required_decel;
+	g_target_base_mps = 0.0f;
+
+	// 제동 중 조향 제어 유지
+	while (g_current_base_mps > 0.001f) {
+		float_t line_pos = Sensor_Get_Position();
+
+		// CMSIS-DSP PID 제어기 적용
+		g_current_steer = arm_pid_f32(&steer_pid, line_pos);
+
+		if (IR_Sensor.is_lost_position) {
+			break;
+		}
+	}
+
+	// 완전히 멈춘 후 관성 정지 대기 (Active Braking)
+	g_current_base_mps = 0.0f;
+	g_target_base_mps = 0.0f;
+	g_current_steer = 0.0f;
+
+	foc_L.omega_setpoint = 0.0f;
+	foc_R.omega_setpoint = 0.0f;
+
+	uint32_t start_tick = HAL_GetTick();
+	while ((HAL_GetTick() - start_tick) < 500) {
+		// 속도 0 상태를 강제로 유지하며 대기
+	}
+}
+
+// ============================================================================
+// 메인 라인 트레이싱 주행
+// ============================================================================
 void Line_Follow_Drive(void) {
 
 	if (!IR_Sensor.is_calibration) {
@@ -230,17 +291,24 @@ void Line_Follow_Drive(void) {
 	count_irq = 0;
 	count_polling = 0;
 
+	accel = driveData.accel;
+	decel = driveData.decel;
+
 	float_t g_base_mps = driveData.base_mps;
-	float_t g_steer_gain_p = driveData.steer_gain_p;
-	float_t g_steer_gain_d = driveData.steer_gain_d;
 	float_t g_pos_atten_gain = driveData.pos_atten_gain;
 
-	float_t prev_line_pos = 0.0f;
 	uint8_t end_count = 0;
 	float_t filtered_atten = 1.0f;
 
+	// CMSIS-DSP PID 제어기 세팅 및 초기화 (1 = 상태 변수 리셋)
+	steer_pid.Kp = driveData.steer_gain_p;
+	steer_pid.Ki = 0.0f; // 필요 시 적분 제어 추가
+	steer_pid.Kd = driveData.steer_gain_d;
+	arm_pid_init_f32(&steer_pid, 1);
+
 	if (driveData.fan_en) {
 		Fan_Mtr_Start();
+		Fan_Mtr_Set_Duty(driveData.fan_en * 100);
 		HAL_Delay(2000);
 	}
 	Odom_Reset();
@@ -282,11 +350,8 @@ void Line_Follow_Drive(void) {
 					last->dist_from_prev_m);
 		}
 
-		float_t d_line_pos = line_pos - prev_line_pos;
-		prev_line_pos = line_pos;
-
-		float_t steer = (g_steer_gain_p * line_pos)
-				+ (g_steer_gain_d * d_line_pos);
+		// CMSIS-DSP PID 연산 (이전의 수동 PD 연산 대체)
+		float_t steer = arm_pid_f32(&steer_pid, line_pos);
 
 		// 1. 현재 센서 위치 기반의 목표 감속 비율
 		float_t target_atten = 1.f - (line_pos_abs * g_pos_atten_gain);
@@ -308,6 +373,10 @@ void Line_Follow_Drive(void) {
 	for (uint8_t i = 0; i < NUM_SENSORS; i++) {
 		last_normalized[i] = IR_Sensor.data->normalized[i];
 	}
+
+	// ★ 루프 탈출 후 목표 거리에서 안전하게 정지 (예: 0.15m)
+	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
+
 	Fan_Mtr_Stop();
 	Ramp_Stop();
 	MTR_Safe_Stop();

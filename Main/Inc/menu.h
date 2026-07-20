@@ -41,6 +41,7 @@ void Update_Max_Mps(void);
 void Update_Steer_KP(void);
 void Update_Steer_KD(void);
 void Update_Position_Abs_Gain(void);
+void Update_Pit_In_Distance_M(void);
 void Update_Fan_Enable(void);
 
 #endif /* MENU_H_ */

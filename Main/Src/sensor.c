@@ -13,6 +13,8 @@
  *    mark_right를 사용한다.
  *  - 동적 스케일링(Auto Gain) 추가: 센서 들림 현상 발생 시 현재 프레임의
  *    최댓값을 기준으로 전체 센서 값을 255로 증폭시켜 라인 이탈 오판(is_lost_position) 방지.
+ *  - ┼(십자) 코스 방어 로직 추가: Local Search 윈도우 내의 활성 센서 수를
+ *    __builtin_popcount()로 카운트하여 5개 이상일 경우 윈도우 중심을 이전 상태로 고정.
  */
 #include "sensor.h"
 #include "main.h"
@@ -42,16 +44,32 @@
 // === 라인 위치 추정 (weighted centroid, 2단계 interleaved 스캔) ==========
 #define LINE_WEIGHT(n)      (uint8_t)(n)
 
+// @formatter:off
+
 static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1,
 		16, 17 };
 
 static const uint8_t scan_group2[SCAN_GROUP_LEN] = { 9, 6, 4, 11, 13, 2, 0, 15,
 		16, 17 };
 
-const float line_sensor_pos[LINE_N_SENSORS] = { -1.0f, -13.0f / 15.0f, -11.0f
-		/ 15.0f, -9.0f / 15.0f, -7.0f / 15.0f, -5.0f / 15.0f, -3.0f / 15.0f,
-		-1.0f / 15.0f, 1.0f / 15.0f, 3.0f / 15.0f, 5.0f / 15.0f, 7.0f / 15.0f,
-		9.0f / 15.0f, 11.0f / 15.0f, 13.0f / 15.0f, 1.0f };
+const float line_sensor_pos[LINE_N_SENSORS] = {
+		 -1.0f,
+		-13.0f / 15.0f,
+		-11.0f / 15.0f,
+		 -9.0f / 15.0f,
+		 -7.0f / 15.0f,
+		 -5.0f / 15.0f,
+		 -3.0f / 15.0f,
+		 -1.0f / 15.0f,
+		  1.0f / 15.0f,
+		  3.0f / 15.0f,
+		  5.0f / 15.0f,
+		  7.0f / 15.0f,
+		  9.0f / 15.0f,
+		 11.0f / 15.0f,
+		 13.0f / 15.0f,
+		  1.0f
+};
 
 __STATIC_INLINE uint8_t Scan_Slot_To_Phys(uint8_t slot) {
 	if (slot < SCAN_CYCLE_LEN_HALF) {
@@ -59,8 +77,6 @@ __STATIC_INLINE uint8_t Scan_Slot_To_Phys(uint8_t slot) {
 	}
 	return scan_group2[slot - SCAN_CYCLE_LEN_HALF];
 }
-
-// @formatter:off
 
 // DMA Circular 모드 16-rank 결과 버퍼
 __attribute__((section(".ram_d3"), aligned(32))) uint16_t adc3_buffer[1];
@@ -177,7 +193,6 @@ void ADC3_IRQ_Cplt_Handler() {
 		state |= ((normalized > IR_Sensor.data->threshold) << phys);
 		IR_Sensor.data->normalized[phys] = normalized;
 		IR_Sensor.data->state = state;
-
 	}
 	IR_Sensor.data->raw[phys] = raw;
 	idx = (idx + 1) % SCAN_CYCLE_LEN;
@@ -190,6 +205,9 @@ float Sensor_Get_Position(void) {
 
 	uint16_t max_val = 0;
 	int8_t current_peak_idx = LINE_N_SENSORS / 2;
+
+	// 현재 켜진 센서들의 상태 비트마스크 (임계값 초과 상태)
+	uint16_t state16 = (uint16_t) (IR_Sensor.data->state & 0xFFFF);
 
 	// 1. 피크(가장 강한 신호) 찾기
 	if (IR_Sensor.is_lost_position) {
@@ -209,11 +227,23 @@ float Sensor_Get_Position(void) {
 		if (search_start < 0) search_start = 0;
 		if (search_end >= LINE_N_SENSORS) search_end = LINE_N_SENSORS - 1;
 
+		// 윈도우 비트 마스크 생성 및 __builtin_popcount를 활용한 활성 센서 고속 카운트
+		uint8_t window_len = search_end - search_start + 1;
+		uint32_t window_mask = ((1U << window_len) - 1) << search_start;
+		uint8_t active_in_window = __builtin_popcount(state16 & window_mask);
+
+		// 피크(가장 강한 신호) 찾기 루프
 		for (int8_t i = search_start; i <= search_end; i++) {
 			if (IR_Sensor.data->normalized[i] > max_val) {
 				max_val = IR_Sensor.data->normalized[i];
 				current_peak_idx = i;
 			}
+		}
+
+		// 윈도우 내 활성 센서가 5개 이상이면 십자(가로선) 코스로 간주하고 중심 고정
+		if (active_in_window > 3) {
+			current_peak_idx = prev_peak_idx;
+			max_val = IR_Sensor.data->normalized[current_peak_idx];
 		}
 	}
 
@@ -227,11 +257,9 @@ float Sensor_Get_Position(void) {
 	if (calc_start < 0) calc_start = 0;
 	if (calc_end >= LINE_N_SENSORS) calc_end = LINE_N_SENSORS - 1;
 
-	// ★ idx16/17 전용 마커 센서 미사용 대체: 위치추정 윈도우 [calc_start, calc_end]
-	//   바깥쪽에 있는 idx 0~15 센서 중 활성(threshold 초과) 상태가 하나라도 있으면
-	//   그쪽을 좌/우 마커 후보로 판정한다. drive.c의 Cross_Detect_Update()가 이 값을 읽는다.
+	// 위치추정 윈도우 [calc_start, calc_end] 바깥쪽에 있는 idx 0~15 센서 중
+	// 활성(threshold 초과) 상태가 하나라도 있으면 그쪽을 좌/우 마커 후보로 판정한다.
 	{
-		uint16_t state16 = (uint16_t) (IR_Sensor.data->state & 0xFFFF);
 		uint8_t mark_left = 0, mark_right = 0;
 
 		for (int8_t i = 0; i < calc_start; i++) {
@@ -251,11 +279,11 @@ float Sensor_Get_Position(void) {
 		IR_Sensor.data->mark_right = mark_right;
 	}
 
-	// ★ 동적 스케일링 (Auto Gain) 적용 ★
+	// 동적 스케일링 (Auto Gain) 적용
 	// max_val이 너무 낮을 때(예: 완전히 벗어남, 20 이하)는 노이즈 증폭 방지를 위해 기본 배율 사용
-	uint32_t scale_factor = 256; // 기본 배율 (1.0배 = 256)
+	uint32_t scale_factor = 256;
 	if (max_val > 20 && max_val < 255) {
-		scale_factor = (255U << 8) / max_val; // 고정 소수점 연산을 위한 8비트 시프트
+		scale_factor = (255U << 8) / max_val;
 	}
 
 	float weighted_sum = 0.0f;
@@ -263,17 +291,14 @@ float Sensor_Get_Position(void) {
 
 	// 3. 계산 윈도우 내부에 있는 센서 값만 합산 (스케일링 적용)
 	for (int8_t i = calc_start; i <= calc_end; i++) {
-		// 기존 normalized 값에 scale_factor를 곱해 증폭시킴
 		uint32_t amplified_val = (IR_Sensor.data->normalized[i] * scale_factor) >> 8;
-
-		// 255를 넘지 않도록 클램핑
 		if (amplified_val > 255) amplified_val = 255;
 
 		weighted_sum += (float) amplified_val * line_sensor_pos[i];
 		total_weight += amplified_val;
 	}
 
-	// 4. 작성해주신 로직 적용: 총합을 기준으로 이탈 여부 갱신 및 위치 반환
+	// 4. 총합을 기준으로 이탈 여부 갱신 및 위치 반환
 	if (total_weight > IR_Sensor.data->line_lost_sum_min) {
 		IR_Sensor.is_lost_position = 0;
 		return weighted_sum / (float) total_weight;
@@ -372,7 +397,7 @@ void Sensor_Calibration() {
 	HAL_Delay(500);
 	LCD_Clear();
 
-	// ★ 전체 센서 측정을 위해 로테이션 스캔 모드로 강제 전환
+	// 전체 센서 측정을 위해 로테이션 스캔 모드로 강제 전환
 	IR_Sensor.is_calibration = 0;
 
 	Sensor_Start();
@@ -420,7 +445,7 @@ void Sensor_Calibration() {
 				(range > 0) ? (uint16_t) ((255U << 8) / range) : 0;
 	}
 
-	// ★ 캘리브레이션 완료 후 라인 위치 추정 모드로 복귀
+	// 캘리브레이션 완료 후 라인 위치 추정 모드로 복귀
 	IR_Sensor.is_calibration = 1;
 
 	LCD_Clear();
@@ -437,7 +462,7 @@ void Sensor_Calibration() {
 
 void Sensor_Raw_Printf() {
 	uint8_t old_calib = IR_Sensor.is_calibration;
-	// ★ 전체 센서 측정을 위해 로테이션 스캔 모드로 전환
+	// 전체 센서 측정을 위해 로테이션 스캔 모드로 전환
 	IR_Sensor.is_calibration = 0;
 
 	Sensor_Start();
@@ -527,7 +552,7 @@ void Sensor_Position_Printf() {
 			LCD_Printf(0, 2, "Pos: LOST   ");
 		}
 
-		// 디버깅을 위해 총 가중치 합(total_weight)도 함께 출력 (선택 사항)
+		// 디버깅을 위해 총 가중치 합(total_weight)도 함께 출력
 		LCD_Printf(0, 3, "Sum: %-5lu", total_weight);
 
 		// 화면 업데이트 주기를 조절하기 위해 약간의 딜레이 추가

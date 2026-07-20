@@ -1,11 +1,12 @@
 #include "user_init.h"
 #include "button.h"
-#include "motor.h"
 #include "math.h"
 #include "foc.h"
 
 #include "drv8316crq1.h"
 #include "mt6701.h"
+
+#include "motor.h"
 
 #define FAN_TIM		&htim15
 #define FAN_CHANNEL	TIM_CHANNEL_2
@@ -703,8 +704,11 @@ void MTR_Speed_FOC() {
 }
 
 void Fan_Mtr_Start() {
-	__HAL_TIM_SET_COMPARE(FAN_TIM, FAN_CHANNEL, 350);
 	HAL_TIM_PWM_Start(FAN_TIM, FAN_CHANNEL);
+}
+
+void Fan_Mtr_Set_Duty(uint8_t duty){
+	__HAL_TIM_SET_COMPARE(FAN_TIM, FAN_CHANNEL, duty);
 }
 
 void Fan_Mtr_Stop() {

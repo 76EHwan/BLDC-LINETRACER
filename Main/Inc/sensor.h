@@ -21,7 +21,7 @@
 // 중앙 16개(idx 0~15) 중, 현재 라인 위치(center idx) 기준 좌우로 4개씩(총 8개)만
 // centroid 계산에 사용한다. 창 바깥쪽은 교차로(cross) 마커 후보 검출용으로 쓴다.
 #define POS_WINDOW_HALF     3
-#define POS_WINDOW_SIZE     (POS_WINDOW_HALF * 2)   // 8
+#define POS_WINDOW_SIZE     (POS_WINDOW_HALF * 2)   // 6
 
 // === 2단계(interleaved) 스캔 슬롯 구조 =======================================
 // ADC3 single-conversion 시퀀스는 한 사이클 최대 16슬롯까지만 쓸 수 있어서,

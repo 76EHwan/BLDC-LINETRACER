@@ -24,7 +24,9 @@ typedef struct {
 	float_t steer_gain_p;
 	float_t steer_gain_d;
 	float_t pos_atten_gain;
+	float_t pit_in_distance_m;
 	uint8_t fan_en;
+
 } DriveParam_t;
 
 // === 교차로(cross) 마커 이벤트 ==============================================
@@ -51,6 +53,6 @@ extern DriveParam_t driveData;
 extern CrossMarkerLog_t g_cross_log[CROSS_LOG_MAX];
 extern uint8_t g_cross_log_count;   // 누적 기록 횟수 (버퍼는 CROSS_LOG_MAX에서 순환)
 
+void Drive_Stop_At_Distance(float_t target_distance_m);
 void Line_Follow_Drive(void);
-
 #endif /* INC_DRIVE_H_ */

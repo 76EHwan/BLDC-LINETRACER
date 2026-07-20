@@ -108,6 +108,7 @@ MenuItem_t drive_param_items[] = {
 	{ .name = "Steer KP", 		.pfnActionCallback = Update_Steer_KP			},
 	{ .name = "Steer KD", 		.pfnActionCallback = Update_Steer_KD			},
 	{ .name = "Pos Abs Gain", 	.pfnActionCallback = Update_Position_Abs_Gain	},
+	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
 };
 
@@ -488,6 +489,12 @@ void Update_Position_Abs_Gain() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.pos_atten_gain),
 			"Pos Abs Gain");
 }
+
+void Update_Pit_In_Distance_M() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.pit_in_distance_m),
+			"Pit In Dis M");
+}
+
 
 void Update_Fan_Enable() {
 	Update_Param_Menu(DATA_UINT8, (uint32_t*) &(driveData.fan_en), NULL, "Fan Enable");
