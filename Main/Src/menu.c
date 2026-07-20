@@ -55,7 +55,7 @@ NULL }, { .name = "Save MicroSD", .pfnActionCallback =
 NULL }, };
 
 MenuItem_t param_menu_items[] = { { .name = "LED Test", .pfnActionCallback =
-		LED_Test }, { .name = "LCD Test", .pfnActionCallback = LCD7789_Test }, {
+		LED_Test }, { .name = "LCD Test", .pfnActionCallback = LCD7735_Test }, {
 		.name = "Flash Test", .pfnActionCallback = W25QXX_Test }, { .name =
 		"SD Card Test", .pfnActionCallback =
 NULL }, };

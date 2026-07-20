@@ -24,6 +24,6 @@ void User_Init() {
 #endif
 //	Buzzer_Init();
 //	Buzzer_Start();
-	LCD7789_Test();
+	LCD7735_Test();
 //	Buzzer_Stop();
 }

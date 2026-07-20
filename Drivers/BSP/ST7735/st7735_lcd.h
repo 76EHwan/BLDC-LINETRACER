@@ -45,5 +45,6 @@ void LCD7735_ShowString(uint16_t x, uint16_t y, uint16_t width, uint16_t height,
 void LCD7735_Clear(void);
 void LCD7735_Printf(uint8_t x, uint8_t y, const char *text, ...);
 void LCD7735_Display_Random_BMP_From_SD(const TCHAR *address);
+void LCD7735_Set_Color(uint16_t point, uint16_t back);
 
 #endif /* __ST7735_LCD_H */
