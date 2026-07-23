@@ -17,6 +17,7 @@ void User_Init(void);
 #define LCD_Printf		LCD7789_Printf
 #define LCD_Clear		LCD7789_Clear
 #define LCD_Set_Color 	LCD7789_Set_Color
+#define LCD_Sleep_Mode	LCD7789_Sleep
 
 #define FOC_CONTROL
 //#define SENSOR_TRAP_CONTROL
