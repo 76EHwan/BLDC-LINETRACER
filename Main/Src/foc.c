@@ -3,8 +3,6 @@
 #include "SDcard.h"
 #include <stdio.h>
 
-#define FOC_PARAM_PATH "/FOC_DATA/foc_param.txt"
-
 // 모터 핸들 전역 인스턴스 (좌/우)
 FOC_Handle_t foc_L;
 FOC_Handle_t foc_R;

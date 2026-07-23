@@ -97,7 +97,7 @@ __STATIC_INLINE void Cross_Log_Push(CrossEvent_t type) {
 // SD 카드에 마커 및 주행 설정 기록 저장 (세이브 슬롯 기능 적용)
 // ============================================================================
 static void Save_MarkerLog_To_SD(uint8_t slot_number) {
-	static char log_buf[4096];
+	static char log_buf[CROSS_LOG_BUFFER_SIZE];
 	int len = 0;
 	char filepath[64];
 
@@ -123,7 +123,7 @@ static void Save_MarkerLog_To_SD(uint8_t slot_number) {
 
 	uint8_t count = (g_cross_log_count < CROSS_LOG_MAX) ? g_cross_log_count : CROSS_LOG_MAX;
 
-	for (uint8_t i = 0; i < count; i++) {
+	for (uint16_t i = 0; i < count; i++) {
 		CrossEvent_t type = g_cross_log[i].type;
 		float dist = g_cross_log[i].dist_from_prev_m;
 

@@ -62,7 +62,7 @@
 
 #define SPD_MA_WINDOW 4  // 4~8 정도의 작은 값 추천 (지연과 노이즈의 타협점)
 
-#define FOC_PARAM_PATH "/FOC_DATA/foc_param.txt"
+#define FOC_PARAM_PATH "/Foc_Data/foc_param.txt"
 #define FOC_PARAM_COUNT (sizeof(foc_param_table) / sizeof(foc_param_table[0]))
 
 // =========================================================

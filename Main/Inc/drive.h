@@ -42,7 +42,8 @@ typedef enum {
 	CROSS_STOP,   // 좌/우 마커 동시 검출 -> 주행 정지
 } CrossEvent_t;
 
-#define CROSS_LOG_MAX 32
+#define CROSS_LOG_BUFFER_SIZE	8192
+#define CROSS_LOG_MAX 			256
 
 typedef struct {
 	CrossEvent_t type;
