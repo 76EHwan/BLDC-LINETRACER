@@ -87,14 +87,14 @@ void LCD7789_Test(void) {
 
 			uint32_t elapsed = get_tick() - tick;
 
-			if (elapsed <= 1000) {
-				LCD7789_SetBrightness(elapsed * LCD7789_BACK_BRIGHT / 1000);
-			} else if (elapsed <= 3000) {
+			if (elapsed <= 200) {
+				LCD7789_SetBrightness(elapsed * LCD7789_BACK_BRIGHT / 200);
+			} else if (elapsed <= 1200) {
 				LCD7789_SetBrightness(LCD7789_BACK_BRIGHT);
 				ST7789_LCD_Driver.FillRect(&st7789_pObj, 0,
 						ST7789Ctx.Height - 5,
-						(elapsed - 1000) * ST7789Ctx.Width / 2000, 5, 0xFFFF);
-			} else if (elapsed > 3000) {
+						(elapsed - 200) * ST7789Ctx.Width / 800, 5, 0xFFFF);
+			} else if (elapsed > 1000) {
 				break;
 			}
 		}

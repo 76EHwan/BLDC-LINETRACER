@@ -11,7 +11,6 @@
 #include "main.h"
 #include "adc.h"
 #include "tim.h"
-#include "sdcard.h"
 
 #define NUM_SENSORS 18
 #define LEFT_MARK_SENSOR_INDEX 16
@@ -38,6 +37,16 @@
 #define SCAN_CYCLE_LEN          20   // SCAN_GROUP1_LEN + 2(mark) + SCAN_GROUP2_LEN
 #define SCAN_CYCLE_LEN_HALF		(SCAN_CYCLE_LEN / 2)
 
+#define CROSS_LOG_BUFFER_SIZE	8192
+#define CROSS_LOG_MAX 			256
+
+typedef enum {
+	CROSS_NONE = 0,
+	CROSS_LEFT,
+	CROSS_RIGHT,
+	CROSS_CROSS,
+	CROSS_STOP,
+} CrossEvent_t;
 
 typedef struct {
 	volatile uint8_t idx;        // 0 ~ SCAN_CYCLE_LEN-1, 현재 스캔 슬롯 번호
@@ -52,29 +61,39 @@ typedef struct {
 
 	uint8_t mark_left;
 	uint8_t mark_right;
-} SensorDataTypeDef;
+} SensorData_TypeDef;
 
 typedef struct {
 	uint8_t scan_group;
 	uint8_t is_calibration;
 	uint8_t is_lost_position;
 	uint8_t is_position;
-	volatile SensorDataTypeDef *data;
+	volatile SensorData_TypeDef *data;
 } Sensor_TypeDef;
 
+typedef struct {
+	CrossEvent_t type;
+	float dist_from_prev_m;
+} CrossMarkerLog_t;
+
+extern volatile SensorData_TypeDef sensorData;
 extern volatile Sensor_TypeDef IR_Sensor;
 extern uint16_t adc3_buffer[1];   // NbrOfConversion=1 (매 슬롯 채널 1개씩 single conversion)
 extern volatile uint32_t count_sensor_irq;
 extern const float line_sensor_pos[LINE_N_SENSORS];
+extern CrossMarkerLog_t g_cross_log[CROSS_LOG_MAX];
+extern uint16_t g_cross_log_count;
 
 void Sensor_Start();
 void Sensor_Stop();
 
 void Sensor_Printf(uint8_t idx, volatile uint16_t *sensor_data);
 
-FRESULT Sensor_Save_Calibration(void);
-FRESULT Sensor_Load_Calibration(void);
 float Sensor_Get_Position(void);
+
+void Cross_Detect_Reset(void);
+CrossEvent_t Cross_Detect_Update(void);
+void Cross_Log_Push(CrossEvent_t type);
 
 void Sensor_Calibration();
 void Sensor_Raw_Printf();

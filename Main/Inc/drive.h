@@ -1,18 +1,9 @@
-/*
- * drive.h
- *
- *  Created on: 2026. 7. 2.
- *      Author: kth59
- */
-
 #ifndef INC_DRIVE_H_
 #define INC_DRIVE_H_
 
 #include "tim.h"
 #include "sensor.h"
-
-#define RAMP_TIM	(&htim14)
-#define Ramp_TIM_IRQ_Handler TIM14_IRQ_Handler
+#include "arm_math.h"
 
 typedef struct {
 	float_t mpsL;
@@ -26,34 +17,15 @@ typedef struct {
 	float_t pos_atten_gain;
 	float_t pit_in_distance_m;
 	uint8_t fan_en;
-
 } DriveParam_t;
-
-// === 교차로(cross) 마커 이벤트 ==============================================
-// 위치 창(POS_WINDOW) 바깥쪽 라인센서(idx0~15 중 창에서 제외된 부분)에서
-// 검출되는 cross_left/cross_right 후보를 기반으로 판정한다(sensor.c).
-// idx16/17 전용 마커 포토인터럽터는 예비용이라 여기서는 사용하지 않는다.
-// 좌우 동시 검출 시 정지 지점(STOP)으로 처리한다.
-typedef enum {
-	CROSS_NONE = 0,
-	CROSS_LEFT,
-	CROSS_RIGHT,
-	CROSS_CROSS,
-	CROSS_STOP,   // 좌/우 마커 동시 검출 -> 주행 정지
-} CrossEvent_t;
-
-#define CROSS_LOG_BUFFER_SIZE	8192
-#define CROSS_LOG_MAX 			256
-
-typedef struct {
-	CrossEvent_t type;
-	float dist_from_prev_m;   // 이전 마커로부터의 주행 거리 (엔코더/FOC 속도 적분 기반, m)
-} CrossMarkerLog_t;
 
 extern DriveParam_t driveData;
 extern CrossMarkerLog_t g_cross_log[CROSS_LOG_MAX];
-extern uint8_t g_cross_log_count;   // 누적 기록 횟수 (버퍼는 CROSS_LOG_MAX에서 순환)
+extern uint16_t g_cross_log_count; // 256개 대응을 위해 uint16_t로 변경
+extern arm_pid_instance_f32 steer_pid; // motor.c에서 연산 수행
 
+void Cross_Log_Push(CrossEvent_t type);
 void Drive_Stop_At_Distance(float_t target_distance_m);
-void Line_Follow_Drive(void);
+void Drive_First(void);
+
 #endif /* INC_DRIVE_H_ */

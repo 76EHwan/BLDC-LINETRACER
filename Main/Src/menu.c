@@ -7,6 +7,7 @@
 #include "SDcard.h"
 #include "w25qxx.h"
 
+#include "sd_ui.h"
 #include "menu.h"
 #include "user_init.h"
 #include "bootloader.h"
@@ -88,14 +89,11 @@ MenuItem_t motor_menu_items[] = {
 };
 
 MenuItem_t drive_menu_items[] = {
-    { .name = "1st Drive",    .pfnActionCallback = Line_Follow_Drive },
+    { .name = "1st Drive",    .pfnActionCallback = Drive_First },
     { .name = "2nd Drive",    .pfnActionCallback = NULL },
     { .name = "3rd Drive",    .pfnActionCallback = NULL },
     { .name = "4th Drive",    .pfnActionCallback = NULL },
     { .name = "Update Param", .pfnActionCallback = NULL, 				.child_menu = &drive_param_menu },
-    { .name = "View Marker",  .pfnActionCallback = NULL },
-    { .name = "Save Flash",   .pfnActionCallback = NULL },
-    { .name = "Save MicroSD", .pfnActionCallback = NULL }
 };
 
 MenuItem_t drive_param_items[] = {

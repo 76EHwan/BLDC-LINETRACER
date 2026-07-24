@@ -6,6 +6,8 @@
  */
 #include "main.h"
 #include "rng.h"
+#include <stdio.h> // sprintf 사용을 위해 추가
+#include "ff.h"    // f_unlink (FatFs 파일 삭제) 사용을 위해 추가
 
 #include "drv8316crq1.h"
 #include "button.h"
@@ -18,6 +20,17 @@
 #include "user_init.h"
 #include "menu.h"
 #include "foc.h"
+
+// ==========================================================
+// ★ 주행 마커 txt 파일 전체 삭제 함수
+// ==========================================================
+void Delete_All_Marker_Logs(void) {
+	char filepath[64];
+	for (int i = 1; i <= 10; i++) {
+		sprintf(filepath, "/Drive_Data/save_slot_%d.txt", i);
+		f_unlink(filepath);
+	}
+}
 
 void User_Init() {
 	Button_init();
@@ -53,6 +66,9 @@ void User_Init() {
 			LED_Blink(250);
 		}
 	}
+
+	// ★ SD 카드 정상 인식 후 마커 기록 파일들 삭제 함수 호출
+	Delete_All_Marker_Logs();
 
 	if ((res = FOC_Parameters_InitOrLoad()) != FR_OK) {
 		LCD_Printf(0, 7, "FOC param save Fail");

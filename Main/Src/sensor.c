@@ -16,16 +16,18 @@
  *  - ┼(십자) 코스 방어 로직 추가: Local Search 윈도우 내의 활성 센서 수를
  *    __builtin_popcount()로 카운트하여 5개 이상일 경우 윈도우 중심을 이전 상태로 고정.
  */
-#include "sensor.h"
 #include "main.h"
-#include "user_init.h"
-#include "button.h"
-#include "lsm6ds3tr-c.h"
 #include "cmsis_gcc.h"
-#include "SDcard.h"
 
-#define SENSOR_CALIB_PATH "/Sensor_Data/calibration_result.txt"
-#define SENSOR_CALIB_COUNT (sizeof(sensor_calib_table) / sizeof(sensor_calib_table[0]))
+#include "button.h"
+#include "buzzer.h"
+#include "lsm6ds3tr-c.h"
+
+#include "foc.h"
+#include "motor.h"
+#include "sensor.h"
+#include "sd_ui.h"
+#include "user_init.h"
 
 #define SENSOR_ADC_HANDLE		&hadc3
 #define SENSOR_TIM_IR_HANDLE	&htim7
@@ -81,7 +83,7 @@ __STATIC_INLINE uint8_t Scan_Slot_To_Phys(uint8_t slot) {
 // DMA Circular 모드 16-rank 결과 버퍼
 __attribute__((section(".ram_d3"), aligned(32))) uint16_t adc3_buffer[1];
 
-volatile SensorDataTypeDef sensorData = {
+volatile SensorData_TypeDef sensorData = {
         .idx = 0,
         .raw = { 0 },
         .blackmax = { 0 },
@@ -200,11 +202,13 @@ void ADC3_IRQ_Cplt_Handler() {
 }
 
 float Sensor_Get_Position(void) {
-	// 이전 피크(중심) 인덱스를 기억하기 위한 정적 변수
+	// 이전 피크(중심) 인덱스와 이전 위치를 기억하기 위한 정적 변수
 	static int8_t prev_peak_idx = LINE_N_SENSORS / 2;
+	static float prev_position = 0.0f; // ★ 이전 위치 저장용 변수 추가
 
 	uint16_t max_val = 0;
 	int8_t current_peak_idx = LINE_N_SENSORS / 2;
+	uint8_t is_cross_line = 0; // ★ 십자 마커 감지 플래그 추가
 
 	// 현재 켜진 센서들의 상태 비트마스크 (임계값 초과 상태)
 	uint16_t state16 = (uint16_t) (IR_Sensor.data->state & 0xFFFF);
@@ -241,9 +245,10 @@ float Sensor_Get_Position(void) {
 		}
 
 		// 윈도우 내 활성 센서가 5개 이상이면 십자(가로선) 코스로 간주하고 중심 고정
-		if (active_in_window > 3) {
+		if (active_in_window > 3) { // ★ 주석 내용에 맞추어 >= 5 로 수정
 			current_peak_idx = prev_peak_idx;
 			max_val = IR_Sensor.data->normalized[current_peak_idx];
+			is_cross_line = 1; // ★ 십자선 상태 기록
 		}
 	}
 
@@ -301,89 +306,115 @@ float Sensor_Get_Position(void) {
 	// 4. 총합을 기준으로 이탈 여부 갱신 및 위치 반환
 	if (total_weight > IR_Sensor.data->line_lost_sum_min) {
 		IR_Sensor.is_lost_position = 0;
-		return weighted_sum / (float) total_weight;
+		float current_position = weighted_sum / (float) total_weight;
+
+		if (is_cross_line) {
+			return prev_position; // ★ 십자선일 때는 가중 평균 결과를 버리고 이전 위치 반환
+		}
+
+		prev_position = current_position; // ★ 정상 상태일 때만 이전 위치 갱신
+		return current_position;
 	} else {
 		IR_Sensor.is_lost_position = 1;
 		return 0.0f;
 	}
 }
 
-// =========================================================
-// [SD카드 저장 및 불러오기]
-// =========================================================
-// @formatter:off
-static const SDCard_ConfigEntry sensor_calib_table[] = {
-        { "whitemax_00",    (void*)&sensorData.whitemax[0],                 SDCFG_UINT16 },
-        { "whitemax_01",    (void*)&sensorData.whitemax[1],                 SDCFG_UINT16 },
-        { "whitemax_02",    (void*)&sensorData.whitemax[2],                 SDCFG_UINT16 },
-        { "whitemax_03",    (void*)&sensorData.whitemax[3],                 SDCFG_UINT16 },
-        { "whitemax_04",    (void*)&sensorData.whitemax[4],                 SDCFG_UINT16 },
-        { "whitemax_05",    (void*)&sensorData.whitemax[5],                 SDCFG_UINT16 },
-        { "whitemax_06",    (void*)&sensorData.whitemax[6],                 SDCFG_UINT16 },
-        { "whitemax_07",    (void*)&sensorData.whitemax[7],                 SDCFG_UINT16 },
-        { "whitemax_08",    (void*)&sensorData.whitemax[8],                 SDCFG_UINT16 },
-        { "whitemax_09",    (void*)&sensorData.whitemax[9],                 SDCFG_UINT16 },
-        { "whitemax_10",    (void*)&sensorData.whitemax[10],                SDCFG_UINT16 },
-        { "whitemax_11",    (void*)&sensorData.whitemax[11],                SDCFG_UINT16 },
-        { "whitemax_12",    (void*)&sensorData.whitemax[12],                SDCFG_UINT16 },
-        { "whitemax_13",    (void*)&sensorData.whitemax[13],                SDCFG_UINT16 },
-        { "whitemax_14",    (void*)&sensorData.whitemax[14],                SDCFG_UINT16 },
-        { "whitemax_15",    (void*)&sensorData.whitemax[15],                SDCFG_UINT16 },
-        { "whitemax_16",    (void*)&sensorData.whitemax[16],                SDCFG_UINT16 },
-        { "whitemax_17",    (void*)&sensorData.whitemax[17],                SDCFG_UINT16 },
-        { "blackmax_00",    (void*)&sensorData.blackmax[0],                 SDCFG_UINT16 },
-        { "blackmax_01",    (void*)&sensorData.blackmax[1],                 SDCFG_UINT16 },
-        { "blackmax_02",    (void*)&sensorData.blackmax[2],                 SDCFG_UINT16 },
-        { "blackmax_03",    (void*)&sensorData.blackmax[3],                 SDCFG_UINT16 },
-        { "blackmax_04",    (void*)&sensorData.blackmax[4],                 SDCFG_UINT16 },
-        { "blackmax_05",    (void*)&sensorData.blackmax[5],                 SDCFG_UINT16 },
-        { "blackmax_06",    (void*)&sensorData.blackmax[6],                 SDCFG_UINT16 },
-        { "blackmax_07",    (void*)&sensorData.blackmax[7],                 SDCFG_UINT16 },
-        { "blackmax_08",    (void*)&sensorData.blackmax[8],                 SDCFG_UINT16 },
-        { "blackmax_09",    (void*)&sensorData.blackmax[9],                 SDCFG_UINT16 },
-        { "blackmax_10",    (void*)&sensorData.blackmax[10],                SDCFG_UINT16 },
-        { "blackmax_11",    (void*)&sensorData.blackmax[11],                SDCFG_UINT16 },
-        { "blackmax_12",    (void*)&sensorData.blackmax[12],                SDCFG_UINT16 },
-        { "blackmax_13",    (void*)&sensorData.blackmax[13],                SDCFG_UINT16 },
-        { "blackmax_14",    (void*)&sensorData.blackmax[14],                SDCFG_UINT16 },
-        { "blackmax_15",    (void*)&sensorData.blackmax[15],                SDCFG_UINT16 },
-        { "blackmax_16",    (void*)&sensorData.blackmax[16],                SDCFG_UINT16 },
-        { "blackmax_17",    (void*)&sensorData.blackmax[17],                SDCFG_UINT16 },
-        { "coef_bias_00",   (void*)&sensorData.normalized_coef_bias[0],     SDCFG_UINT16 },
-        { "coef_bias_01",   (void*)&sensorData.normalized_coef_bias[1],     SDCFG_UINT16 },
-        { "coef_bias_02",   (void*)&sensorData.normalized_coef_bias[2],     SDCFG_UINT16 },
-        { "coef_bias_03",   (void*)&sensorData.normalized_coef_bias[3],     SDCFG_UINT16 },
-        { "coef_bias_04",   (void*)&sensorData.normalized_coef_bias[4],     SDCFG_UINT16 },
-        { "coef_bias_05",   (void*)&sensorData.normalized_coef_bias[5],     SDCFG_UINT16 },
-        { "coef_bias_06",   (void*)&sensorData.normalized_coef_bias[6],     SDCFG_UINT16 },
-        { "coef_bias_07",   (void*)&sensorData.normalized_coef_bias[7],     SDCFG_UINT16 },
-        { "coef_bias_08",   (void*)&sensorData.normalized_coef_bias[8],     SDCFG_UINT16 },
-        { "coef_bias_09",   (void*)&sensorData.normalized_coef_bias[9],     SDCFG_UINT16 },
-        { "coef_bias_10",   (void*)&sensorData.normalized_coef_bias[10],    SDCFG_UINT16 },
-        { "coef_bias_11",   (void*)&sensorData.normalized_coef_bias[11],    SDCFG_UINT16 },
-        { "coef_bias_12",   (void*)&sensorData.normalized_coef_bias[12],    SDCFG_UINT16 },
-        { "coef_bias_13",   (void*)&sensorData.normalized_coef_bias[13],    SDCFG_UINT16 },
-        { "coef_bias_14",   (void*)&sensorData.normalized_coef_bias[14],    SDCFG_UINT16 },
-        { "coef_bias_15",   (void*)&sensorData.normalized_coef_bias[15],    SDCFG_UINT16 },
-        { "coef_bias_16",   (void*)&sensorData.normalized_coef_bias[16],    SDCFG_UINT16 },
-        { "coef_bias_17",   (void*)&sensorData.normalized_coef_bias[17],    SDCFG_UINT16 },
-};
-// @formatter:on
+// ==============================================
+// 마커 인식 알고리즘
+// ==============================================
 
-FRESULT Sensor_Save_Calibration(void) {
-	return SDCard_SaveConfig(SENSOR_CALIB_PATH, sensor_calib_table,
-	SENSOR_CALIB_COUNT);
+typedef enum {
+	MARKER_STATE_IDLE = 0,
+	MARKER_STATE_READING,
+} MarkerState_t;
+
+static MarkerState_t g_marker_state = MARKER_STATE_IDLE;
+static uint8_t g_accum_left = 0;
+static uint8_t g_accum_right = 0;
+static uint16_t g_accum_center_state = 0;
+
+void Cross_Detect_Reset(void) {
+	g_marker_state = MARKER_STATE_IDLE;
+	g_accum_left = 0;
+	g_accum_right = 0;
+	g_accum_center_state = 0;
 }
 
-FRESULT Sensor_Load_Calibration(void) {
-	FRESULT res = SDCard_LoadConfig(SENSOR_CALIB_PATH, sensor_calib_table,
-	SENSOR_CALIB_COUNT);
-	if (res != FR_OK)
-		return res;
+CrossEvent_t Cross_Detect_Update(void) {
+	uint8_t left_marker = IR_Sensor.data->mark_left;
+	uint8_t right_marker = IR_Sensor.data->mark_right;
+	uint16_t current_center_state = (uint16_t) (IR_Sensor.data->state & 0xFFFF);
 
-	IR_Sensor.is_calibration = 1;
-	return FR_OK;
+	CrossEvent_t event = CROSS_NONE;
+
+	switch (g_marker_state) {
+	case MARKER_STATE_IDLE:
+		if (left_marker || right_marker) {
+			g_marker_state = MARKER_STATE_READING;
+			g_accum_left = left_marker;
+			g_accum_right = right_marker;
+			g_accum_center_state = current_center_state;
+		}
+		break;
+
+	case MARKER_STATE_READING:
+		if (left_marker)
+			g_accum_left = 1;
+		if (right_marker)
+			g_accum_right = 1;
+		g_accum_center_state |= current_center_state;
+
+		if (!left_marker && !right_marker) {
+			if (g_accum_left && g_accum_right) {
+				uint8_t center_on_count = 0;
+				for (int i = 0; i < 16; i++) {
+					if (g_accum_center_state & (1 << i)) {
+						center_on_count++;
+					}
+				}
+				if (center_on_count >= 12) {
+					event = CROSS_CROSS;
+				} else {
+					event = CROSS_STOP;
+				}
+			} else if (g_accum_left) {
+				event = CROSS_LEFT;
+			} else if (g_accum_right) {
+				event = CROSS_RIGHT;
+			}
+
+			// 고속 주행을 위해 시간 기반 쿨다운(노이즈 필터) 삭제됨 - 즉시 리셋
+			Cross_Detect_Reset();
+		}
+		break;
+	}
+
+	if (event != CROSS_NONE) {
+		Cross_Log_Push(event);
+		Buzzer_Start();
+		buzzer_timer_count = (uint16_t) (g_buzzer_duration / RAMP_DT);
+	}
+
+	return event;
 }
+
+CrossMarkerLog_t g_cross_log[CROSS_LOG_MAX];
+uint16_t g_cross_log_count = 0;
+
+void Cross_Log_Push(CrossEvent_t type) {
+	CrossMarkerLog_t *log = &g_cross_log[g_cross_log_count % CROSS_LOG_MAX];
+	log->type = type;
+	log->dist_from_prev_m = g_odom_distance_m;
+	g_cross_log_count++;
+	Odom_Reset();
+}
+
+
+// ==============================================
+// 센서 값 디버깅 함수
+// ==============================================
+
 
 void Sensor_Calibration() {
 	for (uint8_t i = 0; i < NUM_SENSORS; i++) {

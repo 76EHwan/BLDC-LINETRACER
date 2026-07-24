@@ -2,7 +2,6 @@
 #define __FOC_H
 
 #include "main.h"
-#include "SDcard.h"
 #include "tim.h"
 #include "arm_math.h"
 
@@ -61,9 +60,6 @@
 #define VBUS_ADC_SCALE       (VBUS_ADC_VREF / 65536.0f * VBUS_DIVIDER_RATIO)
 
 #define SPD_MA_WINDOW 4  // 4~8 정도의 작은 값 추천 (지연과 노이즈의 타협점)
-
-#define FOC_PARAM_PATH "/Foc_Data/foc_param.txt"
-#define FOC_PARAM_COUNT (sizeof(foc_param_table) / sizeof(foc_param_table[0]))
 
 // =========================================================
 // [FOC 제어 핸들 구조체]
@@ -143,6 +139,8 @@ extern FOC_Handle_t foc_R;
 extern uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
 extern uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
+extern float_t g_odom_distance_m;
+
 float32_t FOC_Get_VBus(void);
 
 void FOC_ADC_Start(void);
@@ -153,11 +151,13 @@ void FOC_Calibrate_Offset(FOC_Handle_t *hfoc);
 void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc);
 void FOC_Calibrate_Encoder_Offset_Both(FOC_Handle_t *hfoc_L, FOC_Handle_t *hfoc_R);
 void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc);
+
+float_t FOC_Meas_Mps(FOC_Handle_t *hfoc);
+void Odom_Reset(void);
+void Odom_Accumulate(float dt_sec);
+
 void FOC_Execute_Loop(FOC_Handle_t *hfoc);
 void FOC_Speed_Loop(FOC_Handle_t *hfoc);
 void Speed_TIM_IRQ_Handler(void);
-
-FRESULT Save_FOC_Parameters(void);
-FRESULT Load_FOC_Parameters(void);
 
 #endif /* __FOC_H */

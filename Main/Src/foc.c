@@ -1,7 +1,9 @@
-#include "foc.h"
-#include "adc.h"
-#include "SDcard.h"
 #include <stdio.h>
+
+#include "adc.h"
+
+#include "motor.h"
+#include "foc.h"
 
 // 모터 핸들 전역 인스턴스 (좌/우)
 FOC_Handle_t foc_L;
@@ -304,6 +306,23 @@ void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc) {
 	hfoc->theta_e = theta_e;
 }
 
+
+float_t g_odom_distance_m = 0.f;
+
+float_t FOC_Meas_Mps(FOC_Handle_t *hfoc) {
+	return fabsf(hfoc->omega_e_meas) / (INV_TIRE_RADIUS * MOTOR_POLE_PAIRS * GEAR_RATIO);
+}
+
+void Odom_Reset(void) {
+	g_odom_distance_m = 0.f;
+}
+
+void Odom_Accumulate(float dt_sec) {
+	float_t mps = 0.5f * (FOC_Meas_Mps(&foc_L) + FOC_Meas_Mps(&foc_R));
+	g_odom_distance_m += mps * dt_sec;
+}
+
+
 // 6. 메인 FOC 실행 루프 (injected 변환 완료 IRQ에서 주기적 호출)
 void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	if (hfoc->is_running == 0)
@@ -465,11 +484,6 @@ void FOC_Speed_Loop(FOC_Handle_t *hfoc) {
 	hfoc->err = err;
 }
 
-// =========================================================
-// [인터럽트 핸들러]
-// =========================================================
-// injected 변환 완료(JEOS) 콜백이 FOC loop를 구동한다.
-// ADC1=foc_R, ADC2=foc_L
 void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef *hadc) {
 	if (hadc->Instance == ADC1) {
 		FOC_Execute_Loop(&foc_R);
@@ -485,54 +499,3 @@ void Speed_TIM_IRQ_Handler() {
 	FOC_Speed_Loop(&foc_R);
 }
 
-// =========================================================
-// [SD카드 저장 및 불러오기]
-// =========================================================
-// @formatter:off
-static const SDCard_ConfigEntry foc_param_table[] = {
-		{ "L_offset_a",		&foc_L.offset_a, 		SDCFG_FLOAT },
-		{ "L_offset_c", 	&foc_L.offset_c, 		SDCFG_FLOAT },
-		{ "L_theta_offset", &foc_L.theta_offset, 	SDCFG_FLOAT },
-		{ "L_id_Kp", 		&foc_L.pid_id.Kp, 		SDCFG_FLOAT },
-		{ "L_id_Ki", 		&foc_L.pid_id.Ki, 		SDCFG_FLOAT },
-		{ "L_iq_Kp", 		&foc_L.pid_iq.Kp, 		SDCFG_FLOAT },
-		{ "L_iq_Ki", 		&foc_L.pid_iq.Ki, 		SDCFG_FLOAT },
-		{ "L_spd_Kp",		&foc_L.spd_Kp, 			SDCFG_FLOAT },
-		{ "L_spd_Ki",		&foc_L.spd_Ki, 			SDCFG_FLOAT },
-		{ "L_spd_Kd", 		&foc_L.spd_Kd, 			SDCFG_FLOAT },
-		{ "L_iq_limit", 	&foc_L.iq_limit, 		SDCFG_FLOAT },
-		{ "L_enc_dir", 		&foc_L.enc_dir, 		SDCFG_INT8 },
-
-		{ "R_offset_a",		&foc_R.offset_a, 		SDCFG_FLOAT },
-		{ "R_offset_c", 	&foc_R.offset_c, 		SDCFG_FLOAT },
-		{ "R_theta_offset", &foc_R.theta_offset, 	SDCFG_FLOAT },
-		{ "R_id_Kp", 		&foc_R.pid_id.Kp, 		SDCFG_FLOAT },
-		{ "R_id_Ki", 		&foc_R.pid_id.Ki, 		SDCFG_FLOAT },
-		{ "R_iq_Kp", 		&foc_R.pid_iq.Kp, 		SDCFG_FLOAT },
-		{ "R_iq_Ki", 		&foc_R.pid_iq.Ki, 		SDCFG_FLOAT },
-		{ "R_spd_Kp",		&foc_R.spd_Kp, 			SDCFG_FLOAT },
-		{ "R_spd_Ki",		&foc_R.spd_Ki, 			SDCFG_FLOAT },
-		{ "R_spd_Kd", 		&foc_R.spd_Kd, 			SDCFG_FLOAT },
-		{ "R_iq_limit", 	&foc_R.iq_limit, 		SDCFG_FLOAT },
-		{ "R_enc_dir", 		&foc_R.enc_dir, 		SDCFG_INT8 },
-};
-
-// @formatter:on
-
-FRESULT Save_FOC_Parameters(void) {
-	return SDCard_SaveConfig(FOC_PARAM_PATH, foc_param_table, FOC_PARAM_COUNT);
-}
-
-FRESULT Load_FOC_Parameters(void) {
-	FRESULT res = SDCard_LoadConfig(FOC_PARAM_PATH, foc_param_table,
-	FOC_PARAM_COUNT);
-	if (res != FR_OK)
-		return res;
-
-	arm_pid_init_f32(&foc_L.pid_id, 1);
-	arm_pid_init_f32(&foc_L.pid_iq, 1);
-	arm_pid_init_f32(&foc_R.pid_id, 1);
-	arm_pid_init_f32(&foc_R.pid_iq, 1);
-
-	return FR_OK;
-}

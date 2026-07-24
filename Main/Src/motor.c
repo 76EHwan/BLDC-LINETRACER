@@ -3,13 +3,17 @@
 #include "math.h"
 #include "foc.h"
 
+#include "buzzer.h"
 #include "drv8316crq1.h"
 #include "mt6701.h"
 
+#include "drive.h"
 #include "motor.h"
+#include "sensor.h"
 
-#define FAN_TIM		&htim15
+#define FAN_TIM		(&htim15)
 #define FAN_CHANNEL	TIM_CHANNEL_2
+#define RAMP_TIM	(&htim14)
 
 #define MTR_L &DRV8316C_L
 #define MTR_R &DRV8316C_R
@@ -707,7 +711,7 @@ void Fan_Mtr_Start() {
 	HAL_TIM_PWM_Start(FAN_TIM, FAN_CHANNEL);
 }
 
-void Fan_Mtr_Set_Duty(uint8_t duty){
+void Fan_Mtr_Set_Duty(uint8_t duty) {
 	__HAL_TIM_SET_COMPARE(FAN_TIM, FAN_CHANNEL, duty);
 }
 
@@ -748,4 +752,84 @@ void Magnet_Encoder_Test() {
 		LCD_Printf(0, 0, "L: %6.3f", encDataL.motor_elec_angle);
 		LCD_Printf(0, 1, "R: %6.3f", encDataR.motor_elec_angle);
 	}
+}
+
+volatile uint16_t buzzer_timer_count = 0;
+float_t g_buzzer_duration = 0.05f;
+
+float_t accel;
+float_t decel;
+volatile float_t g_target_base_mps = 0.0f;
+volatile float_t g_current_base_mps = 0.0f;
+static volatile float_t g_current_steer = 0.0f;
+volatile uint8_t g_is_braking = 0;
+static volatile float_t filtered_atten = 1.0f;
+arm_pid_instance_f32 steer_pid;
+
+uint32_t count_irq = 0;
+
+void Ramp_TIM_IRQ_Handler() {
+	// 주행 거리 적산
+	Odom_Accumulate(RAMP_DT);
+
+	float_t line_pos = Sensor_Get_Position();
+//	float_t line_pos_abs = fabsf(line_pos);
+
+	// 실시간 조향 PID 연산
+	g_current_steer = arm_pid_f32(&steer_pid, line_pos);
+
+	if (!g_is_braking) {
+//		float_t target_atten = 1.f - (line_pos_abs * driveData.pos_atten_gain);
+//
+//		static const float_t alpha_fast = 0.98f;
+//		static const float_t alpha_slow = 0.02f;
+//
+//		if (target_atten < filtered_atten) {
+//			filtered_atten = (alpha_fast * target_atten)
+//					+ ((1.0f - alpha_fast) * filtered_atten);
+//		} else {
+//			filtered_atten = (alpha_slow * target_atten)
+//					+ ((1.0f - alpha_slow) * filtered_atten);
+//		}
+//
+//		g_target_base_mps = driveData.base_mps * filtered_atten;
+	}
+
+	float d_mps = g_target_base_mps - g_current_base_mps;
+	if (d_mps > accel * RAMP_DT)
+		g_current_base_mps += accel * RAMP_DT;
+	else if (d_mps < -decel * RAMP_DT)
+		g_current_base_mps -= decel * RAMP_DT;
+	else
+		g_current_base_mps = g_target_base_mps;
+
+	float mps_L = g_current_base_mps * (1.f + g_current_steer * THREAD_DIV2);
+	float mps_R = g_current_base_mps * (1.f - g_current_steer * THREAD_DIV2);
+
+	foc_L.target_omega =
+			mps_L * INV_TIRE_RADIUS * MOTOR_POLE_PAIRS * GEAR_RATIO;
+	foc_R.target_omega = -mps_R * INV_TIRE_RADIUS * MOTOR_POLE_PAIRS
+			* GEAR_RATIO;
+	foc_L.omega_setpoint = foc_L.target_omega;
+	foc_R.omega_setpoint = foc_R.target_omega;
+
+	count_irq++;
+
+	// 비동기 부저 타이머 갱신
+	if (buzzer_timer_count > 0) {
+		buzzer_timer_count--;
+		if (buzzer_timer_count == 0)
+			Buzzer_Stop();
+	}
+}
+
+void Ramp_Start() {
+	g_target_base_mps = 0.f;
+	g_current_base_mps = 0.f;
+	g_current_steer = 0.f;
+	HAL_TIM_Base_Start_IT(RAMP_TIM);
+}
+
+void Ramp_Stop() {
+	HAL_TIM_Base_Stop_IT(RAMP_TIM);
 }
