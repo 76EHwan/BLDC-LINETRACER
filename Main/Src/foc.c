@@ -136,12 +136,16 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 	hfoc->pid_iq.Ki = DEFAULT_IQ_KI;
 	hfoc->pid_iq.Kd = 0.f;
 
-	hfoc->spd_Kp = 0.0007f;
-	hfoc->spd_Ki = 0.0015f;
-	hfoc->spd_Kd = 0.000001f;      // 기본은 0에서 시작, 필요 시 튜닝
+//	hfoc->spd_Kp = 0.0007f;
+//	hfoc->spd_Ki = 0.0015f;
+//	hfoc->spd_Kd = 0.000001f;      // 기본은 0에서 시작, 필요 시 �
+
+	hfoc->spd_Kp = 0.0005f;
+	hfoc->spd_Ki = 0.0001f;
+	hfoc->spd_Kd = 0.000001f;
+
 	hfoc->iq_limit = SPD_IQ_LIMIT;
 
-	// SD 카드에서 Kp, Ki를 불러왔으므로 PID 구조체에 한 번 반영해 줍니다.
 	arm_pid_init_f32(&hfoc->pid_id, 1);
 	arm_pid_init_f32(&hfoc->pid_iq, 1);
 }
@@ -357,7 +361,8 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	//   Vq_ff =  we * L * Id + we * λ   (λ: 자속쇄교수, 토크상수에서 역산)
 	//   omega_e_meas는 속도 루프(2kHz)에서 갱신되는 값을 그대로 재사용합니다.
 
-	float32_t we = hfoc->omega_e_meas;
+//	float32_t we = hfoc->omega_e_meas;
+	float32_t we = hfoc->target_omega;
 
 	// 1. 역기전력(Back-EMF) 항: 회전 속도에 비례
 	float32_t Vq_bemf = we * MOTOR_FLUX_LINKAGE;
@@ -368,8 +373,8 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 
 	// [디버깅 스위치] 처음에는 ff_gain을 0.05 ~ 0.1 정도로 매우 작게 주고 시작합니다.
 	// 안정적이면 1.0까지 서서히 올립니다. 만약 0.1만 넣었는데도 덜덜거리면 부호나 파라미터가 틀린 것입니다.
-	float32_t ff_bemf_gain = 0.01f; // TODO: 0.1f로 올려서 테스트
-	float32_t ff_cross_gain = 0.01f; // BEMF가 완벽해지면 시도
+	float32_t ff_bemf_gain = 1.f; // TODO: 0.1f로 올려서 테스트
+	float32_t ff_cross_gain = 0.0f; // BEMF가 완벽해지면 시도
 
 	float32_t Vd_ff = Vd_cross * ff_cross_gain;
 	float32_t Vq_ff = (Vq_bemf * ff_bemf_gain) + (Vq_cross * ff_cross_gain);

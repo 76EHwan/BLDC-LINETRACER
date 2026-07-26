@@ -138,7 +138,6 @@ int main(void)
   MX_TIM5_Init();
   MX_TIM15_Init();
   MX_USART2_UART_Init();
-  MX_TIM16_Init();
   MX_FATFS_Init();
   MX_RNG_Init();
   MX_TIM7_Init();
@@ -146,6 +145,8 @@ int main(void)
   MX_TIM6_Init();
   MX_TIM13_Init();
   MX_TIM14_Init();
+  MX_LPTIM3_Init();
+  MX_LPTIM4_Init();
   /* USER CODE BEGIN 2 */
 	HAL_GPIO_WritePin(SENSOR_IR_EN_GPIO_Port, SENSOR_IR_EN_Pin, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(SENSOR_PT_EN_GPIO_Port, SENSOR_PT_EN_Pin, GPIO_PIN_SET);
@@ -197,10 +198,11 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI48|RCC_OSCILLATORTYPE_HSE
-                              |RCC_OSCILLATORTYPE_LSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI48|RCC_OSCILLATORTYPE_LSI
+                              |RCC_OSCILLATORTYPE_HSE|RCC_OSCILLATORTYPE_LSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.LSEState = RCC_LSE_ON;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.HSI48State = RCC_HSI48_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;

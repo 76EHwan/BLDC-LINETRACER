@@ -135,37 +135,37 @@ uint8_t LCD7789_SoftPWMIsEnable(void) {
 	return IsLCD7789_SoftPWM;
 }
 
-void LCD7789_SoftPWMCtrlInit(void) {
-	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
-	__HAL_RCC_GPIOE_CLK_ENABLE();
-	GPIO_InitStruct.Pin = GPIO_PIN_10;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-	HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-	MX_TIM16_Init();
-	HAL_TIM_Base_Start_IT(&htim16);
-	LCD7789_SoftPWMEnable(1);
-}
-
-void LCD7789_SoftPWMCtrlDeInit(void) {
-	HAL_TIM_Base_DeInit(&htim16);
-	HAL_GPIO_DeInit(GPIOE, GPIO_PIN_10);
-}
-
-void LCD7789_SoftPWMCtrlRun(void) {
-	static uint32_t timecount;
-	if (timecount > 1000)
-		timecount = 0;
-	else
-		timecount += 10;
-
-	if (timecount >= LCD7789_LightSet)
-		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_SET);
-	else
-		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_RESET);
-}
+//void LCD7789_SoftPWMCtrlInit(void) {
+//	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
+//	__HAL_RCC_GPIOE_CLK_ENABLE();
+//	GPIO_InitStruct.Pin = GPIO_PIN_10;
+//	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+//	GPIO_InitStruct.Pull = GPIO_NOPULL;
+//	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+//	HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+//
+//	MX_TIM16_Init();
+//	HAL_TIM_Base_Start_IT(&htim16);
+//	LCD7789_SoftPWMEnable(1);
+//}
+//
+//void LCD7789_SoftPWMCtrlDeInit(void) {
+//	HAL_TIM_Base_DeInit(&htim16);
+//	HAL_GPIO_DeInit(GPIOE, GPIO_PIN_10);
+//}
+//
+//void LCD7789_SoftPWMCtrlRun(void) {
+//	static uint32_t timecount;
+//	if (timecount > 1000)
+//		timecount = 0;
+//	else
+//		timecount += 10;
+//
+//	if (timecount >= LCD7789_LightSet)
+//		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_SET);
+//	else
+//		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_RESET);
+//}
 
 void LCD7789_Light(uint32_t Brightness_Dis, uint32_t time) {
 	uint32_t Brightness_Now;

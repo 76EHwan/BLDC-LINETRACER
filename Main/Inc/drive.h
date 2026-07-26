@@ -32,9 +32,6 @@ extern volatile uint8_t g_is_braking;
 extern volatile float g_target_base_mps;
 extern volatile float g_current_base_mps;
 
-// 부저 타이머 변수
-extern volatile uint16_t buzzer_timer_count;
-extern float_t g_buzzer_duration;
 
 // 주행 시퀀스 함수
 void Drive_Stop_At_Distance(float_t target_distance_m);

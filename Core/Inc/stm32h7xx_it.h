@@ -71,9 +71,9 @@ void TIM6_DAC_IRQHandler(void);
 void TIM7_IRQHandler(void);
 void SPI4_IRQHandler(void);
 void OTG_FS_IRQHandler(void);
-void TIM16_IRQHandler(void);
 void ADC3_IRQHandler(void);
 void BDMA_Channel0_IRQHandler(void);
+void LPTIM3_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 
 /* USER CODE END EFP */

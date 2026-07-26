@@ -59,7 +59,7 @@
 #define VBUS_ADC_VREF        3.3f
 #define VBUS_ADC_SCALE       (VBUS_ADC_VREF / 65536.0f * VBUS_DIVIDER_RATIO)
 
-#define SPD_MA_WINDOW 4  // 4~8 정도의 작은 값 추천 (지연과 노이즈의 타협점)
+#define SPD_MA_WINDOW 2  // 4~8 정도의 작은 값 추천 (지연과 노이즈의 타협점)
 
 // =========================================================
 // [FOC 제어 핸들 구조체]

@@ -23,6 +23,7 @@
 #include "stm32h7xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "lptim.h"
 #include "adc.h"
 #include "tim.h"
 #include "foc.h"
@@ -70,6 +71,7 @@ extern DMA_HandleTypeDef hdma_dac1_ch1;
 extern DAC_HandleTypeDef hdac1;
 extern DMA_HandleTypeDef hdma_i2c1_rx;
 extern I2C_HandleTypeDef hi2c1;
+extern LPTIM_HandleTypeDef hlptim3;
 extern SD_HandleTypeDef hsd1;
 extern DMA_HandleTypeDef hdma_spi4_tx;
 extern SPI_HandleTypeDef hspi4;
@@ -77,7 +79,6 @@ extern TIM_HandleTypeDef htim6;
 extern TIM_HandleTypeDef htim7;
 extern TIM_HandleTypeDef htim13;
 extern TIM_HandleTypeDef htim14;
-extern TIM_HandleTypeDef htim16;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -431,20 +432,6 @@ void OTG_FS_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles TIM16 global interrupt.
-  */
-void TIM16_IRQHandler(void)
-{
-  /* USER CODE BEGIN TIM16_IRQn 0 */
-
-  /* USER CODE END TIM16_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim16);
-  /* USER CODE BEGIN TIM16_IRQn 1 */
-
-  /* USER CODE END TIM16_IRQn 1 */
-}
-
-/**
   * @brief This function handles ADC3 global interrupt.
   */
 void ADC3_IRQHandler(void)
@@ -472,7 +459,23 @@ void BDMA_Channel0_IRQHandler(void)
   /* USER CODE END BDMA_Channel0_IRQn 1 */
 }
 
+/**
+  * @brief This function handles LPTIM3 global interrupt.
+  */
+void LPTIM3_IRQHandler(void)
+{
+  /* USER CODE BEGIN LPTIM3_IRQn 0 */
+
+  /* USER CODE END LPTIM3_IRQn 0 */
+  HAL_LPTIM_IRQHandler(&hlptim3);
+  /* USER CODE BEGIN LPTIM3_IRQn 1 */
+
+  /* USER CODE END LPTIM3_IRQn 1 */
+}
+
 /* USER CODE BEGIN 1 */
+
+void HAL_LPTIM_PeriodElapsedCallback();
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim->Instance == TIM1) {
@@ -519,12 +522,26 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	}
 }
 
+void HAL_LPTIM_AutoReloadMatchCallback(LPTIM_HandleTypeDef *hlptim) {
+	if (hlptim->Instance == LPTIM3) {
+		LPTIM3_IRQ_Handler();
+	}
+	if (hlptim->Instance == LPTIM3) {
+		LPTIM4_IRQ_Handler();
+	}
+	if (hlptim->Instance == LPTIM3) {
+		LPTIM5_IRQ_Handler();
+	}
+}
+
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc) {
 	if (hadc->Instance == ADC1) {
 		ADC1_IRQ_Half_Handler();
-	} else if (hadc->Instance == ADC2) {
+	}
+	if (hadc->Instance == ADC2) {
 		ADC2_IRQ_Half_Handler();
-	} else if (hadc->Instance == ADC3) {
+	}
+	if (hadc->Instance == ADC3) {
 		ADC3_IRQ_Half_Handler();
 	}
 }

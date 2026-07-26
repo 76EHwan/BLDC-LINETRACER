@@ -9,7 +9,7 @@
 #define LEFT_MARK_SENSOR_INDEX 16
 #define RIGHT_MARK_SENSOR_INDEX 17
 
-#define POS_WINDOW_HALF     3
+#define POS_WINDOW_HALF   	3
 #define POS_WINDOW_SIZE     (POS_WINDOW_HALF * 2)
 
 #define LINE_N_SENSORS      16
@@ -67,6 +67,9 @@ extern const float line_sensor_pos[LINE_N_SENSORS];
 // sensor.c에서 관리되는 마커 기록용 로그 배열과 카운터
 extern CrossMarkerLog_t g_cross_log[CROSS_LOG_MAX];
 extern uint16_t g_cross_log_count;
+
+extern volatile uint16_t buzzer_timer_count;
+extern float_t g_buzzer_duration;
 
 void Sensor_Start();
 void Sensor_Stop();

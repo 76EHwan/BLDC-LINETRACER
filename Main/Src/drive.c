@@ -7,12 +7,17 @@
 #include "button.h"
 #include "sd_ui.h"
 #include "buzzer.h"
+#include "lptim.h"
+
+#define RAMP_TIM		(&htim14)
+#define Buzzer_LPTIM	(&hlptim3)
+#define Buzzer_LPTIM_IRQ_Handler	LPTIM3_IRQ_Handler
 
 // @formatter:off
 DriveParam_t driveData = {
-		.base_mps = 1.5f,
+		.base_mps = 2.3f,
 		.max_mps = 10.f,
-		.accel = 6.f,
+		.accel = 5.f,
 		.decel = 8.f,
 		.steer_gain_p = 12.f,
 		.steer_gain_d = 0.0f,
@@ -27,11 +32,17 @@ uint8_t g_total_R = 0;
 uint8_t g_total_C = 0;
 uint8_t g_total_STOP = 0;
 
+void Buzzer_LPTIM_IRQ_Handler() {
+	if (buzzer_timer_count > 0) {
+		buzzer_timer_count--;
+		if (buzzer_timer_count == 0) {
+			Buzzer_Stop();
+		}
+	}
+}
 // ============================================================================
 // 타이머 및 가감속(Ramp) 변수
 // ============================================================================
-volatile uint16_t buzzer_timer_count = 0;
-float_t g_buzzer_duration = 0.05f;
 
 float_t accel;
 float_t decel;
@@ -50,24 +61,26 @@ void Ramp_TIM_IRQ_Handler() {
 		g_current_base_mps -= decel * RAMP_DT;
 	else
 		g_current_base_mps = g_target_base_mps;
+	Steer_Motor();
 
-	count_irq++;
-
-	if (buzzer_timer_count > 0) {
-		buzzer_timer_count--;
-		if (buzzer_timer_count == 0)
-			Buzzer_Stop();
-	}
 }
 
 void Ramp_Start() {
 	g_target_base_mps = 0.f;
 	g_current_base_mps = 0.f;
-	HAL_TIM_Base_Start_IT(&htim14); // RAMP_TIM
+	HAL_TIM_Base_Start_IT(RAMP_TIM); // RAMP_TIM
 }
 
 void Ramp_Stop() {
-	HAL_TIM_Base_Stop_IT(&htim14);
+	HAL_TIM_Base_Stop_IT(RAMP_TIM);
+}
+
+void Buzzer_Discount_Start() {
+	HAL_LPTIM_Counter_Start_IT(Buzzer_LPTIM, 0);
+}
+
+void Buzzer_Discount_Stop() {
+	HAL_LPTIM_Counter_Stop_IT(Buzzer_LPTIM);
 }
 
 // ============================================================================
@@ -86,7 +99,7 @@ void Drive_Stop_At_Distance(float target_distance_m) {
 	g_is_braking = 1;
 
 	while (g_current_base_mps > 0.001f) {
-		Steer_Motor();
+
 	}
 	g_is_braking = 0;
 }
@@ -129,6 +142,8 @@ __STATIC_INLINE uint8_t Drive_Init_Sequence(void) {
 	steer_pid.Kd = driveData.steer_gain_d;
 	arm_pid_init_f32(&steer_pid, 1);
 
+	Buzzer_Discount_Start();
+
 	Sensor_Start();
 	HAL_Delay(10);
 	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
@@ -163,7 +178,6 @@ void Drive_First() {
 
 	while (!IR_Sensor.is_lost_position) {
 		CrossEvent_t cross = Cross_Detect_Update();
-		Steer_Motor();
 		if (cross != CROSS_NONE) {
 			if (Process_Marker_Event(cross))
 				break;
@@ -175,6 +189,7 @@ void Drive_First() {
 	uint32_t end_tick = HAL_GetTick();
 
 	HAL_Delay(500);
+	Buzzer_Discount_Stop();
 	Ramp_Stop();
 	MTR_Safe_Stop();
 	Sensor_Stop();
@@ -351,27 +366,24 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 			&& state->idx + 1 < ref_log_count) {
 		state->accel_active = 1;
 
-		// [수정된 부분 시작]
 		// 1. 다음 곡선/정지 마커가 나올 때까지의 연속된 직선 구간 거리를 모두 합산
 		float total_straight_dist = 0.0f;
 		for (uint16_t i = state->idx + 1; i < ref_log_count; i++) {
 			total_straight_dist += ref_log[i].dist_from_prev_m;
-
-			// 다음 구간이 가속 금지 구간(곡선 시작 또는 정지)이면 합산 중단
 			if (!seg_plan[i].accel_ok) {
 				break;
 			}
 		}
 		state->seg_len_predicted = total_straight_dist;
 
-		// 2. 이미 직전 구간부터 직선(가속 구간)이었다면 감속 대기 생략
-		// 단, 곡선을 빠져나와 처음 직선에 진입한 경우에는 기존처럼 대기(base_mps) 적용
+		// 2. 이미 직전 구간부터 직선이었다면 즉시 강제 가속
 		if (state->idx > 0 && seg_plan[state->idx - 1].accel_ok) {
-			// 가속 유지 (g_target_base_mps를 줄이지 않고 그대로 둠)
+			// 이미 가속 중인 상태이므로 8cm 대기를 무시하고 목표 속도를 최고 속도로 고정
+			g_target_base_mps = driveData.max_mps;
 		} else {
+			// 곡선에서 갓 빠져나왔을 때는 안정성을 위해 기본 속도로 잠시 대기
 			g_target_base_mps = driveData.base_mps;
 		}
-		// [수정된 부분 끝]
 
 	} else {
 		state->accel_active = 0;
@@ -384,6 +396,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 
 	return 0;
 }
+
 __STATIC_INLINE void Check_Distance_And_Brake(DriveSecondState_t *state) {
 	if (state->accel_active && !state->braking_started) {
 		float_t traveled = g_odom_distance_m - state->marker_start_dist;
@@ -393,11 +406,10 @@ __STATIC_INLINE void Check_Distance_And_Brake(DriveSecondState_t *state) {
 		float_t v2 = driveData.base_mps;
 		float_t brake_dist = 0.0f;
 
-		// 최고 속도 도달 여부와 무관하게 제동 거리를 확보하기 위한 타겟 속도 계산
-		float_t target_v = driveData.max_mps > v1 ? driveData.max_mps : v1;
-		if (target_v > v2) {
-			brake_dist = (target_v * target_v - v2 * v2)
-					/ (2.0f * driveData.decel) + BRAKE_MARGIN_M;
+		// 최고 속도가 아닌 현재 속도(v1)를 기준으로 제동 거리를 동적으로 계산
+		if (v1 > v2) {
+			brake_dist = (v1 * v1 - v2 * v2)
+					/ (2.0f * driveData.decel)+ BRAKE_MARGIN_M;
 		}
 
 		if (remaining <= brake_dist) {
@@ -405,7 +417,7 @@ __STATIC_INLINE void Check_Distance_And_Brake(DriveSecondState_t *state) {
 			g_target_base_mps = driveData.base_mps;
 			state->braking_started = 1;
 		} else if (traveled >= ACCEL_START_MARGIN_M) {
-			// ★ 누적 거리가 여유 거리(마커를 완전히 빠져나온 시점)를 초과하면 본격적으로 가속
+			// 누적 거리가 여유 거리(마커를 완전히 빠져나온 시점)를 초과하면 본격적으로 가속
 			g_target_base_mps = driveData.max_mps;
 		}
 	}
@@ -420,17 +432,16 @@ void Drive_Second() {
 
 	while (!IR_Sensor.is_lost_position) {
 		CrossEvent_t cross = Cross_Detect_Update();
-		Steer_Motor();
-
 		if (cross != CROSS_NONE) {
 			if (Process_Marker_Event_Second(cross, &state))
 				break;
 		}
-
 		Check_Distance_And_Brake(&state);
 	}
 	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
 	uint32_t end_tick = HAL_GetTick();
+
+	Buzzer_Discount_Stop();
 	HAL_Delay(500);
 	Ramp_Stop();
 	MTR_Safe_Stop();

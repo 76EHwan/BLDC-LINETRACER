@@ -25,11 +25,31 @@
 // ★ 주행 마커 txt 파일 전체 삭제 함수
 // ==========================================================
 void Delete_All_Marker_Logs(void) {
-	char filepath[64];
-	for (int i = 1; i <= 10; i++) {
-		sprintf(filepath, "/Drive_Data/save_slot_%d.txt", i);
-		f_unlink(filepath);
-	}
+    char filepath[64];
+    FATFS fs; // 로컬 파일 시스템 객체 생성
+    FRESULT res;
+
+    // 1. SD 카드 논리 드라이브("0:") 강제 마운트 (1 = 즉시 마운트)
+    if (f_mount(&fs, "0:", 1) != FR_OK) {
+        LCD_Printf(0, 8, "Del Mount Fail");
+        HAL_Delay(1000);
+        return; // 마운트 실패 시 함수 종료
+    }
+
+    // 2. 파일 삭제 루프 진행
+    for (int i = 1; i <= 10; i++) {
+        sprintf(filepath, "0:/Drive_Data/save_slot_%d.txt", i);
+        res = f_unlink(filepath);
+
+        // FR_NO_FILE(E4)은 파일이 없는 정상이므로 무시
+        if (res != FR_OK && res != FR_NO_FILE) {
+            LCD_Printf(0, 8, "Del Fail %-2d: E%d", i, res);
+            HAL_Delay(500);
+        }
+    }
+
+    // 3. 안전을 위해 삭제 작업 완료 후 마운트 해제
+    f_mount(NULL, "0:", 0);
 }
 
 void User_Init() {
