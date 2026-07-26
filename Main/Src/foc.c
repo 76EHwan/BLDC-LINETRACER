@@ -136,13 +136,13 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 	hfoc->pid_iq.Ki = DEFAULT_IQ_KI;
 	hfoc->pid_iq.Kd = 0.f;
 
-//	hfoc->spd_Kp = 0.0007f;
-//	hfoc->spd_Ki = 0.0015f;
-//	hfoc->spd_Kd = 0.000001f;      // 기본은 0에서 시작, 필요 시 �
+//	hfoc->spd_Kp = 0.0f;
+//	hfoc->spd_Ki = 0.0f;
+//	hfoc->spd_Kd = 0.0f;
 
 	hfoc->spd_Kp = 0.0005f;
 	hfoc->spd_Ki = 0.0001f;
-	hfoc->spd_Kd = 0.000001f;
+	hfoc->spd_Kd = 0.000001f;      // 기본은 0에서 시작, 필요 시 �
 
 	hfoc->iq_limit = SPD_IQ_LIMIT;
 
