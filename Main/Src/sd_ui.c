@@ -153,15 +153,15 @@ FRESULT Load_FOC_Parameters(void) {
 uint8_t Select_Save_Slot(void) {
 	static uint8_t slot = 1;
 	UserInput_t btn = INPUT_CMD_NONE;
-	LCD_Printf(0, 4, "Select Save Slot");
-	LCD_Printf(0, 5, "[K Hold] to Save");
+	LCD_Printf(0, 5, "Select Save Slot");
+	LCD_Printf(0, 6, "[K Hold] to Save");
 
 	while ((btn = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
 		if (slot > 10)
 				slot = 1;
 			if (slot < 1)
 				slot = 10;
-		LCD_Printf(0, 2, "Slot: %-2d", slot);
+		LCD_Printf(0, 8, "Slot: %-2d", slot);
 		switch (btn) {
 		case INPUT_CMD_L_SINGLE:
 		case INPUT_CMD_L_HOLD:
