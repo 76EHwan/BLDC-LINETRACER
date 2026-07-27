@@ -9,6 +9,10 @@
 #define RAMP_DT		0.0005f
 #define Ramp_TIM_IRQ_Handler TIM14_IRQ_Handler
 
+#define SENSOR_DIST_L       0.13f  // 바퀴 회전 축 중심부터 센서바까지의 앞뒤 거리
+#define WHEEL_TRACK_W       0.186f  // 좌우 바퀴 중심 사이의 간격
+#define SENSOR_HALF_WIDTH   0.08f // 센서바 정중앙부터 맨 끝 15번 센서까지의 거리
+
 typedef struct {
 	float_t mpsL;
 	float_t mpsR;

@@ -124,29 +124,42 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 		foc_R.speed_loop_en = 0;
 	}
 
-	foc_L.target_Id = 0.0f; foc_R.target_Id = 0.0f;
-	foc_L.target_Iq = 0.0f; foc_R.target_Iq = 0.0f;
-	foc_L.target_omega = 0.0f; foc_R.target_omega = 0.0f;
-	foc_L.spd_integ = 0.0f; foc_R.spd_integ = 0.0f;
+	foc_L.target_Id = 0.0f;
+	foc_R.target_Id = 0.0f;
+	foc_L.target_Iq = 0.0f;
+	foc_R.target_Iq = 0.0f;
+	foc_L.target_omega = 0.0f;
+	foc_R.target_omega = 0.0f;
+	foc_L.spd_integ = 0.0f;
+	foc_R.spd_integ = 0.0f;
 
 	foc_L.enc_prev_cnt = (uint16_t) foc_L.LPTIMx->Instance->CNT;
 	foc_R.enc_prev_cnt = (uint16_t) foc_R.LPTIMx->Instance->CNT;
 
-	if (mode != FOC_MODE_SVPWM_NO_SPIN) MTR_Start();
-	if (mode == FOC_MODE_SPEED_LOOP) HAL_TIM_Base_Start_IT(TIM_SPEED_LOOP);
+	if (mode != FOC_MODE_SVPWM_NO_SPIN)
+		MTR_Start();
+	if (mode == FOC_MODE_SPEED_LOOP)
+		HAL_TIM_Base_Start_IT(TIM_SPEED_LOOP);
 }
 
 void MTR_Safe_Stop(void) {
 	HAL_TIM_Base_Stop_IT(TIM_SPEED_LOOP);
 
-	foc_L.is_running = 0; foc_R.is_running = 0;
-	foc_L.foc_svpwm_en = 0; foc_R.foc_svpwm_en = 0;
-	foc_L.speed_loop_en = 0; foc_R.speed_loop_en = 0;
+	foc_L.is_running = 0;
+	foc_R.is_running = 0;
+	foc_L.foc_svpwm_en = 0;
+	foc_R.foc_svpwm_en = 0;
+	foc_L.speed_loop_en = 0;
+	foc_R.speed_loop_en = 0;
 
-	foc_L.target_Id = 0.0f; foc_R.target_Id = 0.0f;
-	foc_L.target_Iq = 0.0f; foc_R.target_Iq = 0.0f;
-	foc_L.target_omega = 0.0f; foc_R.target_omega = 0.0f;
-	foc_L.spd_integ = 0.0f; foc_R.spd_integ = 0.0f;
+	foc_L.target_Id = 0.0f;
+	foc_R.target_Id = 0.0f;
+	foc_L.target_Iq = 0.0f;
+	foc_R.target_Iq = 0.0f;
+	foc_L.target_omega = 0.0f;
+	foc_R.target_omega = 0.0f;
+	foc_L.spd_integ = 0.0f;
+	foc_R.spd_integ = 0.0f;
 
 	MTR_Stop();
 	Encoder_Stop();
@@ -187,8 +200,9 @@ void Steer_Motor() {
 	if (raw_atten < filtered_atten) {
 		filtered_atten = raw_atten;
 	} else {
-		#define LPF_ALPHA 0.98f
-		filtered_atten = (LPF_ALPHA * filtered_atten) + ((1.0f - LPF_ALPHA) * raw_atten);
+#define LPF_ALPHA 0.998f
+		filtered_atten = (LPF_ALPHA * filtered_atten)
+				+ ((1.0f - LPF_ALPHA) * raw_atten);
 	}
 
 	// 필터가 적용된 실제 주행 속도
@@ -268,7 +282,8 @@ void MTR_Read_Register() {
 }
 
 void MTR_Update_Setup() {
-	MTR_FOC_PWM_DIS();
+	MTR_FOC_PWM_DIS()
+	;
 	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
 	FOC_Init_Motor(&foc_R, &htim4, &hadc1, &hlptim1);
 
@@ -294,7 +309,8 @@ void MTR_Update_Setup() {
 	HAL_Delay(1000);
 
 	LCD_Clear();
-	MTR_FOC_PWM_EN();
+	MTR_FOC_PWM_EN()
+	;
 }
 
 void MTR_Simple_Control() {
@@ -439,8 +455,10 @@ void MTR_Simple_FOC() {
 			break;
 		}
 
-		if (omega > 2000.0f) omega = 2000.0f;
-		if (omega < -2000.0f) omega = -2000.0f;
+		if (omega > 2000.0f)
+			omega = 2000.0f;
+		if (omega < -2000.0f)
+			omega = -2000.0f;
 
 		foc_L.omega_e = omega;
 		foc_R.omega_e = omega;
@@ -456,8 +474,10 @@ void MTR_Simple_FOC() {
 		LCD_Printf(0, 8, "IbL:%6.3f", foc_L.I_b);
 		LCD_Printf(0, 9, "IaR:%6.3f", foc_R.I_a);
 		LCD_Printf(0, 10, "IbR:%6.3f", foc_R.I_b);
-		LCD_Printf(0, 11, "r1:%5d %5d", (uint16_t) ADC1->JDR1, (uint16_t) ADC1->JDR2);
-		LCD_Printf(0, 12, "r2:%5d %5d", (uint16_t) ADC2->JDR1, (uint16_t) ADC2->JDR2);
+		LCD_Printf(0, 11, "r1:%5d %5d", (uint16_t) ADC1->JDR1,
+				(uint16_t) ADC1->JDR2);
+		LCD_Printf(0, 12, "r2:%5d %5d", (uint16_t) ADC2->JDR1,
+				(uint16_t) ADC2->JDR2);
 		LCD_Printf(0, 13, "wmeasL:%6.1f", foc_L.omega_e_meas);
 	}
 }
@@ -530,10 +550,12 @@ void MTR_Current_Tune_Loop() {
 		case INPUT_CMD_D_HOLD:
 			if (sel == 0) {
 				foc_L.pid_id.Kp -= step_kp;
-				if (foc_L.pid_id.Kp < 0.0f) foc_L.pid_id.Kp = 0.0f;
+				if (foc_L.pid_id.Kp < 0.0f)
+					foc_L.pid_id.Kp = 0.0f;
 			} else {
 				foc_L.pid_id.Ki -= step_ki;
-				if (foc_L.pid_id.Ki < 0.0f) foc_L.pid_id.Ki = 0.0f;
+				if (foc_L.pid_id.Ki < 0.0f)
+					foc_L.pid_id.Ki = 0.0f;
 			}
 			arm_pid_init_f32(&foc_L.pid_id, 0);
 			break;
@@ -586,12 +608,24 @@ void MTR_Speed_FOC() {
 		case INPUT_CMD_R_SINGLE:
 		case INPUT_CMD_R_HOLD:
 			omega += 50.0f;
-			if (omega > 2000.0f) omega = 2000.0f;
+			if (omega > 2000.0f)
+				omega = 2000.0f;
+			break;
+		case INPUT_CMD_R_DOUBLE:
+			omega += 250.0f;
+			if (omega > 2000.0f)
+				omega = 2000.0f;
 			break;
 		case INPUT_CMD_L_SINGLE:
 		case INPUT_CMD_L_HOLD:
 			omega -= 50.0f;
-			if (omega < -2000.0f) omega = -2000.0f;
+			if (omega < -2000.0f)
+				omega = -2000.0f;
+			break;
+		case INPUT_CMD_L_DOUBLE:
+			omega -= 250.0f;
+			if (omega < -2000.0f)
+				omega = -2000.0f;
 			break;
 		case INPUT_CMD_K_SINGLE:
 			sel = (sel + 1) % 5;
@@ -600,21 +634,28 @@ void MTR_Speed_FOC() {
 		case INPUT_CMD_U_HOLD:
 			switch (sel) {
 			case 0:
-				foc_L.pid_iq.Kp += step_iq_kp; foc_R.pid_iq.Kp += step_iq_kp;
-				arm_pid_init_f32(&foc_L.pid_iq, 0); arm_pid_init_f32(&foc_R.pid_iq, 0);
+				foc_L.pid_iq.Kp += step_iq_kp;
+				foc_R.pid_iq.Kp += step_iq_kp;
+				arm_pid_init_f32(&foc_L.pid_iq, 0);
+				arm_pid_init_f32(&foc_R.pid_iq, 0);
 				break;
 			case 1:
-				foc_L.pid_iq.Ki += step_iq_ki; foc_R.pid_iq.Ki += step_iq_ki;
-				arm_pid_init_f32(&foc_L.pid_iq, 0); arm_pid_init_f32(&foc_R.pid_iq, 0);
+				foc_L.pid_iq.Ki += step_iq_ki;
+				foc_R.pid_iq.Ki += step_iq_ki;
+				arm_pid_init_f32(&foc_L.pid_iq, 0);
+				arm_pid_init_f32(&foc_R.pid_iq, 0);
 				break;
 			case 2:
-				foc_L.spd_Kp += step_spd_kp; foc_R.spd_Kp += step_spd_kp;
+				foc_L.spd_Kp += step_spd_kp;
+				foc_R.spd_Kp += step_spd_kp;
 				break;
 			case 3:
-				foc_L.spd_Ki += step_spd_ki; foc_R.spd_Ki += step_spd_ki;
+				foc_L.spd_Ki += step_spd_ki;
+				foc_R.spd_Ki += step_spd_ki;
 				break;
 			case 4:
-				foc_L.spd_Kd += step_spd_kd; foc_R.spd_Kd += step_spd_kd;
+				foc_L.spd_Kd += step_spd_kd;
+				foc_R.spd_Kd += step_spd_kd;
 				break;
 			}
 			break;
@@ -623,29 +664,36 @@ void MTR_Speed_FOC() {
 			switch (sel) {
 			case 0:
 				foc_L.pid_iq.Kp -= step_iq_kp;
-				if (foc_L.pid_iq.Kp < 0.0f) foc_L.pid_iq.Kp = 0.0f;
+				if (foc_L.pid_iq.Kp < 0.0f)
+					foc_L.pid_iq.Kp = 0.0f;
 				foc_R.pid_iq.Kp = foc_L.pid_iq.Kp;
-				arm_pid_init_f32(&foc_L.pid_iq, 0); arm_pid_init_f32(&foc_R.pid_iq, 0);
+				arm_pid_init_f32(&foc_L.pid_iq, 0);
+				arm_pid_init_f32(&foc_R.pid_iq, 0);
 				break;
 			case 1:
 				foc_L.pid_iq.Ki -= step_iq_ki;
-				if (foc_L.pid_iq.Ki < 0.0f) foc_L.pid_iq.Ki = 0.0f;
+				if (foc_L.pid_iq.Ki < 0.0f)
+					foc_L.pid_iq.Ki = 0.0f;
 				foc_R.pid_iq.Ki = foc_L.pid_iq.Ki;
-				arm_pid_init_f32(&foc_L.pid_iq, 0); arm_pid_init_f32(&foc_R.pid_iq, 0);
+				arm_pid_init_f32(&foc_L.pid_iq, 0);
+				arm_pid_init_f32(&foc_R.pid_iq, 0);
 				break;
 			case 2:
 				foc_L.spd_Kp -= step_spd_kp;
-				if (foc_L.spd_Kp < 0.0f) foc_L.spd_Kp = 0.0f;
+				if (foc_L.spd_Kp < 0.0f)
+					foc_L.spd_Kp = 0.0f;
 				foc_R.spd_Kp = foc_L.spd_Kp;
 				break;
 			case 3:
 				foc_L.spd_Ki -= step_spd_ki;
-				if (foc_L.spd_Ki < 0.0f) foc_L.spd_Ki = 0.0f;
+				if (foc_L.spd_Ki < 0.0f)
+					foc_L.spd_Ki = 0.0f;
 				foc_R.spd_Ki = foc_L.spd_Ki;
 				break;
 			case 4:
 				foc_L.spd_Kd -= step_spd_kd;
-				if (foc_L.spd_Kd < 0.0f) foc_L.spd_Kd = 0.0f;
+				if (foc_L.spd_Kd < 0.0f)
+					foc_L.spd_Kd = 0.0f;
 				foc_R.spd_Kd = foc_L.spd_Kd;
 				break;
 			}
@@ -662,9 +710,12 @@ void MTR_Speed_FOC() {
 
 		LCD_Printf(0, 0, "%cIqKp:%6.3f", sel == 0 ? '>' : ' ', foc_L.pid_iq.Kp);
 		LCD_Printf(0, 1, "%cIqKi:%6.3f", sel == 1 ? '>' : ' ', foc_L.pid_iq.Ki);
-		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ', foc_L.spd_Kp * 1000);
-		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ', foc_L.spd_Ki * 1000);
-		LCD_Printf(0, 4, "%cSpKd:%6.3f", sel == 4 ? '>' : ' ', foc_L.spd_Kd * 1000);
+		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ',
+				foc_L.spd_Kp * 1000);
+		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ',
+				foc_L.spd_Ki * 1000);
+		LCD_Printf(0, 4, "%cSpKd:%6.3f", sel == 4 ? '>' : ' ',
+				foc_L.spd_Kd * 1000);
 		LCD_Printf(0, 6, "ref:%6.1f", omega);
 		LCD_Printf(0, 7, "SpdL:%6.1f", foc_L.omega_e_meas);
 		LCD_Printf(0, 8, "SpdR :%6.1f", foc_R.omega_e_meas);

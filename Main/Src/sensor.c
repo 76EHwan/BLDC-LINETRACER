@@ -67,7 +67,7 @@ void Sensor_Start() {
 	IR_Sensor.data->idx = 0;
 	IR_Sensor.scan_group = 0;
 	HAL_ADCEx_Calibration_Start(SENSOR_ADC_HANDLE, ADC_CALIB_OFFSET,
-			ADC_SINGLE_ENDED);
+	ADC_SINGLE_ENDED);
 	HAL_StatusTypeDef ret = HAL_ADC_Start_DMA(SENSOR_ADC_HANDLE,
 			(uint32_t*) adc3_buffer, 1);
 	if (ret != HAL_OK) {
@@ -160,9 +160,12 @@ static uint8_t g_accum_left = 0;
 static uint8_t g_accum_right = 0;
 static uint16_t g_accum_center_state = 0;
 
-float Sensor_Get_Position(void) {
+float_t Sensor_Get_Position(void) {
 	static int8_t prev_peak_idx = LINE_N_SENSORS / 2;
 	static float prev_position = 0.0f;
+
+	static uint16_t lost_counter = 0;
+	static uint8_t force_full_scan = 0;
 
 	uint16_t max_val = 0;
 	int8_t current_peak_idx = LINE_N_SENSORS / 2;
@@ -170,44 +173,37 @@ float Sensor_Get_Position(void) {
 
 	uint16_t state16 = (uint16_t) (IR_Sensor.data->state & 0xFFFF);
 
-	if (IR_Sensor.is_lost_position) {
+	if (force_full_scan || IR_Sensor.is_lost_position) {
 		for (int8_t i = 0; i < LINE_N_SENSORS; i++) {
 			if (IR_Sensor.data->normalized[i] > max_val) {
 				max_val = IR_Sensor.data->normalized[i];
 				current_peak_idx = i;
 			}
 		}
+		force_full_scan = 0;
 	} else {
 		int8_t search_start = prev_peak_idx - POS_WINDOW_HALF;
 		int8_t search_end = prev_peak_idx + POS_WINDOW_HALF;
 
-		if (search_start < 0)
-			search_start = 0;
-		if (search_end >= LINE_N_SENSORS)
-			search_end = LINE_N_SENSORS - 1;
+		if (search_start < 0) search_start = 0;
+		if (search_end >= LINE_N_SENSORS) search_end = LINE_N_SENSORS - 1;
 
 		uint8_t window_len = search_end - search_start + 1;
 		uint32_t window_mask = ((1U << window_len) - 1) << search_start;
 		uint8_t active_in_window = __builtin_popcount(state16 & window_mask);
 
-		// ★ 추가: 마커(+, 좌, 우 등)를 판독 중일 때는 라인 탐색을 멈추고 윈도우를 이전 위치에 강제 고정
-		if (g_marker_state == MARKER_STATE_READING) {
+		for (int8_t i = search_start; i <= search_end; i++) {
+			if (IR_Sensor.data->normalized[i] > max_val) {
+				max_val = IR_Sensor.data->normalized[i];
+				current_peak_idx = i;
+			}
+		}
+
+		// ★ 판단: 십자 마커 발견 시
+		if (active_in_window > 6) {
 			current_peak_idx = prev_peak_idx;
 			max_val = IR_Sensor.data->normalized[current_peak_idx];
-			is_cross_line = 1; // 강제로 가중평균 무시하고 직진하도록 플래그 세팅
-		} else {
-			for (int8_t i = search_start; i <= search_end; i++) {
-				if (IR_Sensor.data->normalized[i] > max_val) {
-					max_val = IR_Sensor.data->normalized[i];
-					current_peak_idx = i;
-				}
-			}
-
-			if (active_in_window > 3) {
-				current_peak_idx = prev_peak_idx;
-				max_val = IR_Sensor.data->normalized[current_peak_idx];
-				is_cross_line = 1;
-			}
+			is_cross_line = 1;
 		}
 	}
 
@@ -216,23 +212,15 @@ float Sensor_Get_Position(void) {
 	int8_t calc_start = current_peak_idx - POS_WINDOW_HALF;
 	int8_t calc_end = current_peak_idx + POS_WINDOW_HALF;
 
-	if (calc_start < 0)
-		calc_start = 0;
-	if (calc_end >= LINE_N_SENSORS)
-		calc_end = LINE_N_SENSORS - 1;
+	if (calc_start < 0) calc_start = 0;
+	if (calc_end >= LINE_N_SENSORS) calc_end = LINE_N_SENSORS - 1;
 
 	uint8_t mark_left = 0, mark_right = 0;
 	for (int8_t i = 0; i < calc_start; i++) {
-		if (state16 & (1U << i)) {
-			mark_left = 1;
-			break;
-		}
+		if (state16 & (1U << i)) { mark_left = 1; break; }
 	}
 	for (int8_t i = calc_end + 1; i < LINE_N_SENSORS; i++) {
-		if (state16 & (1U << i)) {
-			mark_right = 1;
-			break;
-		}
+		if (state16 & (1U << i)) { mark_right = 1; break; }
 	}
 	IR_Sensor.data->mark_left = mark_left;
 	IR_Sensor.data->mark_right = mark_right;
@@ -246,24 +234,36 @@ float Sensor_Get_Position(void) {
 	uint32_t total_weight = 0;
 
 	for (int8_t i = calc_start; i <= calc_end; i++) {
-		uint32_t amplified_val = (IR_Sensor.data->normalized[i] * scale_factor)
-				>> 8;
-		if (amplified_val > 255)
-			amplified_val = 255;
+		uint32_t amplified_val = (IR_Sensor.data->normalized[i] * scale_factor) >> 8;
+		if (amplified_val > 255) amplified_val = 255;
 		weighted_sum += (float) amplified_val * line_sensor_pos[i];
 		total_weight += amplified_val;
 	}
 
-	if (total_weight > IR_Sensor.data->line_lost_sum_min) {
+	// ★ 핵심: max_val > 40 조건을 추가하여 미세 노이즈가 라인으로 둔갑하는 현상 차단
+	if (total_weight > IR_Sensor.data->line_lost_sum_min && max_val > 40) {
 		IR_Sensor.is_lost_position = 0;
+		lost_counter = 0;
+
+		// ★ 핵심: 십자 마커에서는 무조건 강제 직진(0.0f)을 반환하여 흔들림 원천 봉쇄
+		if (is_cross_line) {
+			prev_position = 0.0f;
+			return 0.0f;
+		}
+
 		float current_position = weighted_sum / (float) total_weight;
-		if (is_cross_line)
-			return prev_position;
 		prev_position = current_position;
 		return current_position;
 	} else {
-		IR_Sensor.is_lost_position = 1;
-		return 0.0f;
+		force_full_scan = 1;
+		lost_counter++;
+
+		if (lost_counter > 50) {
+			IR_Sensor.is_lost_position = 1;
+			lost_counter = 0;
+		}
+
+		return prev_position;
 	}
 }
 
@@ -294,6 +294,9 @@ CrossEvent_t Cross_Detect_Update(void) {
 			g_accum_left = left_marker;
 			g_accum_right = right_marker;
 			g_accum_center_state = current_center_state;
+
+			// ★ 마커 판독 시작: E3 LED ON
+			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
 		}
 		break;
 	case MARKER_STATE_READING:
@@ -320,6 +323,9 @@ CrossEvent_t Cross_Detect_Update(void) {
 				event = CROSS_RIGHT;
 			}
 			Cross_Detect_Reset();
+
+			// ★ 마커 판독 종료: E3 LED OFF
+			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
 		}
 		break;
 	}
@@ -337,6 +343,8 @@ void Cross_Log_Push(CrossEvent_t type) {
 	CrossMarkerLog_t *log = &g_cross_log[g_cross_log_count % CROSS_LOG_MAX];
 	log->type = type;
 	log->dist_from_prev_m = g_odom_distance_m;
+	log->yaw_angle = imu_data.Yaw_Angle; // ★ 현재 IMU Yaw 각도 기록
+
 	g_cross_log_count++;
 	Odom_Reset();
 }
@@ -508,24 +516,21 @@ void Sensor_Position_Printf() {
 	Button_Wait_Release(&btn_k);
 }
 
-void IMU_Test() {
+void IMU_Test(void) {
 	LCD_Printf(0, 0, "IMU Test");
-	uint32_t last_tick = HAL_GetTick();
 
-	LSM6DS3_ReadGyroZ_DMA_Start();
+	// 테스트 시작 전 초기 각도를 0으로 리셋 (새로 만드신 함수 사용)
+	LSM6DS3_Reset_Yaw();
 
+	// K 버튼을 길게 누를 때까지 반복
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		uint32_t now = HAL_GetTick();
-		float dt = (now - last_tick) / 1000.0f;
-		last_tick = now;
+		// 백그라운드 인터럽트에서 알아서 계산 중인 각도를 그대로 가져와 출력
+		LCD_Printf(0, 1, "Yaw: %+6.3f", imu_data.Yaw_Angle);
 
-		if (imu_gyro_z_ready) {
-			imu_gyro_z_ready = 0;
-			LSM6DS3_UpdateYaw(&imu_data, dt);
-			LSM6DS3_ReadGyroZ_DMA_Start();
-		}
-
-		LCD_Printf(0, 1, "%6.3f", imu_data.Yaw_Angle);
+		// LCD 화면이 너무 빠르게 갱신되어 깜빡거리는 것을 방지
+		HAL_Delay(50);
 	}
+
+	LCD_Clear();
 	Button_Wait_Release(&btn_k);
 }

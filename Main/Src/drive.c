@@ -1,4 +1,5 @@
 #include "main.h"
+#include "dac.h"
 #include "drive.h"
 #include "sensor.h"
 #include "foc.h"
@@ -8,6 +9,7 @@
 #include "sd_ui.h"
 #include "buzzer.h"
 #include "lptim.h"
+#include "lsm6ds3tr-c.h"
 
 #define RAMP_TIM		(&htim14)
 #define Buzzer_LPTIM	(&hlptim3)
@@ -15,12 +17,12 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-		.base_mps = 2.3f,
+		.base_mps = 1.8f,
 		.max_mps = 10.f,
-		.accel = 5.f,
-		.decel = 8.f,
-		.steer_gain_p = 12.f,
-		.steer_gain_d = 0.0f,
+		.accel = 4.f,
+		.decel = 4.f,
+		.steer_gain_p = 6.f,
+		.steer_gain_d = 0.05f,
 		.pos_atten_gain = 0.f,
 		.pit_in_distance_m = 0.15f,
 		.fan_en = 0,
@@ -40,6 +42,56 @@ void Buzzer_LPTIM_IRQ_Handler() {
 		}
 	}
 }
+
+// ============================================================================
+// 사용자 로봇의 실제 하드웨어 제원에 맞게 반드시 실측하여 입력해야 하는 값 (단위: 미터)
+// ============================================================================
+// 조향 마진 (이상적인 물리적 회전값의 몇 배까지 PID를 허용할 것인가)
+// 1.0에 가까울수록 차가 둔해지고(언더스티어), 너무 크면 다시 오버스티어가 납니다.
+#define STEER_SAFETY_MARGIN 1.5f
+
+void Steer_Motor_With_Anti_Oversteer(void) {
+	// 1. 센서 에러값을 가져오고 기존처럼 PID 연산 수행 (-1.0 ~ 1.0 범위)
+	float_t sensor_pos = Sensor_Get_Position();
+	float_t pid_steer = arm_pid_f32(&steer_pid, 0.0f - sensor_pos);
+
+	float_t final_steer = pid_steer; // 최종 적용될 조향값
+
+	// 2. 에러가 있을 때만 오버스티어 방지 로직 개입
+	if (sensor_pos != 0.0f) {
+		// 비율값(-1.0 ~ 1.0)을 실제 물리적 측면 오차 거리 x(미터)로 변환
+		float_t x = sensor_pos * SENSOR_HALF_WIDTH;
+
+		// 기하학적 곡률 반경 R 계산 (퓨어 퍼슈트 원리)
+		float_t R = (SENSOR_DIST_L * SENSOR_DIST_L + (x * x)) / (2.0f * x);
+		if (R < 0)
+			R = -R; // 반경은 절대값 처리
+
+		// 현재 직진 속도(V)에서 반경 R을 돌기 위해 필요한 이상적인 조향 속도차
+		// g_current_base_mps는 drive.c에서 관리되는 현재 베이스 속도
+		float_t ideal_steer = g_current_base_mps * (WHEEL_TRACK_W / R);
+
+		// 3. 허용 가능한 최대 조향 한계치(Limit) 설정
+		float_t max_steer_limit = ideal_steer * STEER_SAFETY_MARGIN;
+
+		// 4. PID 제어값이 물리적 한계를 넘어가려 하면 강제로 잘라버림 (Clamp)
+		if (final_steer > max_steer_limit) {
+			final_steer = max_steer_limit;
+		} else if (final_steer < -max_steer_limit) {
+			final_steer = -max_steer_limit;
+		}
+	}
+
+	// 5. 최종 안전하게 Clamp된 조향값을 양쪽 모터에 인가
+	float_t mps_L = g_current_base_mps - final_steer;
+	float_t mps_R = g_current_base_mps + final_steer;
+
+	foc_L.target_omega = mps_L * MPS_TO_OMEGA;
+	foc_R.target_omega = -mps_R * MPS_TO_OMEGA;
+	foc_L.omega_setpoint = foc_L.target_omega;
+	foc_R.omega_setpoint = foc_R.target_omega;
+}
+
 // ============================================================================
 // 타이머 및 가감속(Ramp) 변수
 // ============================================================================
@@ -61,8 +113,8 @@ void Ramp_TIM_IRQ_Handler() {
 		g_current_base_mps -= decel * RAMP_DT;
 	else
 		g_current_base_mps = g_target_base_mps;
-	Steer_Motor();
-
+//	Steer_Motor();
+	Steer_Motor_With_Anti_Oversteer();
 }
 
 void Ramp_Start() {
@@ -80,6 +132,7 @@ void Buzzer_Discount_Start() {
 }
 
 void Buzzer_Discount_Stop() {
+	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 0);
 	HAL_LPTIM_Counter_Stop_IT(Buzzer_LPTIM);
 }
 
@@ -148,13 +201,14 @@ __STATIC_INLINE uint8_t Drive_Init_Sequence(void) {
 	HAL_Delay(10);
 	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
 	Ramp_Start();
-
+	LSM6DS3_Reset_Yaw();
 	g_target_base_mps = driveData.base_mps;
 	return 1;
 }
 
 __STATIC_INLINE uint8_t Process_Marker_Event(CrossEvent_t cross) {
 	if (cross == CROSS_STOP) {
+		LSM6DS3_Reset_Yaw();
 		g_total_STOP++;
 		if (g_total_STOP >= 2)
 			return 1;
@@ -176,6 +230,9 @@ void Drive_First() {
 
 	uint32_t start_tick = HAL_GetTick();
 
+	// ★ 추가: 라인 이탈 상태를 영구히 기억할 변수 선언
+	uint8_t exit_reason_lost = 0;
+
 	while (!IR_Sensor.is_lost_position) {
 		CrossEvent_t cross = Cross_Detect_Update();
 		if (cross != CROSS_NONE) {
@@ -184,27 +241,33 @@ void Drive_First() {
 		}
 	}
 
+	// ★ 추가: 루프를 빠져나온 즉시, 당시의 이탈 상태를 캡처하여 저장
+	if (IR_Sensor.is_lost_position) {
+		exit_reason_lost = 1;
+	}
+
 	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
 
 	uint32_t end_tick = HAL_GetTick();
 
 	HAL_Delay(500);
-	Buzzer_Discount_Stop();
 	Ramp_Stop();
+	Buzzer_Discount_Stop();
 	MTR_Safe_Stop();
 	Sensor_Stop();
 	Fan_Mtr_Stop();
 
 	float lap_time = (end_tick - start_tick) / 1000.0f;
 
-	if (IR_Sensor.is_lost_position) {
+	// ★ 수정: 변질될 위험이 있는 IR_Sensor 변수 대신, 캡처해둔 exit_reason_lost 사용
+	if (exit_reason_lost) {
 		LCD_Printf(0, 0, "Line Lost");
 	} else {
 		LCD_Printf(0, 0, "End");
 		LCD_Printf(0, 1, "L:%d", g_total_L);
 		LCD_Printf(0, 2, "R:%d", g_total_R);
 		LCD_Printf(0, 3, "C:%d", g_total_C);
-		LCD_Printf(0, 4, "T:%.2fs", lap_time); // ★ 랩타임 출력 추가
+		LCD_Printf(0, 4, "T:%.2fs", lap_time);
 		uint8_t slot = Select_Save_Slot();
 		Save_MarkerLog_To_SD(slot);
 	}
@@ -335,7 +398,7 @@ __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
 	HAL_Delay(10);
 	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
 	Ramp_Start();
-
+	LSM6DS3_Reset_Yaw();
 	g_target_base_mps = driveData.base_mps;
 	return 1;
 }
@@ -343,6 +406,7 @@ __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
 __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 		DriveSecondState_t *state) {
 	if (cross == CROSS_STOP) {
+		LSM6DS3_Reset_Yaw();
 		g_total_STOP++;
 		if (g_total_STOP >= 2)
 			return 1;
@@ -441,9 +505,9 @@ void Drive_Second() {
 	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
 	uint32_t end_tick = HAL_GetTick();
 
-	Buzzer_Discount_Stop();
 	HAL_Delay(500);
 	Ramp_Stop();
+	Buzzer_Discount_Stop();
 	MTR_Safe_Stop();
 	Sensor_Stop();
 	Fan_Mtr_Stop();

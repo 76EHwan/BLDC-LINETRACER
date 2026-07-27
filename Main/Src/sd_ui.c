@@ -15,6 +15,7 @@
 #include "sd_ui.h"
 #include "sensor.h"
 #include "user_init.h"
+#include "lsm6ds3tr-c.h"
 
 // =========================================================
 // [SD카드 저장 및 불러오기]
@@ -81,15 +82,17 @@ static const SDCard_ConfigEntry sensor_calib_table[] = {
 #define SENSOR_CALIB_COUNT	(sizeof(sensor_calib_table) / sizeof(sensor_calib_table[0]))
 
 FRESULT Sensor_Save_Calibration(void) {
-	return SDCard_SaveConfig(CALIBRATION_PATH, sensor_calib_table, SENSOR_CALIB_COUNT);
+	return SDCard_SaveConfig(CALIBRATION_PATH, sensor_calib_table,
+	SENSOR_CALIB_COUNT);
 }
 
 FRESULT Sensor_Load_Calibration(void) {
-	FRESULT res = SDCard_LoadConfig(CALIBRATION_PATH, sensor_calib_table, SENSOR_CALIB_COUNT);
-	if (res == FR_OK) IR_Sensor.is_calibration = 1;
+	FRESULT res = SDCard_LoadConfig(CALIBRATION_PATH, sensor_calib_table,
+	SENSOR_CALIB_COUNT);
+	if (res == FR_OK)
+		IR_Sensor.is_calibration = 1;
 	return res;
 }
-
 
 // =========================================================
 // FOC 파라미터 SD 카드 저장/로드
@@ -158,9 +161,9 @@ uint8_t Select_Save_Slot(void) {
 
 	while ((btn = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
 		if (slot > 10)
-				slot = 1;
-			if (slot < 1)
-				slot = 10;
+			slot = 1;
+		if (slot < 1)
+			slot = 10;
 		LCD_Printf(0, 8, "Slot: %-2d", slot);
 		switch (btn) {
 		case INPUT_CMD_L_SINGLE:
@@ -209,19 +212,22 @@ void Save_MarkerLog_To_SD(uint8_t slot_number) {
 	// 구분선 및 마커 헤더 기록
 	len += sprintf(log_buf + len, "===================\n");
 	len += sprintf(log_buf + len, "IDX\tTYPE\tDIST\n");
-	// @formatter:on
+				// @formatter:on
 
-	uint8_t count = (g_cross_log_count < CROSS_LOG_MAX) ? g_cross_log_count : CROSS_LOG_MAX;
+	uint8_t count =
+			(g_cross_log_count < CROSS_LOG_MAX) ?
+					g_cross_log_count : CROSS_LOG_MAX;
 
 	for (uint16_t i = 0; i < count; i++) {
 		CrossEvent_t type = g_cross_log[i].type;
-		float dist = g_cross_log[i].dist_from_prev_m;
-
+		float_t dist = g_cross_log[i].dist_from_prev_m;
+		float_t yaw = g_cross_log[i].yaw_angle;
 		const char *type_str = (type == CROSS_LEFT) ? "L" :
 								(type == CROSS_RIGHT) ? "R" :
 								(type == CROSS_CROSS) ? "C" : "U";
 
-		len += sprintf(log_buf + len, "%d\t%s\t%.3f m\n", i, type_str, dist);
+		len += sprintf(log_buf + len, "%d\t%s\t%.3f m\t%.1f deg\n", i, type_str,
+				dist, yaw);
 
 		if (len >= (int) sizeof(log_buf) - 64)
 			break;

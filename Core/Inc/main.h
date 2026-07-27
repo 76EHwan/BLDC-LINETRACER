@@ -180,6 +180,7 @@ void LED_Test();
 #define MTR_PWM_V_R_GPIO_Port GPIOB
 #define IMU_INT1_Pin GPIO_PIN_0
 #define IMU_INT1_GPIO_Port GPIOE
+#define IMU_INT1_EXTI_IRQn EXTI0_IRQn
 #define ENC_IN2_R_Pin GPIO_PIN_1
 #define ENC_IN2_R_GPIO_Port GPIOE
 

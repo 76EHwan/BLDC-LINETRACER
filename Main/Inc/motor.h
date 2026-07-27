@@ -11,7 +11,7 @@
 
 #define	MPS_TO_OMEGA 	(INV_TIRE_RADIUS * MOTOR_POLE_PAIRS * GEAR_RATIO)
 
-#define THREAD		0.225f	// 바퀴 끝에서 끝 거리는 22.5cm, 바퀴 중심 거리는 18.6cm
+#define THREAD		0.186f	// 바퀴 끝에서 끝 거리는 22.5cm, 바퀴 중심 거리는 18.6cm
 #define THREAD_DIV2	(THREAD / 2.f)
 
 typedef enum {
