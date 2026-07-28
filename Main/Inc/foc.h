@@ -21,7 +21,7 @@
 // 전류 센싱 스케일 팩터 (ADC Raw 값 -> 실제 전류 A 로 변환)
 // 공식: VREF / ADC_MAX / CSA_GAIN (또는 Shunt값에 따른 통합 계수)
 #define CURRENT_CSA_GAIN_MA		300
-#define CURRENT_SCALE           (3.3f / 65536.0f / CURRENT_CSA_GAIN_MA / 1000.f)
+#define CURRENT_SCALE           (3.3f / 65536.0f / (CURRENT_CSA_GAIN_MA / 1000.f))
 #define FOC_ADC_DMA_LENGTH      1           // DMA 버퍼 길이
 
 #define SPD_DT         	0.0005f
@@ -121,12 +121,12 @@ typedef struct {
 	float32_t spd_history[SPD_MA_WINDOW];
 	uint8_t spd_hist_idx;
 
-	float32_t pll_theta_est;    // PLL로 추정된 기계각 위치 (rad, 0 ~ 2*PI)
+	float32_t pll_theta_est; // PLL로 추정된 기계각 위치 (rad, 0 ~ 2*PI)
 	float32_t pll_omega_integ;  // PLL 루프 필터의 적분항 (rad/s)
 	float32_t pll_omega_est;    // PLL로 추정된 기계각속도 (rad/s)
 
 	float32_t pll_kp;           // PLL 비례 게인 (추천 초기값: 200.0f)
-	float32_t pll_ki;           // PLL 적분 게인 (추천 초기값: 10000.0f)
+	float32_t pll_ki;          // PLL 적분 게인 (추천 초기값: 10000.0f)
 
 } FOC_Handle_t;
 
@@ -143,13 +143,14 @@ extern float_t g_odom_distance_m;
 
 float32_t FOC_Get_VBus(void);
 
-void FOC_ADC_Start(void);
+void FOC_AStart(void);
 void FOC_Reset_State(FOC_Handle_t *hfoc);
 void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 		ADC_HandleTypeDef *ADCx, LPTIM_HandleTypeDef *LPTIMx);
 void FOC_Calibrate_Offset(FOC_Handle_t *hfoc);
 void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc);
-void FOC_Calibrate_Encoder_Offset_Both(FOC_Handle_t *hfoc_L, FOC_Handle_t *hfoc_R);
+void FOC_Calibrate_Encoder_Offset_Both(FOC_Handle_t *hfoc_L,
+		FOC_Handle_t *hfoc_R);
 void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc);
 
 float_t FOC_Meas_Mps(FOC_Handle_t *hfoc);
