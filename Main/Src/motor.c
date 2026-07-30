@@ -74,8 +74,8 @@ void MTR_Stop() {
 }
 
 void Encoder_Start() {
-	HAL_LPTIM_Encoder_Start((foc_L.LPTIMx), UINT16_MAX);
-	HAL_LPTIM_Encoder_Start((foc_R.LPTIMx), UINT16_MAX);
+	HAL_LPTIM_Encoder_Start((foc_L.LPTIMx), ENCODER_RESOLUTION - 1);
+	HAL_LPTIM_Encoder_Start((foc_R.LPTIMx), ENCODER_RESOLUTION - 1);
 }
 
 void Encoder_Stop() {
@@ -89,8 +89,9 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 
 	foc_L.enc_dir = -1;
 	foc_R.enc_dir = -1;
-	foc_L.omega_ramp_rate = 3000;
-	foc_R.omega_ramp_rate = 3000;
+
+	foc_L.omega_ramp_rate = 1000;
+	foc_R.omega_ramp_rate = 1000;
 
 	Encoder_Start();
 	FOC_ADC_Start();
@@ -104,6 +105,12 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 		LCD_Clear();
 	}
 	MTR_Stop();
+
+	// =========================================================================
+	// [추가] 캘리브레이션 및 정렬 과정에서 쌓인 적분기 오차와 상태를 여기서 최종 리셋!
+	// =========================================================================
+	FOC_Reset_State(&foc_L);
+	FOC_Reset_State(&foc_R);
 
 	if (mode == FOC_MODE_NO_SVPWM_SPIN) {
 		foc_L.foc_svpwm_en = 0;
@@ -163,6 +170,7 @@ void MTR_Safe_Stop(void) {
 
 	MTR_Stop();
 	Encoder_Stop();
+	FOC_ADC_Stop();
 	LCD_Clear();
 }
 
@@ -319,7 +327,7 @@ void MTR_Simple_Control() {
 
 	static int16_t angle = 0;
 	static uint16_t half_pwm = 2400;
-	static uint16_t max_pwm = 1000;
+	static uint16_t max_pwm = 600;
 
 	int16_t prev_angle = angle;
 	uint16_t enc_L_prev = (uint16_t) hlptim2.Instance->CNT;
@@ -412,8 +420,8 @@ void MTR_Simple_FOC() {
 	UserInput_t bt = INPUT_CMD_NONE;
 	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
 
-	foc_L.target_Iq = 0.001f;
-	foc_R.target_Iq = 0.001f;
+	foc_L.target_Iq = 0.01f;
+	foc_R.target_Iq = 0.01f;
 
 	float omega = 0.0f;
 
@@ -510,18 +518,30 @@ void MTR_Encoder_Test() {
 
 void MTR_Current_Tune_Loop() {
 	UserInput_t bt = INPUT_CMD_NONE;
+	// 누락된 Id 초기화 추가
 	MTR_Setup_And_Start(FOC_MODE_SVPWM_SPIN);
+
+	foc_L.pid_id.Kp = 0.f;
+	foc_L.pid_id.Ki = 0.f;
+	foc_R.pid_id.Kp = 0.f;
+	foc_R.pid_id.Ki = 0.f;
+
 	foc_L.pid_iq.Kp = 0.f;
 	foc_L.pid_iq.Ki = 0.f;
 	foc_R.pid_iq.Kp = 0.f;
 	foc_R.pid_iq.Ki = 0.f;
 
+	arm_pid_init_f32(&foc_L.pid_id, 1);
+	arm_pid_init_f32(&foc_R.pid_id, 1);
+	arm_pid_init_f32(&foc_L.pid_iq, 1);
+	arm_pid_init_f32(&foc_R.pid_iq, 1);
+
 	uint32_t last_toggle_time = HAL_GetTick();
 	uint8_t toggle_state = 0;
 
 	uint8_t sel = 0;
-	const float step_kp = 0.000001f;
-	const float step_ki = 0.000001f;
+	const float step_kp = 0.01f;
+	const float step_ki = 0.01f;
 
 	while (1) {
 		bt = Button_Get_Input();
@@ -597,8 +617,8 @@ void MTR_Speed_FOC() {
 
 	const float step_iq_kp = 0.05f;
 	const float step_iq_ki = 0.025f;
-	const float step_spd_kp = 0.00001f;
-	const float step_spd_ki = 0.00001f;
+	const float step_spd_kp = 0.0001f;
+	const float step_spd_ki = 0.01f;
 	const float step_spd_kd = 0.000001f;
 
 	while (1) {
@@ -712,17 +732,22 @@ void MTR_Speed_FOC() {
 		LCD_Printf(0, 1, "%cIqKi:%6.3f", sel == 1 ? '>' : ' ', foc_L.pid_iq.Ki);
 		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ',
 				foc_L.spd_Kp * 1000);
-		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ',
-				foc_L.spd_Ki * 1000);
+		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ', foc_L.spd_Ki);
 		LCD_Printf(0, 4, "%cSpKd:%6.3f", sel == 4 ? '>' : ' ',
 				foc_L.spd_Kd * 1000);
 		LCD_Printf(0, 6, "ref:%6.1f", omega);
 		LCD_Printf(0, 7, "SpdL:%6.1f", foc_L.omega_e_meas);
 		LCD_Printf(0, 8, "SpdR :%6.1f", foc_R.omega_e_meas);
-		LCD_Printf(0, 9, "IqL:%8.5f", foc_L.target_Iq);
-		LCD_Printf(0, 10, "IqcL:%8.5f", foc_L.I_q);
-		LCD_Printf(0, 11, "IqR:%8.5f", foc_R.target_Iq);
-		LCD_Printf(0, 12, "IqcR:%8.5f", foc_R.I_q);
+//		LCD_Printf(0, 9, "IqL:%8.5f", foc_L.target_Iq);
+//		LCD_Printf(0, 10, "IqcL:%8.5f", foc_L.I_q);
+//		LCD_Printf(0, 11, "IqR:%8.5f", foc_R.target_Iq);
+//		LCD_Printf(0, 12, "IqcR:%8.5f", foc_R.I_q);
+		LCD_Printf(0, 9, "IqcL:%8.5f", foc_L.I_q);
+		LCD_Printf(0, 10, "IqcR:%8.5f", foc_R.I_q);
+		LCD_Printf(0, 11, "r1:%5d %5d", (uint16_t) ADC1->JDR1,
+				(uint16_t) ADC1->JDR2);
+		LCD_Printf(0, 12, "r2:%5d %5d", (uint16_t) ADC2->JDR1,
+				(uint16_t) ADC2->JDR2);
 		LCD_Printf(0, 13, "Vbus:%5.3f", FOC_Get_VBus());
 	}
 }

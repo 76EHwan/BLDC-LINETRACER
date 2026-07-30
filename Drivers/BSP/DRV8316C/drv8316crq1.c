@@ -39,8 +39,8 @@ static const uint8_t DRV_DEFAULT_CTRL3 =
 //      DRV_CTRL3_PWM_100_DUTY_SEL_20KHZ |
         DRV_CTRL3_PWM_100_DUTY_SEL_40KHZ |
 // #3   OVP_SEL - 과전압 보호 기준치
-//      DRV_CTRL3_OVP_SEL_34V |
-        DRV_CTRL3_OVP_SEL_22V |
+        DRV_CTRL3_OVP_SEL_34V |
+//      DRV_CTRL3_OVP_SEL_22V |
 // #2   OVP_EN - 과전압 보호 활성화
 //      DRV_CTRL3_OVP_EN_DIS |      // OVP 끄기
         DRV_CTRL3_OVP_EN_EN |       // OVP 켜기
@@ -96,16 +96,16 @@ static const uint8_t DRV_DEFAULT_CTRL5 =
         DRV_CTRL5_EN_ASR_DIS |      // ASR 비활성화
 //      DRV_CTRL5_EN_ASR_EN |       // ASR 활성화 (발열 감소 추천)
 // #1~0 CSA_GAIN - 전류 센싱 증폭기(CSA) 게인 (V/A)
-#if CURRENT_CSA_GAIN_MA == 150
+#if CURRENT_CSA_GAIN_V_MA == 150
       DRV_CTRL5_CSA_GAIN_0_15VA;  // 0.15 V/A (대전류용)
 #endif
-#if CURRENT_CSA_GAIN_MA == 300
+#if CURRENT_CSA_GAIN_V_MA == 300
       	DRV_CTRL5_CSA_GAIN_0_3VA;   // 0.3 V/A
 #endif
-#if CURRENT_CSA_GAIN_MA == 600
+#if CURRENT_CSA_GAIN_V_MA == 600
       DRV_CTRL5_CSA_GAIN_0_6VA;   // 0.6 V/A (정밀 제어용 추천)
 #endif
-#if CURRENT_CSA_GAIN_MA == 1200
+#if CURRENT_CSA_GAIN_V_MA == 1200
       DRV_CTRL5_CSA_GAIN_1_2VA;   // 1.2 V/A
 #endif
 
@@ -134,10 +134,10 @@ static const uint8_t DRV_DEFAULT_CTRL6 =
 static const uint8_t DRV_DEFAULT_CTRL10 =
 // #7~5 Reserved
 // #4   DLYCMP_EN - 드라이버 지연 보상 기능
-        DRV_CTRL10_DLYCMP_DIS |     // 보상 기능 끄기
-//      DRV_CTRL10_DLYCMP_EN |      // 보상 기능 켜기
+//      DRV_CTRL10_DLYCMP_DIS |     // 보상 기능 끄기
+		DRV_CTRL10_DLYCMP_EN |      // 보상 기능 켜기
 // #3~0 DLY_TARGET - 목표 지연 시간 설정
-        DRV_CTRL10_DLY_TARGET_0US;  // 0 µs
+//      DRV_CTRL10_DLY_TARGET_0US;  // 0 µs
 //      DRV_CTRL10_DLY_TARGET_0_4US;// 0.4 µs
 //      DRV_CTRL10_DLY_TARGET_0_8US;// 0.8 µs
 //      DRV_CTRL10_DLY_TARGET_1_2US;// 1.2 µs
@@ -150,7 +150,7 @@ static const uint8_t DRV_DEFAULT_CTRL10 =
 //		DRV_CTRL10_DLY_TARGET_2_6US;// 2.6 µs
 //		DRV_CTRL10_DLY_TARGET_2_8US;// 2.8 µs
 //		DRV_CTRL10_DLY_TARGET_3US;	// 3 µs
-//		DRV_CTRL10_DLY_TARGET_3_2US;// 3.2 µs
+		DRV_CTRL10_DLY_TARGET_3_2US;// 3.2 µs
 
 
 // @formatter:on

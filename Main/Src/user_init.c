@@ -55,7 +55,7 @@ void Delete_All_Marker_Logs(void) {
 void User_Init() {
 	Button_init();
 	Buzzer_Init();
-	Buzzer_Start();
+//	Buzzer_Start();
 	LCD7789_Test();
 	LSM6DS3_Init();
 	Buzzer_Stop();
@@ -64,11 +64,15 @@ void User_Init() {
 	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
 	FOC_Init_Motor(&foc_R, &htim4, &hadc1, &hlptim1);
 
+	FOC_ADC_Start();
+
 	LCD_Printf(0, 6, "FOC L ADC Cali");
 	FOC_Calibrate_Offset(&foc_L);
 
 	LCD_Printf(0, 7, "FOC R ADC Cali");
 	FOC_Calibrate_Offset(&foc_R);
+
+	FOC_ADC_Stop();
 
 //	uint8_t encBuffer[3] = { 0 };
 //	MT6701_Init(&encDataL, encBuffer);
@@ -90,9 +94,9 @@ void User_Init() {
 	// ★ SD 카드 정상 인식 후 마커 기록 파일들 삭제 함수 호출
 	Delete_All_Marker_Logs();
 
-	if ((res = FOC_Parameters_InitOrLoad()) != FR_OK) {
-		LCD_Printf(0, 7, "FOC param save Fail");
-	}
+//	if ((res = FOC_Parameters_InitOrLoad()) != FR_OK) {
+//		LCD_Printf(0, 7, "FOC param save Fail");
+//	}
 
 	HAL_Delay(500);
 
