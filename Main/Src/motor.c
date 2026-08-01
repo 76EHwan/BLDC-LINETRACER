@@ -84,17 +84,27 @@ void Encoder_Stop() {
 }
 
 void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
-	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
-	FOC_Init_Motor(&foc_R, &htim4, &hadc1, &hlptim1);
+	FOC_Reset_State(&foc_L);
+	FOC_Reset_State(&foc_R);
 
 	foc_L.enc_dir = -1;
 	foc_R.enc_dir = -1;
 	foc_L.omega_ramp_rate = 3000;
 	foc_R.omega_ramp_rate = 3000;
 
+	foc_L.is_running = 1;
+	foc_R.is_running = 1;
+
+	foc_L.target_Id = 0.0f;
+	foc_R.target_Id = 0.0f;
+	foc_L.target_Iq = 0.0f;
+	foc_R.target_Iq = 0.0f;
+	foc_L.target_omega = 0.0f;
+	foc_R.target_omega = 0.0f;
+	foc_L.spd_integ = 0.0f;
+	foc_R.spd_integ = 0.0f;
+
 	Encoder_Start();
-	FOC_ADC_Start();
-	HAL_Delay(50);
 
 	if (mode != FOC_MODE_SVPWM_NO_SPIN) {
 		MTR_Start();
@@ -103,7 +113,18 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 		FOC_Calibrate_Encoder_Offset_Both(&foc_L, &foc_R);
 		LCD_Clear();
 	}
-	MTR_Stop();
+
+	FOC_ADC_Start();
+	HAL_Delay(50);
+
+	if (mode == FOC_MODE_SPEED_LOOP) {
+		foc_L.speed_loop_en = 1;
+		foc_R.speed_loop_en = 1;
+		HAL_TIM_Base_Start_IT(TIM_SPEED_LOOP);
+	} else {
+		foc_L.speed_loop_en = 0;
+		foc_R.speed_loop_en = 0;
+	}
 
 	if (mode == FOC_MODE_NO_SVPWM_SPIN) {
 		foc_L.foc_svpwm_en = 0;
@@ -113,55 +134,14 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 		foc_R.foc_svpwm_en = 1;
 	}
 
-	foc_L.is_running = 1;
-	foc_R.is_running = 1;
-
-	if (mode == FOC_MODE_SPEED_LOOP) {
-		foc_L.speed_loop_en = 1;
-		foc_R.speed_loop_en = 1;
-	} else {
-		foc_L.speed_loop_en = 0;
-		foc_R.speed_loop_en = 0;
-	}
-
-	foc_L.target_Id = 0.0f;
-	foc_R.target_Id = 0.0f;
-	foc_L.target_Iq = 0.0f;
-	foc_R.target_Iq = 0.0f;
-	foc_L.target_omega = 0.0f;
-	foc_R.target_omega = 0.0f;
-	foc_L.spd_integ = 0.0f;
-	foc_R.spd_integ = 0.0f;
-
-	foc_L.enc_prev_cnt = (uint16_t) foc_L.LPTIMx->Instance->CNT;
-	foc_R.enc_prev_cnt = (uint16_t) foc_R.LPTIMx->Instance->CNT;
-
-	if (mode != FOC_MODE_SVPWM_NO_SPIN)
-		MTR_Start();
-	if (mode == FOC_MODE_SPEED_LOOP)
-		HAL_TIM_Base_Start_IT(TIM_SPEED_LOOP);
 }
 
 void MTR_Safe_Stop(void) {
+	FOC_Reset_State(&foc_L);
+	FOC_Reset_State(&foc_R);
 	HAL_TIM_Base_Stop_IT(TIM_SPEED_LOOP);
-
-	foc_L.is_running = 0;
-	foc_R.is_running = 0;
-	foc_L.foc_svpwm_en = 0;
-	foc_R.foc_svpwm_en = 0;
-	foc_L.speed_loop_en = 0;
-	foc_R.speed_loop_en = 0;
-
-	foc_L.target_Id = 0.0f;
-	foc_R.target_Id = 0.0f;
-	foc_L.target_Iq = 0.0f;
-	foc_R.target_Iq = 0.0f;
-	foc_L.target_omega = 0.0f;
-	foc_R.target_omega = 0.0f;
-	foc_L.spd_integ = 0.0f;
-	foc_R.spd_integ = 0.0f;
-
 	MTR_Stop();
+	FOC_ADC_Stop();
 	Encoder_Stop();
 	LCD_Clear();
 }
