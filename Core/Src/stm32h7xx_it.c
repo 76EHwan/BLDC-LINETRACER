@@ -441,7 +441,11 @@ void SPI4_IRQHandler(void)
 }
 
 /**
+<<<<<<< HEAD
   * @brief This function handles USB OTG FS global interrupt.
+=======
+  * @brief This function handles USB On The Go FS global interrupt.
+>>>>>>> branch 'hw/drv8316c-foc' of https://github.com/76EHwan/BLDC-LINETRACER.git
   */
 void OTG_FS_IRQHandler(void)
 {
