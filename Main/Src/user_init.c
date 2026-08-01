@@ -55,7 +55,7 @@ void Delete_All_Marker_Logs(void) {
 void User_Init() {
 	Button_init();
 	Buzzer_Init();
-	Buzzer_Start();
+//	Buzzer_Start();
 	LCD7789_Test();
 	LSM6DS3_Init();
 	Buzzer_Stop();
@@ -94,9 +94,9 @@ void User_Init() {
 	// ★ SD 카드 정상 인식 후 마커 기록 파일들 삭제 함수 호출
 	Delete_All_Marker_Logs();
 
-	if ((res = FOC_Parameters_InitOrLoad()) != FR_OK) {
-		LCD_Printf(0, 7, "FOC param save Fail");
-	}
+//	if ((res = FOC_Parameters_InitOrLoad()) != FR_OK) {
+//		LCD_Printf(0, 7, "FOC param save Fail");
+//	}
 
 	HAL_Delay(500);
 

@@ -9,39 +9,40 @@
 #define Speed_TIM_IRQ_Handler TIM13_IRQ_Handler
 
 // =========================================================
-// [하드웨어 및 모터 파라미터 설정]
+// [íëì¨ì´ ë° ëª¨í° íë¼ë¯¸í° ì¤ì ]
 // =========================================================
-#define MOTOR_POLE_PAIRS        1           // 모터 극쌍수 (Pole Pairs = 1)
-#define ENCODER_RESOLUTION      2048.0f     // 엔코더 1회전 펄스 수
-#define MOTOR_RATED_VOLTAGE     16.8f       // 시스템 전압 (V, 배터리에 맞게 수정)
+#define MOTOR_POLE_PAIRS        1           // ëª¨í° ê·¹ìì (Pole Pairs = 1)
+#define ENCODER_RESOLUTION      2048.0f     // ìì½ë 1íì  íì¤ ì
+#define MOTOR_RATED_VOLTAGE     16.8f       // ìì¤í ì ì (V, ë°°í°ë¦¬ì ë§ê² ìì )
 
-#define PWM_PERIOD              4800.0f     // 타이머 ARR 주기 (Center-aligned)
+#define PWM_PERIOD              4800.0f     // íì´ë¨¸ ARR ì£¼ê¸° (Center-aligned)
 #define PWM_HALF_PERIOD         (PWM_PERIOD / 2.0f)
 
-// 전류 센싱 스케일 팩터 (ADC Raw 값 -> 실제 전류 A 로 변환)
-// 공식: VREF / ADC_MAX / CSA_GAIN (또는 Shunt값에 따른 통합 계수)
-#define CURRENT_CSA_GAIN_MA		300
-#define CURRENT_SCALE           (3.3f / 65536.0f / CURRENT_CSA_GAIN_MA / 1000.f)
-#define FOC_ADC_DMA_LENGTH      1           // DMA 버퍼 길이
+// ì ë¥ ì¼ì± ì¤ì¼ì¼ í©í° (ADC Raw ê° -> ì¤ì  ì ë¥ A ë¡ ë³í)
+// ê³µì: VREF / ADC_MAX / CSA_GAIN (ëë Shuntê°ì ë°ë¥¸ íµí© ê³ì)
+#define CURRENT_CSA_GAIN_V_MA		300
+#define CURRENT_CSA_GAIN_V_A		(CURRENT_CSA_GAIN_V_MA / 1000.f)
+#define CURRENT_SCALE           (3.3f / 65536.0f / CURRENT_CSA_GAIN_V_A)
+#define FOC_ADC_DMA_LENGTH      1           // DMA ë²í¼ ê¸¸ì´
 
 #define SPD_DT         	0.0005f
-#define SPD_D_TAU       0.001f       // D항 LPF 시정수 (2kHz 대비 4샘플 정도)
+#define SPD_D_TAU       0.001f       // Dí­ LPF ìì ì (2kHz ëë¹ 4ìí ì ë)
 
-#define SPD_IQ_LIMIT     5.f        // Iq 지령 상한 (A)
+#define SPD_IQ_LIMIT     5.f        // Iq ì§ë ¹ ìí (A)
 
 // =========================================================
-// [모터 전기적 파라미터 - maxon ECX SPEED 16 M, 36V 권선 기준]
+// [ëª¨í° ì ê¸°ì  íë¼ë¯¸í° - maxon ECX SPEED 16 M, 36V ê¶ì  ê¸°ì¤]
 // =========================================================
-#define MOTOR_PARAM_TERMINAL_RESISTOR	1.92f	// [Ω] 단자간 저항
-#define MOTOR_PARAM_TERMINAL_INDUCTANCE	0.129	// [mH] 단자간 인덕턴스
+#define MOTOR_PARAM_TERMINAL_RESISTOR	1.92f	// [Î©] ë¨ìê° ì í­
+#define MOTOR_PARAM_TERMINAL_INDUCTANCE	0.129	// [mH] ë¨ìê° ì¸ëí´ì¤
 #define MOTOR_PARAM_PHASE_RESISTOR		(MOTOR_PARAM_TERMINAL_RESISTOR / 2.0f)
 #define MOTOR_PARAM_PHASE_INDUCTANCE	(MOTOR_PARAM_TERMINAL_INDUCTANCE / 2.0f)  // [mH]
 
-// 인덕턴스는 계산 편의상 mH로 정의되어 있으므로, 물리 계산 시 H 단위로 변환해서 사용
+// ì¸ëí´ì¤ë ê³ì° í¸ìì mHë¡ ì ìëì´ ìì¼ë¯ë¡, ë¬¼ë¦¬ ê³ì° ì H ë¨ìë¡ ë³íí´ì ì¬ì©
 #define MOTOR_PHASE_INDUCTANCE_H		(MOTOR_PARAM_PHASE_INDUCTANCE / 1000.0f)  // [H]
 
-// 토크상수(카탈로그, 36V 권선) -> 자속쇄교수 역산
-// coreless 모터는 Ld = Lq (돌극성 없음) 이므로 Te = 1.5 * P * λ * Iq 로 정확히 성립
+// í í¬ìì(ì¹´íë¡ê·¸, 36V ê¶ì ) -> ìììêµì ì­ì°
+// coreless ëª¨í°ë Ld = Lq (ëê·¹ì± ìì) ì´ë¯ë¡ Te = 1.5 * P * Î» * Iq ë¡ ì íí ì±ë¦½
 #define MOTOR_TORQUE_CONSTANT_MNM_A		6.46f                          // [mNm/A]
 #define MOTOR_TORQUE_CONSTANT			(MOTOR_TORQUE_CONSTANT_MNM_A / 1000.0f)  // [Nm/A]
 #define MOTOR_FLUX_LINKAGE				(MOTOR_TORQUE_CONSTANT / (1.5f * MOTOR_POLE_PAIRS))  // [Wb]
@@ -59,59 +60,59 @@
 #define VBUS_ADC_VREF        3.3f
 #define VBUS_ADC_SCALE       (VBUS_ADC_VREF / 65536.0f * VBUS_DIVIDER_RATIO)
 
-#define SPD_MA_WINDOW 2  // 4~8 정도의 작은 값 추천 (지연과 노이즈의 타협점)
+#define SPD_MA_WINDOW 2  // 4~8 ì ëì ìì ê° ì¶ì² (ì§ì°ê³¼ ë¸ì´ì¦ì ííì )
 
 // =========================================================
-// [FOC 제어 핸들 구조체]
+// [FOC ì ì´ í¸ë¤ êµ¬ì¡°ì²´]
 // =========================================================
 typedef struct {
-	// 1. 하드웨어 포인터
-	TIM_HandleTypeDef *TIMx;      // PWM 타이머 (TIM3, TIM4)
-	ADC_HandleTypeDef *ADCx;      // 전류 센싱 ADC (ADC1, ADC2)
-	LPTIM_HandleTypeDef *LPTIMx;    // 엔코더 타이머 (LPTIM1, LPTIM2)
+	// 1. íëì¨ì´ í¬ì¸í°
+	TIM_HandleTypeDef *TIMx;      // PWM íì´ë¨¸ (TIM3, TIM4)
+	ADC_HandleTypeDef *ADCx;      // ì ë¥ ì¼ì± ADC (ADC1, ADC2)
+	LPTIM_HandleTypeDef *LPTIMx;    // ìì½ë íì´ë¨¸ (LPTIM1, LPTIM2)
 
-	// 2. 제어 상태 및 플래그
-	uint8_t is_running;   // 제어 루프 구동 여부
-	uint8_t foc_svpwm_en; // 하드웨어 PWM 레지스터 출력 허용 여부
+	// 2. ì ì´ ìí ë° íëê·¸
+	uint8_t is_running;   // ì ì´ ë£¨í êµ¬ë ì¬ë¶
+	uint8_t foc_svpwm_en; // íëì¨ì´ PWM ë ì§ì¤í° ì¶ë ¥ íì© ì¬ë¶
 
-	// 3. 캘리브레이션 오프셋
-	float32_t offset_a;     // A상 전류 센서 영점
-	float32_t offset_c;     // C상 전류 센서 영점
-	float32_t theta_offset; // 엔코더 전기각 0도 정렬 오프셋
+	// 3. ìºë¦¬ë¸ë ì´ì ì¤íì
+	float32_t offset_a;     // Aì ì ë¥ ì¼ì ìì 
+	float32_t offset_c;     // Cì ì ë¥ ì¼ì ìì 
+	float32_t theta_offset; // ìì½ë ì ê¸°ê° 0ë ì ë ¬ ì¤íì
 
-	// 4. 지령치 (목표값)
-	float32_t target_Id;    // 자속 제어 지령 (기본 0A)
-	float32_t target_Iq;    // 토크 제어 지령 (A)
+	// 4. ì§ë ¹ì¹ (ëª©íê°)
+	float32_t target_Id;    // ìì ì ì´ ì§ë ¹ (ê¸°ë³¸ 0A)
+	float32_t target_Iq;    // í í¬ ì ì´ ì§ë ¹ (A)
 
-	// 5. 상태 변수
-	float32_t omega_e;      // 전기각 속도
-	float32_t theta_e;      // 현재 전기각 (라디안)
-	float32_t omega_e_meas;   // 측정 전기각속도 (rad/s)
-	float32_t target_omega;   // 속도 지령 (rad/s)
-	uint16_t enc_prev_cnt;   // 직전 엔코더 CNT
-	uint8_t speed_loop_en;  // 속도 루프 on/off
-	int8_t enc_dir;        // 엔코더 방향: +1 정방향, -1 반전
+	// 5. ìí ë³ì
+	float32_t omega_e;      // ì ê¸°ê° ìë
+	float32_t theta_e;      // íì¬ ì ê¸°ê° (ë¼ëì)
+	float32_t omega_e_meas;   // ì¸¡ì  ì ê¸°ê°ìë (rad/s)
+	float32_t target_omega;   // ìë ì§ë ¹ (rad/s)
+	uint16_t enc_prev_cnt;   // ì§ì  ìì½ë CNT
+	uint8_t speed_loop_en;  // ìë ë£¨í on/off
+	int8_t enc_dir;        // ìì½ë ë°©í¥: +1 ì ë°©í¥, -1 ë°ì 
 	float_t err;
 
 	float32_t spd_Kp;
 	float32_t spd_Ki;
 	float32_t spd_Kd;
-	float32_t spd_integ;      // 속도 PI 적분항
-	float32_t iq_limit;       // Iq 지령 상한
+	float32_t spd_integ;      // ìë PI ì ë¶í­
+	float32_t iq_limit;       // Iq ì§ë ¹ ìí
 
-	float32_t spd_prev_meas;   // 이전 스텝 측정 속도 (D항용)
-	float32_t spd_deriv_filt;  // 필터링된 미분값
+	float32_t spd_prev_meas;   // ì´ì  ì¤í ì¸¡ì  ìë (Dí­ì©)
+	float32_t spd_deriv_filt;  // íí°ë§ë ë¯¸ë¶ê°
 
-	// 6. 전류 피드백 변수
+	// 6. ì ë¥ í¼ëë°± ë³ì
 	float32_t I_a, I_b, I_c;
 	float32_t I_alpha, I_beta;
 	float32_t I_d, I_q;
 
-	// 7. 전압 출력 변수
+	// 7. ì ì ì¶ë ¥ ë³ì
 	float32_t V_d, V_q;
 	float32_t V_alpha, V_beta;
 
-	// 8. CMSIS-DSP PID 제어기 인스턴스
+	// 8. CMSIS-DSP PID ì ì´ê¸° ì¸ì¤í´ì¤
 	arm_pid_instance_f32 pid_id;
 	arm_pid_instance_f32 pid_iq;
 
@@ -121,17 +122,19 @@ typedef struct {
 	float32_t spd_history[SPD_MA_WINDOW];
 	uint8_t spd_hist_idx;
 
-	float32_t pll_theta_est;    // PLL로 추정된 기계각 위치 (rad, 0 ~ 2*PI)
-	float32_t pll_omega_integ;  // PLL 루프 필터의 적분항 (rad/s)
-	float32_t pll_omega_est;    // PLL로 추정된 기계각속도 (rad/s)
+	float32_t pll_theta_est; // PLLë¡ ì¶ì ë ê¸°ê³ê° ìì¹ (rad, 0 ~ 2*PI)
+	float32_t pll_omega_integ;  // PLL ë£¨í íí°ì ì ë¶í­ (rad/s)
+	float32_t pll_omega_est;    // PLLë¡ ì¶ì ë ê¸°ê³ê°ìë (rad/s)
 
-	float32_t pll_kp;           // PLL 비례 게인 (추천 초기값: 200.0f)
-	float32_t pll_ki;           // PLL 적분 게인 (추천 초기값: 10000.0f)
+	float32_t pll_kp;           // PLL ë¹ë¡ ê²ì¸ (ì¶ì² ì´ê¸°ê°: 200.0f)
+	float32_t pll_ki;          // PLL ì ë¶ ê²ì¸ (ì¶ì² ì´ê¸°ê°: 10000.0f)
+
+	float32_t ramped_omega;  // 램프 처리가 적용된 내부 제어용 목표 속도
 
 } FOC_Handle_t;
 
 // =========================================================
-// [전역 변수 및 함수 프로토타입]
+// [ì ì­ ë³ì ë° í¨ì íë¡í íì]
 // =========================================================
 extern FOC_Handle_t foc_L;
 extern FOC_Handle_t foc_R;
@@ -151,7 +154,8 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 		ADC_HandleTypeDef *ADCx, LPTIM_HandleTypeDef *LPTIMx);
 void FOC_Calibrate_Offset(FOC_Handle_t *hfoc);
 void FOC_Calibrate_Encoder_Offset(FOC_Handle_t *hfoc);
-void FOC_Calibrate_Encoder_Offset_Both(FOC_Handle_t *hfoc_L, FOC_Handle_t *hfoc_R);
+void FOC_Calibrate_Encoder_Offset_Both(FOC_Handle_t *hfoc_L,
+		FOC_Handle_t *hfoc_R);
 void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc);
 
 float_t FOC_Meas_Mps(FOC_Handle_t *hfoc);
