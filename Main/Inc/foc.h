@@ -24,8 +24,10 @@
 #define CURRENT_SCALE           (3.3f / 65536.0f / CURRENT_CSA_GAIN_MA / 1000.f)
 #define FOC_ADC_DMA_LENGTH      1           // DMA 버퍼 길이
 
+#define SPD_MA_WINDOW 4  // 4~8 정도의 작은 값 추천 (지연과 노이즈의 타협점)
+
 #define SPD_DT         	0.0005f
-#define SPD_D_TAU       0.001f       // D항 LPF 시정수 (2kHz 대비 4샘플 정도)
+#define SPD_D_TAU       (SPD_DT * SPD_MA_WINDOW)       // D항 LPF 시정수 (2kHz 대비 4샘플 정도)
 
 #define SPD_IQ_LIMIT     5.f        // Iq 지령 상한 (A)
 
@@ -58,8 +60,6 @@
 #define VBUS_DIVIDER_RATIO   19.0f
 #define VBUS_ADC_VREF        3.3f
 #define VBUS_ADC_SCALE       (VBUS_ADC_VREF / 65536.0f * VBUS_DIVIDER_RATIO)
-
-#define SPD_MA_WINDOW 2  // 4~8 정도의 작은 값 추천 (지연과 노이즈의 타협점)
 
 // =========================================================
 // [FOC 제어 핸들 구조체]
