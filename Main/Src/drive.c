@@ -23,9 +23,9 @@ DriveParam_t driveData = {
 		.max_mps = 10.f,
 		.accel = 4.f,
 		.decel = 4.f,
-		.steer_gain_p = 6.f,
-		.steer_gain_d = 0.05f,
-		.pos_atten_gain = 0.f,
+		.steer_gain_p = 2.0f,
+		.steer_gain_d = 0.0f,
+		.pos_atten_gain = 0.0f,
 		.pit_in_distance_m = 0.15f,
 		.fan_en = 0,
 };
@@ -115,8 +115,8 @@ void Ramp_TIM_IRQ_Handler() {
 		g_current_base_mps -= decel * RAMP_DT;
 	else
 		g_current_base_mps = g_target_base_mps;
-//	Steer_Motor();
-	Steer_Motor_With_Anti_Oversteer();
+	Steer_Motor();
+//	Steer_Motor_With_Anti_Oversteer();
 }
 
 void Ramp_Start() {
