@@ -65,11 +65,13 @@ void User_Init() {
 	FOC_Init_Motor(&foc_R, &htim4, &hadc1, &hlptim1);
 
 	FOC_ADC_Start();
+
 	LCD_Printf(0, 6, "FOC L ADC Cali");
 	FOC_Calibrate_Offset(&foc_L);
 
 	LCD_Printf(0, 7, "FOC R ADC Cali");
 	FOC_Calibrate_Offset(&foc_R);
+
 	FOC_ADC_Stop();
 
 //	uint8_t encBuffer[3] = { 0 };
