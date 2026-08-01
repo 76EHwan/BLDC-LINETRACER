@@ -1,9 +1,9 @@
-#include "foc.h"
-#include "adc.h"
-#include "SDcard.h"
 #include <stdio.h>
 
-#define FOC_PARAM_PATH "/FOC_DATA/foc_param.txt"
+#include "adc.h"
+
+#include "motor.h"
+#include "foc.h"
 
 // 모터 핸들 전역 인스턴스 (좌/우)
 FOC_Handle_t foc_L;
@@ -78,6 +78,14 @@ void FOC_ADC_Start() {
 			/ 2.f* VBUS_ADC_SCALE;
 }
 
+void FOC_ADC_Stop() {
+	HAL_ADC_Stop_DMA(&hadc1);
+	HAL_ADC_Stop_DMA(&hadc2);
+
+	HAL_ADCEx_InjectedStop_IT(&hadc1);
+	HAL_ADCEx_InjectedStop_IT(&hadc2);
+}
+
 void FOC_Reset_State(FOC_Handle_t *hfoc) {
 	hfoc->is_running = 0;
 	hfoc->foc_svpwm_en = 0;
@@ -122,8 +130,8 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 	FOC_Reset_State(hfoc);
 
 	// 2. 디폴트 파라미터 (오프셋 및 방향)
-	hfoc->offset_a = 32768.0f;
-	hfoc->offset_c = 32768.0f;
+//	hfoc->offset_a = 32768.0f;
+//	hfoc->offset_c = 32768.0f;
 	hfoc->theta_offset = 0.0f;
 	hfoc->enc_dir = +1;
 
@@ -136,12 +144,16 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 	hfoc->pid_iq.Ki = DEFAULT_IQ_KI;
 	hfoc->pid_iq.Kd = 0.f;
 
-	hfoc->spd_Kp = 0.0007f;
-	hfoc->spd_Ki = 0.0015f;
-	hfoc->spd_Kd = 0.000001f;      // 기본은 0에서 시작, 필요 시 튜닝
+//	hfoc->spd_Kp = 0.0f;
+//	hfoc->spd_Ki = 0.0f;
+//	hfoc->spd_Kd = 0.0f;
+
+	hfoc->spd_Kp = 0.0005f;
+	hfoc->spd_Ki = 0.0001f;
+	hfoc->spd_Kd = 0.000001f;      // 기본은 0에서 시작, 필요 시 �
+
 	hfoc->iq_limit = SPD_IQ_LIMIT;
 
-	// SD 카드에서 Kp, Ki를 불러왔으므로 PID 구조체에 한 번 반영해 줍니다.
 	arm_pid_init_f32(&hfoc->pid_id, 1);
 	arm_pid_init_f32(&hfoc->pid_iq, 1);
 }
@@ -306,6 +318,23 @@ void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc) {
 	hfoc->theta_e = theta_e;
 }
 
+
+float_t g_odom_distance_m = 0.f;
+
+float_t FOC_Meas_Mps(FOC_Handle_t *hfoc) {
+	return fabsf(hfoc->omega_e_meas) / (INV_TIRE_RADIUS * MOTOR_POLE_PAIRS * GEAR_RATIO);
+}
+
+void Odom_Reset(void) {
+	g_odom_distance_m = 0.f;
+}
+
+void Odom_Accumulate(float dt_sec) {
+	float_t mps = 0.5f * (FOC_Meas_Mps(&foc_L) + FOC_Meas_Mps(&foc_R));
+	g_odom_distance_m += mps * dt_sec;
+}
+
+
 // 6. 메인 FOC 실행 루프 (injected 변환 완료 IRQ에서 주기적 호출)
 void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	if (hfoc->is_running == 0)
@@ -340,7 +369,8 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	//   Vq_ff =  we * L * Id + we * λ   (λ: 자속쇄교수, 토크상수에서 역산)
 	//   omega_e_meas는 속도 루프(2kHz)에서 갱신되는 값을 그대로 재사용합니다.
 
-	float32_t we = hfoc->omega_e_meas;
+//	float32_t we = hfoc->omega_e_meas;
+	float32_t we = hfoc->target_omega;
 
 	// 1. 역기전력(Back-EMF) 항: 회전 속도에 비례
 	float32_t Vq_bemf = we * MOTOR_FLUX_LINKAGE;
@@ -351,8 +381,8 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 
 	// [디버깅 스위치] 처음에는 ff_gain을 0.05 ~ 0.1 정도로 매우 작게 주고 시작합니다.
 	// 안정적이면 1.0까지 서서히 올립니다. 만약 0.1만 넣었는데도 덜덜거리면 부호나 파라미터가 틀린 것입니다.
-	float32_t ff_bemf_gain = 0.01f; // TODO: 0.1f로 올려서 테스트
-	float32_t ff_cross_gain = 0.01f; // BEMF가 완벽해지면 시도
+	float32_t ff_bemf_gain = 1.f; // TODO: 0.1f로 올려서 테스트
+	float32_t ff_cross_gain = 0.0f; // BEMF가 완벽해지면 시도
 
 	float32_t Vd_ff = Vd_cross * ff_cross_gain;
 	float32_t Vq_ff = (Vq_bemf * ff_bemf_gain) + (Vq_cross * ff_cross_gain);
@@ -393,6 +423,13 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	duty_a = duty_a < 0.0f ? 0.0f : (duty_a > PWM_PERIOD ? PWM_PERIOD : duty_a);
 	duty_b = duty_b < 0.0f ? 0.0f : (duty_b > PWM_PERIOD ? PWM_PERIOD : duty_b);
 	duty_c = duty_c < 0.0f ? 0.0f : (duty_c > PWM_PERIOD ? PWM_PERIOD : duty_c);
+
+#define MAX_DUTY 0.9f
+	float32_t max_pwm_duty = PWM_PERIOD * MAX_DUTY;
+	duty_a = duty_a < max_pwm_duty ? duty_a : max_pwm_duty;
+	duty_b = duty_b < max_pwm_duty ? duty_b : max_pwm_duty;
+	duty_c = duty_c < max_pwm_duty ? duty_c : max_pwm_duty;
+
 
 	// [9] 하드웨어 타이머 레지스터 적용
 	if (hfoc->foc_svpwm_en) {
@@ -467,11 +504,6 @@ void FOC_Speed_Loop(FOC_Handle_t *hfoc) {
 	hfoc->err = err;
 }
 
-// =========================================================
-// [인터럽트 핸들러]
-// =========================================================
-// injected 변환 완료(JEOS) 콜백이 FOC loop를 구동한다.
-// ADC1=foc_R, ADC2=foc_L
 void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef *hadc) {
 	if (hadc->Instance == ADC1) {
 		FOC_Execute_Loop(&foc_R);
@@ -487,54 +519,3 @@ void Speed_TIM_IRQ_Handler() {
 	FOC_Speed_Loop(&foc_R);
 }
 
-// =========================================================
-// [SD카드 저장 및 불러오기]
-// =========================================================
-// @formatter:off
-static const SDCard_ConfigEntry foc_param_table[] = {
-		{ "L_offset_a",		&foc_L.offset_a, 		SDCFG_FLOAT },
-		{ "L_offset_c", 	&foc_L.offset_c, 		SDCFG_FLOAT },
-		{ "L_theta_offset", &foc_L.theta_offset, 	SDCFG_FLOAT },
-		{ "L_id_Kp", 		&foc_L.pid_id.Kp, 		SDCFG_FLOAT },
-		{ "L_id_Ki", 		&foc_L.pid_id.Ki, 		SDCFG_FLOAT },
-		{ "L_iq_Kp", 		&foc_L.pid_iq.Kp, 		SDCFG_FLOAT },
-		{ "L_iq_Ki", 		&foc_L.pid_iq.Ki, 		SDCFG_FLOAT },
-		{ "L_spd_Kp",		&foc_L.spd_Kp, 			SDCFG_FLOAT },
-		{ "L_spd_Ki",		&foc_L.spd_Ki, 			SDCFG_FLOAT },
-		{ "L_spd_Kd", 		&foc_L.spd_Kd, 			SDCFG_FLOAT },
-		{ "L_iq_limit", 	&foc_L.iq_limit, 		SDCFG_FLOAT },
-		{ "L_enc_dir", 		&foc_L.enc_dir, 		SDCFG_INT8 },
-
-		{ "R_offset_a",		&foc_R.offset_a, 		SDCFG_FLOAT },
-		{ "R_offset_c", 	&foc_R.offset_c, 		SDCFG_FLOAT },
-		{ "R_theta_offset", &foc_R.theta_offset, 	SDCFG_FLOAT },
-		{ "R_id_Kp", 		&foc_R.pid_id.Kp, 		SDCFG_FLOAT },
-		{ "R_id_Ki", 		&foc_R.pid_id.Ki, 		SDCFG_FLOAT },
-		{ "R_iq_Kp", 		&foc_R.pid_iq.Kp, 		SDCFG_FLOAT },
-		{ "R_iq_Ki", 		&foc_R.pid_iq.Ki, 		SDCFG_FLOAT },
-		{ "R_spd_Kp",		&foc_R.spd_Kp, 			SDCFG_FLOAT },
-		{ "R_spd_Ki",		&foc_R.spd_Ki, 			SDCFG_FLOAT },
-		{ "R_spd_Kd", 		&foc_R.spd_Kd, 			SDCFG_FLOAT },
-		{ "R_iq_limit", 	&foc_R.iq_limit, 		SDCFG_FLOAT },
-		{ "R_enc_dir", 		&foc_R.enc_dir, 		SDCFG_INT8 },
-};
-
-// @formatter:on
-
-FRESULT Save_FOC_Parameters(void) {
-	return SDCard_SaveConfig(FOC_PARAM_PATH, foc_param_table, FOC_PARAM_COUNT);
-}
-
-FRESULT Load_FOC_Parameters(void) {
-	FRESULT res = SDCard_LoadConfig(FOC_PARAM_PATH, foc_param_table,
-	FOC_PARAM_COUNT);
-	if (res != FR_OK)
-		return res;
-
-	arm_pid_init_f32(&foc_L.pid_id, 1);
-	arm_pid_init_f32(&foc_L.pid_iq, 1);
-	arm_pid_init_f32(&foc_R.pid_id, 1);
-	arm_pid_init_f32(&foc_R.pid_iq, 1);
-
-	return FR_OK;
-}

@@ -7,6 +7,7 @@
 #include "SDcard.h"
 #include "w25qxx.h"
 
+#include "sd_ui.h"
 #include "menu.h"
 #include "user_init.h"
 #include "bootloader.h"
@@ -88,26 +89,24 @@ MenuItem_t motor_menu_items[] = {
 };
 
 MenuItem_t drive_menu_items[] = {
-    { .name = "1st Drive",    .pfnActionCallback = Line_Follow_Drive },
-    { .name = "2nd Drive",    .pfnActionCallback = NULL },
+    { .name = "1st Drive",    .pfnActionCallback = Drive_First },
+    { .name = "2nd Drive",    .pfnActionCallback = Drive_Second },
     { .name = "3rd Drive",    .pfnActionCallback = NULL },
     { .name = "4th Drive",    .pfnActionCallback = NULL },
     { .name = "Update Param", .pfnActionCallback = NULL, 				.child_menu = &drive_param_menu },
-    { .name = "View Marker",  .pfnActionCallback = NULL },
-    { .name = "Save Flash",   .pfnActionCallback = NULL },
-    { .name = "Save MicroSD", .pfnActionCallback = NULL }
 };
 
 MenuItem_t drive_param_items[] = {
 	{ .name = "Threshold", 		.pfnActionCallback = Update_Threshold 			},
-	{ .name = "Norm BW", 		.pfnActionCallback = Update_Normalize_Bandwidth },
 	{ .name = "Lost Pos Min", 	.pfnActionCallback = Update_Line_Lost_Sum_Min	},
 	{ .name = "Base m/s", 		.pfnActionCallback = Update_Base_Mps			},
 	{ .name = "Base Accel", 	.pfnActionCallback = Update_Base_Accel			},
 	{ .name = "Base Decel", 	.pfnActionCallback = Update_Base_Decel			},
 	{ .name = "Max m/s", 		.pfnActionCallback = Update_Max_Mps				},
-	{ .name = "Steer Gain", 	.pfnActionCallback = Update_Steer_Gain			},
+	{ .name = "Steer KP", 		.pfnActionCallback = Update_Steer_KP			},
+	{ .name = "Steer KD", 		.pfnActionCallback = Update_Steer_KD			},
 	{ .name = "Pos Abs Gain", 	.pfnActionCallback = Update_Position_Abs_Gain	},
+	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
 };
 
@@ -454,11 +453,6 @@ void Update_Threshold() {
 	NULL, "Threshold");
 }
 
-void Update_Normalize_Bandwidth() {
-	Update_Param_Menu(DATA_UINT8,
-			(uint32_t*) &(IR_Sensor.data->line_w_bandwidth), NULL, "Norm BW");
-}
-
 void Update_Line_Lost_Sum_Min() {
 	Update_Param_Menu(DATA_UINT8,
 			(uint32_t*) &(IR_Sensor.data->line_lost_sum_min), NULL,
@@ -481,14 +475,24 @@ void Update_Max_Mps() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.max_mps), "Max m/s");
 }
 
-void Update_Steer_Gain() {
-	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.steer_gain), "Steer Gain");
+void Update_Steer_KP() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.steer_gain_p), "Steer KP");
+}
+
+void Update_Steer_KD() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.steer_gain_d), "Steer KD");
 }
 
 void Update_Position_Abs_Gain() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.pos_atten_gain),
 			"Pos Abs Gain");
 }
+
+void Update_Pit_In_Distance_M() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.pit_in_distance_m),
+			"Pit In Dis M");
+}
+
 
 void Update_Fan_Enable() {
 	Update_Param_Menu(DATA_UINT8, (uint32_t*) &(driveData.fan_en), NULL, "Fan Enable");

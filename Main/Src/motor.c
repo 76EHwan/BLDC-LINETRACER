@@ -1,13 +1,15 @@
-#include "user_init.h"
-#include "button.h"
-#include "motor.h"
 #include "math.h"
-#include "foc.h"
-
+#include "button.h"
+#include "buzzer.h"
 #include "drv8316crq1.h"
 #include "mt6701.h"
 
-#define FAN_TIM		&htim15
+#include "drive.h" // 조향 제어 시 목표 속도(g_current_base_mps) 참조용
+#include "motor.h"
+#include "sensor.h"
+#include "user_init.h"
+
+#define FAN_TIM		(&htim15)
 #define FAN_CHANNEL	TIM_CHANNEL_2
 
 #define MTR_L &DRV8316C_L
@@ -81,36 +83,28 @@ void Encoder_Stop() {
 	HAL_LPTIM_Encoder_Stop(&hlptim2);
 }
 
-// ====================================================================
-// FOC 통합 구동 및 안전 정지 함수
-// ====================================================================
 void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
 	FOC_Init_Motor(&foc_R, &htim4, &hadc1, &hlptim1);
 
 	foc_L.enc_dir = -1;
 	foc_R.enc_dir = -1;
-
 	foc_L.omega_ramp_rate = 3000;
 	foc_R.omega_ramp_rate = 3000;
 
 	Encoder_Start();
 	FOC_ADC_Start();
-
-	// [핵심 해결 2] ADC 및 내부 하드웨어 안정화 대기
 	HAL_Delay(50);
 
 	if (mode != FOC_MODE_SVPWM_NO_SPIN) {
 		MTR_Start();
 		HAL_Delay(50);
-
 		LCD_Printf(0, 0, "Aligning");
 		FOC_Calibrate_Encoder_Offset_Both(&foc_L, &foc_R);
 		LCD_Clear();
 	}
 	MTR_Stop();
 
-	// 플래그 및 지령치 초기화 로직 유지
 	if (mode == FOC_MODE_NO_SVPWM_SPIN) {
 		foc_L.foc_svpwm_en = 0;
 		foc_R.foc_svpwm_en = 0;
@@ -141,21 +135,16 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 
 	foc_L.enc_prev_cnt = (uint16_t) foc_L.LPTIMx->Instance->CNT;
 	foc_R.enc_prev_cnt = (uint16_t) foc_R.LPTIMx->Instance->CNT;
-	// enc_dir은 위에서 이미 -1로 확정됨 (여기서 재대입하지 않음)
 
-	if (mode != FOC_MODE_SVPWM_NO_SPIN) {
+	if (mode != FOC_MODE_SVPWM_NO_SPIN)
 		MTR_Start();
-	}
-	if (mode == FOC_MODE_SPEED_LOOP) {
+	if (mode == FOC_MODE_SPEED_LOOP)
 		HAL_TIM_Base_Start_IT(TIM_SPEED_LOOP);
-	}
 }
 
 void MTR_Safe_Stop(void) {
-	// 1. 속도 루프 인터럽트 타이머 선 정지
 	HAL_TIM_Base_Stop_IT(TIM_SPEED_LOOP);
 
-	// 2. FOC 제어 플래그 차단
 	foc_L.is_running = 0;
 	foc_R.is_running = 0;
 	foc_L.foc_svpwm_en = 0;
@@ -163,7 +152,6 @@ void MTR_Safe_Stop(void) {
 	foc_L.speed_loop_en = 0;
 	foc_R.speed_loop_en = 0;
 
-	// 3. 지령치 초기화
 	foc_L.target_Id = 0.0f;
 	foc_R.target_Id = 0.0f;
 	foc_L.target_Iq = 0.0f;
@@ -173,12 +161,61 @@ void MTR_Safe_Stop(void) {
 	foc_L.spd_integ = 0.0f;
 	foc_R.spd_integ = 0.0f;
 
-	// 4. 하드웨어 출력 차단
-	MTR_Stop();         // MTR_Stop() 내에서 DRV8316C_FOC_PWM_DIS() 호출됨
+	MTR_Stop();
 	Encoder_Stop();
-
-	// 5. UI 정리
 	LCD_Clear();
+}
+
+void Fan_Mtr_Start() {
+	HAL_TIM_PWM_Start(FAN_TIM, FAN_CHANNEL);
+}
+
+void Fan_Mtr_Set_Duty(uint8_t duty) {
+	__HAL_TIM_SET_COMPARE(FAN_TIM, FAN_CHANNEL, duty);
+}
+
+void Fan_Mtr_Stop() {
+	__HAL_TIM_SET_COMPARE(FAN_TIM, FAN_CHANNEL, 0);
+	HAL_TIM_PWM_Stop(FAN_TIM, FAN_CHANNEL);
+}
+
+// ============================================================================
+// 조향(Steer) 함수 (비대칭 필터 기반 동적 감속 적용)
+// ============================================================================
+
+arm_pid_instance_f32 steer_pid;
+static volatile float_t g_current_steer = 0.0f;
+static volatile float_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
+
+void Steer_Motor() {
+	float_t line_pos = Sensor_Get_Position();
+	g_current_steer = arm_pid_f32(&steer_pid, line_pos);
+
+	float_t raw_atten = 1.0f - (fabsf(line_pos) * driveData.pos_atten_gain);
+
+	if (raw_atten < 0.4f) {
+		raw_atten = 0.4f;
+	}
+
+	if (raw_atten < filtered_atten) {
+		filtered_atten = raw_atten;
+	} else {
+#define LPF_ALPHA 0.998f
+		filtered_atten = (LPF_ALPHA * filtered_atten)
+				+ ((1.0f - LPF_ALPHA) * raw_atten);
+	}
+
+	// 필터가 적용된 실제 주행 속도
+	float_t active_mps = g_current_base_mps * filtered_atten;
+
+	// 양쪽 모터 목표 속도 산출
+	float mps_L = active_mps * (1.f + g_current_steer * THREAD_DIV2);
+	float mps_R = active_mps * (1.f - g_current_steer * THREAD_DIV2);
+
+	foc_L.target_omega = mps_L * MPS_TO_OMEGA;
+	foc_R.target_omega = -mps_R * MPS_TO_OMEGA;
+	foc_L.omega_setpoint = foc_L.target_omega;
+	foc_R.omega_setpoint = foc_R.target_omega;
 }
 
 // ====================================================================
@@ -276,10 +313,6 @@ void MTR_Update_Setup() {
 	;
 }
 
-// ====================================================================
-// 각종 테스트 및 제어 루프 (통합 함수 적용)
-// ====================================================================
-
 void MTR_Simple_Control() {
 	UserInput_t bt = INPUT_CMD_NONE;
 	MTR_Setup_And_Start(FOC_MODE_NO_SVPWM_SPIN);
@@ -288,13 +321,11 @@ void MTR_Simple_Control() {
 	static uint16_t half_pwm = 2400;
 	static uint16_t max_pwm = 1000;
 
-	// ==== [추가] 방향 확인용 변수 ====
 	int16_t prev_angle = angle;
-	uint16_t enc_L_prev = (uint16_t) hlptim2.Instance->CNT; // foc_L.LPTIMx
-	uint16_t enc_R_prev = (uint16_t) hlptim1.Instance->CNT; // foc_R.LPTIMx
-	int8_t dir_L_ok = 1; // 1: 명령방향과 일치, -1: 반전
+	uint16_t enc_L_prev = (uint16_t) hlptim2.Instance->CNT;
+	uint16_t enc_R_prev = (uint16_t) hlptim1.Instance->CNT;
+	int8_t dir_L_ok = 1;
 	int8_t dir_R_ok = 1;
-	// ================================
 
 	while (1) {
 		bt = Button_Get_Input();
@@ -350,13 +381,11 @@ void MTR_Simple_Control() {
 		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, (uint32_t )v_calc);
 		__HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, (uint32_t )w_calc);
 
-		// ==== [추가] 방향 판정 로직 ====
 		int16_t angle_delta = angle - prev_angle;
 		if (angle_delta != 0) {
 			uint16_t enc_L_now = (uint16_t) hlptim2.Instance->CNT;
 			uint16_t enc_R_now = (uint16_t) hlptim1.Instance->CNT;
 
-			// 16비트 카운터 롤오버까지 자연스럽게 처리되도록 unsigned 뺄셈 후 signed 캐스팅
 			int16_t enc_L_delta = (int16_t) (enc_L_now - enc_L_prev);
 			int16_t enc_R_delta = (int16_t) (enc_R_now - enc_R_prev);
 
@@ -371,23 +400,18 @@ void MTR_Simple_Control() {
 			enc_R_prev = enc_R_now;
 			prev_angle = angle;
 		}
-		// ================================
 
 		LCD_Printf(0, 0, "Ang:%3d", angle);
 		LCD_Printf(0, 1, "Max:%4d", max_pwm);
 		LCD_Printf(0, 2, "DirL:%s", dir_L_ok > 0 ? "OK " : "REV");
 		LCD_Printf(0, 3, "DirR:%s", dir_R_ok > 0 ? "OK " : "REV");
-
 	}
 }
 
 void MTR_Simple_FOC() {
 	UserInput_t bt = INPUT_CMD_NONE;
-
-	// 모터 구동 및 SVPWM 활성화 모드
 	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
 
-	// 기본 Iq 값 부여
 	foc_L.target_Iq = 0.001f;
 	foc_R.target_Iq = 0.001f;
 
@@ -455,12 +479,10 @@ void MTR_Simple_FOC() {
 		LCD_Printf(0, 12, "r2:%5d %5d", (uint16_t) ADC2->JDR1,
 				(uint16_t) ADC2->JDR2);
 		LCD_Printf(0, 13, "wmeasL:%6.1f", foc_L.omega_e_meas);
-
 	}
 }
 
 void MTR_Encoder_Test() {
-	// 센서/전기각 등 연산은 수행하되, 모터로 향하는 출력(PWM)은 차단하는 모드
 	MTR_Setup_And_Start(FOC_MODE_SVPWM_NO_SPIN);
 
 	while (1) {
@@ -484,13 +506,10 @@ void MTR_Encoder_Test() {
 	}
 }
 
-// 튜닝 전용 스텝 전류 크기
 #define TUNE_TEST_CURRENT 1.0f
 
 void MTR_Current_Tune_Loop() {
 	UserInput_t bt = INPUT_CMD_NONE;
-
-	// 전류 제어를 위한 FOC 구동 모드
 	MTR_Setup_And_Start(FOC_MODE_SVPWM_SPIN);
 	foc_L.pid_iq.Kp = 0.f;
 	foc_L.pid_iq.Ki = 0.f;
@@ -500,21 +519,19 @@ void MTR_Current_Tune_Loop() {
 	uint32_t last_toggle_time = HAL_GetTick();
 	uint8_t toggle_state = 0;
 
-	uint8_t sel = 0; // 0: Kp, 1: Ki
+	uint8_t sel = 0;
 	const float step_kp = 0.000001f;
 	const float step_ki = 0.000001f;
 
 	while (1) {
 		bt = Button_Get_Input();
 
-		// 1. 스텝 지령 생성 (500ms 마다 0A <-> 1A 토글)
 		if (HAL_GetTick() - last_toggle_time > 500) {
 			last_toggle_time = HAL_GetTick();
 			toggle_state = !toggle_state;
 			foc_L.target_Id = toggle_state ? TUNE_TEST_CURRENT : 0.0f;
 		}
 
-		// 2. 버튼 입력으로 Id 게인 조절
 		switch (bt) {
 		case INPUT_CMD_K_SINGLE:
 			sel = (sel + 1) % 2;
@@ -544,7 +561,6 @@ void MTR_Current_Tune_Loop() {
 			break;
 
 		case INPUT_CMD_K_HOLD:
-			// 종료 전 찾은 Id 게인을 Iq 및 우측 모터 제어기에도 동일하게 적용
 			foc_L.pid_iq.Kp = foc_L.pid_id.Kp;
 			foc_L.pid_iq.Ki = foc_L.pid_id.Ki;
 			foc_R.pid_id.Kp = foc_L.pid_id.Kp;
@@ -574,7 +590,6 @@ void MTR_Current_Tune_Loop() {
 
 void MTR_Speed_FOC() {
 	UserInput_t bt = INPUT_CMD_NONE;
-
 	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
 
 	float omega = 0.0f;
@@ -582,8 +597,8 @@ void MTR_Speed_FOC() {
 
 	const float step_iq_kp = 0.05f;
 	const float step_iq_ki = 0.025f;
-	const float step_spd_kp = 0.00001f;
-	const float step_spd_ki = 0.00001f;
+	const float step_spd_kp = 0.0001f;
+	const float step_spd_ki = 0.1f;
 	const float step_spd_kd = 0.000001f;
 
 	while (1) {
@@ -596,14 +611,24 @@ void MTR_Speed_FOC() {
 			if (omega > 2000.0f)
 				omega = 2000.0f;
 			break;
+		case INPUT_CMD_R_DOUBLE:
+			omega += 250.0f;
+			if (omega > 2000.0f)
+				omega = 2000.0f;
+			break;
 		case INPUT_CMD_L_SINGLE:
 		case INPUT_CMD_L_HOLD:
 			omega -= 50.0f;
 			if (omega < -2000.0f)
 				omega = -2000.0f;
 			break;
+		case INPUT_CMD_L_DOUBLE:
+			omega -= 250.0f;
+			if (omega < -2000.0f)
+				omega = -2000.0f;
+			break;
 		case INPUT_CMD_K_SINGLE:
-			sel = (sel + 1) % 5;   // 4 -> 5로 변경 (Kd 항목 추가)
+			sel = (sel + 1) % 5;
 			break;
 		case INPUT_CMD_U_SINGLE:
 		case INPUT_CMD_U_HOLD:
@@ -628,7 +653,7 @@ void MTR_Speed_FOC() {
 				foc_L.spd_Ki += step_spd_ki;
 				foc_R.spd_Ki += step_spd_ki;
 				break;
-			case 4:                          // 추가
+			case 4:
 				foc_L.spd_Kd += step_spd_kd;
 				foc_R.spd_Kd += step_spd_kd;
 				break;
@@ -688,9 +713,9 @@ void MTR_Speed_FOC() {
 		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ',
 				foc_L.spd_Kp * 1000);
 		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ',
-				foc_L.spd_Ki * 1000);
+				foc_L.spd_Ki);
 		LCD_Printf(0, 4, "%cSpKd:%6.3f", sel == 4 ? '>' : ' ',
-				foc_L.spd_Kd * 1000);   // 추가 (기존 4번 줄 이하는 한 칸씩 밀림)
+				foc_L.spd_Kd * 1000);
 		LCD_Printf(0, 6, "ref:%6.1f", omega);
 		LCD_Printf(0, 7, "SpdL:%6.1f", foc_L.omega_e_meas);
 		LCD_Printf(0, 8, "SpdR :%6.1f", foc_R.omega_e_meas);
@@ -700,16 +725,6 @@ void MTR_Speed_FOC() {
 		LCD_Printf(0, 12, "IqcR:%8.5f", foc_R.I_q);
 		LCD_Printf(0, 13, "Vbus:%5.3f", FOC_Get_VBus());
 	}
-}
-
-void Fan_Mtr_Start() {
-	__HAL_TIM_SET_COMPARE(FAN_TIM, FAN_CHANNEL, 300);
-	HAL_TIM_PWM_Start(FAN_TIM, FAN_CHANNEL);
-}
-
-void Fan_Mtr_Stop() {
-	__HAL_TIM_SET_COMPARE(FAN_TIM, FAN_CHANNEL, 0);
-	HAL_TIM_PWM_Stop(FAN_TIM, FAN_CHANNEL);
 }
 
 void Fan_Test() {
@@ -736,7 +751,6 @@ void Fan_Test() {
 }
 
 void Magnet_Encoder_Test() {
-//	Swap_MT6701_Spi_Mode();
 	UserInput_t bt;
 	while ((bt = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
 		MT6701_ReadSSI(&encDataL);

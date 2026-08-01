@@ -1,17 +1,18 @@
-/*
- * motor.h
- *
- *  Created on: 2026. 6. 9.
- *      Author: kth59
- */
-
 #ifndef INC_MOTOR_H_
 #define INC_MOTOR_H_
+
+#include "arm_math.h"
+#include "foc.h"
 
 #define TIRE_DIAMETER	0.023f
 #define INV_TIRE_RADIUS	(2.f / TIRE_DIAMETER)
 
-#define GEAR_RATIO (39.f/11.f)
+#define GEAR_RATIO 		(39.f/11.f)
+
+#define	MPS_TO_OMEGA 	(INV_TIRE_RADIUS * MOTOR_POLE_PAIRS * GEAR_RATIO)
+
+#define THREAD		0.186f	// 바퀴 끝에서 끝 거리는 22.5cm, 바퀴 중심 거리는 18.6cm
+#define THREAD_DIV2	(THREAD / 2.f)
 
 typedef enum {
     FOC_MODE_NO_SVPWM_SPIN  = 0, // 모터 구동 O, SVPWM 연산 X (단순 PWM/수동 제어)
@@ -20,10 +21,11 @@ typedef enum {
 	FOC_MODE_SPEED_LOOP		= 3, // 모터 구동 O, SVPWM 연산 O (속도 Closed Loop 실행/주행용)
 } FOC_DriveMode_t;
 
+// motor.c에서 정의된 조향 PID 인스턴스
+extern arm_pid_instance_f32 steer_pid;
 
 void MTR_Setup_And_Start(FOC_DriveMode_t mode);
 void MTR_Safe_Stop(void);
-
 
 void MTR_Read_Register(void);
 void MTR_Simple_Control(void);
@@ -34,8 +36,11 @@ void MTR_Speed_FOC(void);
 void MTR_Current_Tune_Loop(void);
 
 void Fan_Mtr_Start(void);
+void Fan_Mtr_Set_Duty(uint8_t duty);
 void Fan_Mtr_Stop(void);
 void Fan_Test(void);
 void Magnet_Encoder_Test(void);
+
+void Steer_Motor(void);
 
 #endif /* INC_MOTOR_H_ */

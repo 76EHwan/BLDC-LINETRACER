@@ -115,8 +115,8 @@ void MX_ADC1_Init(void)
   sConfigInjected.ExternalTrigInjecConv = ADC_EXTERNALTRIGINJEC_T4_TRGO;
   sConfigInjected.ExternalTrigInjecConvEdge = ADC_EXTERNALTRIGINJECCONV_EDGE_RISING;
   sConfigInjected.InjecOversamplingMode = ENABLE;
-  sConfigInjected.InjecOversampling.Ratio = 4;
-  sConfigInjected.InjecOversampling.RightBitShift = ADC_RIGHTBITSHIFT_2;
+  sConfigInjected.InjecOversampling.Ratio = 1;
+  sConfigInjected.InjecOversampling.RightBitShift = ADC_RIGHTBITSHIFT_NONE;
   if (HAL_ADCEx_InjectedConfigChannel(&hadc1, &sConfigInjected) != HAL_OK)
   {
     Error_Handler();
@@ -210,8 +210,8 @@ void MX_ADC2_Init(void)
   sConfigInjected.ExternalTrigInjecConv = ADC_EXTERNALTRIGINJEC_T3_TRGO;
   sConfigInjected.ExternalTrigInjecConvEdge = ADC_EXTERNALTRIGINJECCONV_EDGE_RISING;
   sConfigInjected.InjecOversamplingMode = ENABLE;
-  sConfigInjected.InjecOversampling.Ratio = 4;
-  sConfigInjected.InjecOversampling.RightBitShift = ADC_RIGHTBITSHIFT_2;
+  sConfigInjected.InjecOversampling.Ratio = 1;
+  sConfigInjected.InjecOversampling.RightBitShift = ADC_RIGHTBITSHIFT_NONE;
   if (HAL_ADCEx_InjectedConfigChannel(&hadc2, &sConfigInjected) != HAL_OK)
   {
     Error_Handler();
@@ -247,13 +247,12 @@ void MX_ADC3_Init(void)
   /** Common config
   */
   hadc3.Instance = ADC3;
-  hadc3.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV4;
-  hadc3.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc3.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
   hadc3.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc3.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   hadc3.Init.LowPowerAutoWait = DISABLE;
   hadc3.Init.ContinuousConvMode = DISABLE;
-  hadc3.Init.NbrOfConversion = 16;
+  hadc3.Init.NbrOfConversion = 10;
   hadc3.Init.DiscontinuousConvMode = ENABLE;
   hadc3.Init.NbrOfDiscConversion = 1;
   hadc3.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T2_TRGO;
@@ -262,10 +261,16 @@ void MX_ADC3_Init(void)
   hadc3.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc3.Init.LeftBitShift = ADC_LEFTBITSHIFT_NONE;
   hadc3.Init.OversamplingMode = ENABLE;
-  hadc3.Init.Oversampling.Ratio = 4;
-  hadc3.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_2;
+  hadc3.Init.Oversampling.Ratio = 2;
+  hadc3.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_1;
   hadc3.Init.Oversampling.TriggeredMode = ADC_TRIGGEREDMODE_SINGLE_TRIGGER;
   hadc3.Init.Oversampling.OversamplingStopReset = ADC_REGOVERSAMPLING_RESUMED_MODE;
+  if (HAL_ADC_Init(&hadc3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  hadc3.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV4;
+  hadc3.Init.Resolution = ADC_RESOLUTION_12B;
   if (HAL_ADC_Init(&hadc3) != HAL_OK)
   {
     Error_Handler();
@@ -354,55 +359,6 @@ void MX_ADC3_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_11;
   sConfig.Rank = ADC_REGULAR_RANK_10;
-  if (HAL_ADC_ConfigChannel(&hadc3, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Regular Channel
-  */
-  sConfig.Channel = ADC_CHANNEL_0;
-  sConfig.Rank = ADC_REGULAR_RANK_11;
-  if (HAL_ADC_ConfigChannel(&hadc3, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Regular Channel
-  */
-  sConfig.Rank = ADC_REGULAR_RANK_12;
-  if (HAL_ADC_ConfigChannel(&hadc3, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Regular Channel
-  */
-  sConfig.Rank = ADC_REGULAR_RANK_13;
-  if (HAL_ADC_ConfigChannel(&hadc3, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Regular Channel
-  */
-  sConfig.Rank = ADC_REGULAR_RANK_14;
-  if (HAL_ADC_ConfigChannel(&hadc3, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Regular Channel
-  */
-  sConfig.Rank = ADC_REGULAR_RANK_15;
-  if (HAL_ADC_ConfigChannel(&hadc3, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Regular Channel
-  */
-  sConfig.Rank = ADC_REGULAR_RANK_16;
   if (HAL_ADC_ConfigChannel(&hadc3, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -688,3 +644,4 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
 /* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */
+

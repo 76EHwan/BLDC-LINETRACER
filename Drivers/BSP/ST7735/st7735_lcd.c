@@ -126,40 +126,40 @@ uint8_t LCD7735_SoftPWMIsEnable(void) {
 	return IsLCD7735_SoftPWM;
 }
 
-void LCD7735_SoftPWMCtrlInit(void) {
-	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
-
-	__HAL_RCC_GPIOE_CLK_ENABLE();
-	GPIO_InitStruct.Pin = GPIO_PIN_10;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-	HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-	MX_TIM16_Init(); // Freq: 10K
-	HAL_TIM_Base_Start_IT(&htim16);
-
-	LCD7735_SoftPWMEnable(1);
-}
-
-void LCD7735_SoftPWMCtrlDeInit(void) {
-	HAL_TIM_Base_DeInit(&htim16);
-	HAL_GPIO_DeInit(GPIOE, GPIO_PIN_10);
-}
-
-void LCD7735_SoftPWMCtrlRun(void) {
-	static uint32_t timecount;
-
-	if (timecount > 1000)
-		timecount = 0;
-	else
-		timecount += 10;
-
-	if (timecount >= LCD7735_LightSet)
-		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_SET);
-	else
-		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_RESET);
-}
+//void LCD7735_SoftPWMCtrlInit(void) {
+//	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
+//
+//	__HAL_RCC_GPIOE_CLK_ENABLE();
+//	GPIO_InitStruct.Pin = GPIO_PIN_10;
+//	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+//	GPIO_InitStruct.Pull = GPIO_NOPULL;
+//	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+//	HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+//
+//	MX_TIM16_Init(); // Freq: 10K
+//	HAL_TIM_Base_Start_IT(&htim16);
+//
+//	LCD7735_SoftPWMEnable(1);
+//}
+//
+//void LCD7735_SoftPWMCtrlDeInit(void) {
+//	HAL_TIM_Base_DeInit(&htim16);
+//	HAL_GPIO_DeInit(GPIOE, GPIO_PIN_10);
+//}
+//
+//void LCD7735_SoftPWMCtrlRun(void) {
+//	static uint32_t timecount;
+//
+//	if (timecount > 1000)
+//		timecount = 0;
+//	else
+//		timecount += 10;
+//
+//	if (timecount >= LCD7735_LightSet)
+//		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_SET);
+//	else
+//		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_RESET);
+//}
 
 /* * HAL_TIM_PeriodElapsedCallback 은 메인 인터럽트 파일(stm32h7xx_it.c 등)에
  * 전역으로 하나만 존재해야 하므로 이곳에서는 주석 처리합니다.

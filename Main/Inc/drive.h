@@ -1,18 +1,17 @@
-/*
- * drive.h
- *
- *  Created on: 2026. 7. 2.
- *      Author: kth59
- */
-
 #ifndef INC_DRIVE_H_
 #define INC_DRIVE_H_
 
 #include "tim.h"
 #include "sensor.h"
+#include "arm_math.h"
 
-#define RAMP_TIM	(&htim14)
+// motor.h에서 이동된 주행 타이머 설정
+#define RAMP_DT		0.0005f
 #define Ramp_TIM_IRQ_Handler TIM14_IRQ_Handler
+
+#define SENSOR_DIST_L       0.13f  // 바퀴 회전 축 중심부터 센서바까지의 앞뒤 거리
+#define WHEEL_TRACK_W       0.186f  // 좌우 바퀴 중심 사이의 간격
+#define SENSOR_HALF_WIDTH   0.08f // 센서바 정중앙부터 맨 끝 15번 센서까지의 거리
 
 typedef struct {
 	float_t mpsL;
@@ -21,35 +20,30 @@ typedef struct {
 	float_t accel;
 	float_t decel;
 	float_t max_mps;
-	float_t steer_gain;
+	float_t steer_gain_p;
+	float_t steer_gain_d;
 	float_t pos_atten_gain;
+	float_t pit_in_distance_m;
 	uint8_t fan_en;
 } DriveParam_t;
 
-// === 교차로(cross) 마커 이벤트 ==============================================
-// 위치 창(POS_WINDOW) 바깥쪽 라인센서(idx0~15 중 창에서 제외된 부분)에서
-// 검출되는 cross_left/cross_right 후보를 기반으로 판정한다(sensor.c).
-// idx16/17 전용 마커 포토인터럽터는 예비용이라 여기서는 사용하지 않는다.
-// 좌우 동시 검출 시 정지 지점(STOP)으로 처리한다.
-typedef enum {
-	CROSS_NONE = 0,
-	CROSS_LEFT,
-	CROSS_RIGHT,
-	CROSS_CROSS,
-	CROSS_STOP,   // 좌/우 마커 동시 검출 -> 주행 정지
-} CrossEvent_t;
-
-#define CROSS_LOG_MAX 32
-
-typedef struct {
-	CrossEvent_t type;
-	float dist_from_prev_m;   // 이전 마커로부터의 주행 거리 (엔코더/FOC 속도 적분 기반, m)
-} CrossMarkerLog_t;
-
 extern DriveParam_t driveData;
-extern CrossMarkerLog_t g_cross_log[CROSS_LOG_MAX];
-extern uint8_t g_cross_log_count;   // 누적 기록 횟수 (버퍼는 CROSS_LOG_MAX에서 순환)
 
-void Line_Follow_Drive(void);
+// drive.c에서 정의된 가감속 및 주행 상태 변수들
+extern float_t accel;
+extern float_t decel;
+extern volatile uint8_t g_is_braking;
+extern volatile float g_target_base_mps;
+extern volatile float g_current_base_mps;
+
+
+// 주행 시퀀스 함수
+void Drive_Stop_At_Distance(float_t target_distance_m);
+void Drive_First(void);
+void Drive_Second(void); // 2회차 주행 함수 추가
+
+// 가감속 제어 함수
+void Ramp_Start(void);
+void Ramp_Stop(void);
 
 #endif /* INC_DRIVE_H_ */

@@ -70,20 +70,13 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, MTR_nSLEEP_R_Pin|MTR_DRVOFF_R_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : SENSOR_LED_R_Pin E3_Pin SENSOR_MUX2_Pin SENSOR_MUX1_Pin
-                           SENSOR_MUX3_Pin LCD_CS_Pin LCD_WR_RS_Pin SENSOR_LED_L_Pin */
-  GPIO_InitStruct.Pin = SENSOR_LED_R_Pin|E3_Pin|SENSOR_MUX2_Pin|SENSOR_MUX1_Pin
-                          |SENSOR_MUX3_Pin|LCD_CS_Pin|LCD_WR_RS_Pin|SENSOR_LED_L_Pin;
+  /*Configure GPIO pins : SENSOR_LED_R_Pin E3_Pin SENSOR_PT_EN_Pin SENSOR_IR_EN_Pin
+                           LCD_CS_Pin LCD_WR_RS_Pin SENSOR_LED_L_Pin */
+  GPIO_InitStruct.Pin = SENSOR_LED_R_Pin|E3_Pin|SENSOR_PT_EN_Pin|SENSOR_IR_EN_Pin
+                          |LCD_CS_Pin|LCD_WR_RS_Pin|SENSOR_LED_L_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : SENSOR_PT_EN_Pin SENSOR_IR_EN_Pin */
-  GPIO_InitStruct.Pin = SENSOR_PT_EN_Pin|SENSOR_IR_EN_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
   /*Configure GPIO pin : KEY_Pin */
@@ -100,8 +93,22 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Alternate = GPIO_AF15_EVENTOUT;
   HAL_GPIO_Init(DVP_PWDN_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : SENSOR_MUX0_Pin MTR_CS_L_Pin MTR_CS_R_Pin */
-  GPIO_InitStruct.Pin = SENSOR_MUX0_Pin|MTR_CS_L_Pin|MTR_CS_R_Pin;
+  /*Configure GPIO pin : SENSOR_MUX0_Pin */
+  GPIO_InitStruct.Pin = SENSOR_MUX0_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(SENSOR_MUX0_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : SENSOR_MUX2_Pin SENSOR_MUX1_Pin SENSOR_MUX3_Pin */
+  GPIO_InitStruct.Pin = SENSOR_MUX2_Pin|SENSOR_MUX1_Pin|SENSOR_MUX3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : MTR_CS_L_Pin MTR_CS_R_Pin */
+  GPIO_InitStruct.Pin = MTR_CS_L_Pin|MTR_CS_R_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -148,9 +155,13 @@ void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : IMU_INT1_Pin */
   GPIO_InitStruct.Pin = IMU_INT1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(IMU_INT1_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
 }
 

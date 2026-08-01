@@ -84,10 +84,12 @@
 /*---------- -----------*/
 /*---------- -----------*/
 
+/* #define USBD_CUSTOMHID_REPORT_DESC_SIZE_ENABLED */
 /* #define USBD_CUSTOMHID_CTRL_REQ_GET_REPORT_ENABLED */
 /* #define USBD_CUSTOMHID_OUT_PREPARE_RECEIVE_DISABLED */
 /* #define USBD_CUSTOMHID_EP0_OUT_PREPARE_RECEIVE_DISABLED */
 /* #define USBD_CUSTOMHID_CTRL_REQ_COMPLETE_CALLBACK_ENABLED */
+/* #define USBD_CUSTOMHID_REPORT_BUFFER_EVENT_ENABLED */
 
 /****************************************/
 /* #define for FS and HS identification */
