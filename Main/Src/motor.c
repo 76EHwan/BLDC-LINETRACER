@@ -597,8 +597,8 @@ void MTR_Speed_FOC() {
 
 	const float step_iq_kp = 0.05f;
 	const float step_iq_ki = 0.025f;
-	const float step_spd_kp = 0.00001f;
-	const float step_spd_ki = 0.00001f;
+	const float step_spd_kp = 0.0001f;
+	const float step_spd_ki = 0.1f;
 	const float step_spd_kd = 0.000001f;
 
 	while (1) {

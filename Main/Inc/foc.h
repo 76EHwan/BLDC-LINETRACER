@@ -21,7 +21,7 @@
 // 전류 센싱 스케일 팩터 (ADC Raw 값 -> 실제 전류 A 로 변환)
 // 공식: VREF / ADC_MAX / CSA_GAIN (또는 Shunt값에 따른 통합 계수)
 #define CURRENT_CSA_GAIN_MA		300
-#define CURRENT_SCALE           (3.3f / 65536.0f / CURRENT_CSA_GAIN_MA / 1000.f)
+#define CURRENT_SCALE           (3.3f / 65536.0f / (CURRENT_CSA_GAIN_MA / 1000.f))
 #define FOC_ADC_DMA_LENGTH      1           // DMA 버퍼 길이
 
 #define SPD_MA_WINDOW 4  // 4~8 정도의 작은 값 추천 (지연과 노이즈의 타협점)
