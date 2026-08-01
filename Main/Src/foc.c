@@ -92,6 +92,14 @@ void FOC_Reset_State(FOC_Handle_t *hfoc) {
 	hfoc->speed_loop_en = 0;
 
 	// 2. 현재 상태 및 타겟 변수 초기화
+	hfoc->I_a = 0.f;
+	hfoc->I_b = 0.f;
+	hfoc->I_c = 0.f;
+	hfoc->I_alpha = 0.f;
+	hfoc->I_beta = 0.f;
+	hfoc->I_d = 0.f;
+	hfoc->I_q = 0.f;
+
 	hfoc->target_Id = 0.0f;
 	hfoc->target_Iq = 0.0f;
 	hfoc->omega_e = 0.0f;
