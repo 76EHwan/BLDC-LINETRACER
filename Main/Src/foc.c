@@ -122,8 +122,8 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 	FOC_Reset_State(hfoc);
 
 	// 2. 디폴트 파라미터 (오프셋 및 방향)
-	hfoc->offset_a = 32768.0f;
-	hfoc->offset_c = 32768.0f;
+//	hfoc->offset_a = 32768.0f;
+//	hfoc->offset_c = 32768.0f;
 	hfoc->theta_offset = 0.0f;
 	hfoc->enc_dir = +1;
 
@@ -139,10 +139,10 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 //	hfoc->spd_Kp = 0.0f;
 //	hfoc->spd_Ki = 0.0f;
 //	hfoc->spd_Kd = 0.0f;
-
+//
 	hfoc->spd_Kp = 0.0005f;
 	hfoc->spd_Ki = 0.0001f;
-	hfoc->spd_Kd = 0.000001f;      // 기본은 0에서 시작, 필요 시 �
+	hfoc->spd_Kd = 0.000001f;      // 기본은 0에서 시작, 필요 시 �
 
 	hfoc->iq_limit = SPD_IQ_LIMIT;
 

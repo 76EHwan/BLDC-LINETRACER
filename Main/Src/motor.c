@@ -93,7 +93,7 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 	foc_R.omega_ramp_rate = 3000;
 
 	Encoder_Start();
-	FOC_ADC_Start();
+//	FOC_ADC_Start();
 	HAL_Delay(50);
 
 	if (mode != FOC_MODE_SVPWM_NO_SPIN) {
@@ -597,8 +597,8 @@ void MTR_Speed_FOC() {
 
 	const float step_iq_kp = 0.05f;
 	const float step_iq_ki = 0.025f;
-	const float step_spd_kp = 0.00001f;
-	const float step_spd_ki = 0.00001f;
+	const float step_spd_kp = 0.0001f;
+	const float step_spd_ki = 0.1f;
 	const float step_spd_kd = 0.000001f;
 
 	while (1) {
@@ -713,7 +713,7 @@ void MTR_Speed_FOC() {
 		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ',
 				foc_L.spd_Kp * 1000);
 		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ',
-				foc_L.spd_Ki * 1000);
+				foc_L.spd_Ki);
 		LCD_Printf(0, 4, "%cSpKd:%6.3f", sel == 4 ? '>' : ' ',
 				foc_L.spd_Kd * 1000);
 		LCD_Printf(0, 6, "ref:%6.1f", omega);

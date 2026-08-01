@@ -134,10 +134,10 @@ static const uint8_t DRV_DEFAULT_CTRL6 =
 static const uint8_t DRV_DEFAULT_CTRL10 =
 // #7~5 Reserved
 // #4   DLYCMP_EN - 드라이버 지연 보상 기능
-        DRV_CTRL10_DLYCMP_DIS |     // 보상 기능 끄기
-//      DRV_CTRL10_DLYCMP_EN |      // 보상 기능 켜기
+//      DRV_CTRL10_DLYCMP_DIS |     // 보상 기능 끄기
+        DRV_CTRL10_DLYCMP_EN |      // 보상 기능 켜기
 // #3~0 DLY_TARGET - 목표 지연 시간 설정
-        DRV_CTRL10_DLY_TARGET_0US;  // 0 µs
+//      DRV_CTRL10_DLY_TARGET_0US;  // 0 µs
 //      DRV_CTRL10_DLY_TARGET_0_4US;// 0.4 µs
 //      DRV_CTRL10_DLY_TARGET_0_8US;// 0.8 µs
 //      DRV_CTRL10_DLY_TARGET_1_2US;// 1.2 µs
@@ -150,7 +150,7 @@ static const uint8_t DRV_DEFAULT_CTRL10 =
 //		DRV_CTRL10_DLY_TARGET_2_6US;// 2.6 µs
 //		DRV_CTRL10_DLY_TARGET_2_8US;// 2.8 µs
 //		DRV_CTRL10_DLY_TARGET_3US;	// 3 µs
-//		DRV_CTRL10_DLY_TARGET_3_2US;// 3.2 µs
+		DRV_CTRL10_DLY_TARGET_3_2US;// 3.2 µs
 
 
 // @formatter:on
