@@ -25,7 +25,7 @@
 #define DRV8316C_R_ADC &hadc1
 #define DRV8316C_R_ENC &lptim1
 
-#define ADC_READ_TIMING	4
+#define ADC_READ_TIMING	170
 
 #define DRV8316C_CS_LOW(hdrv)      	HAL_GPIO_WritePin((hdrv)->nCS_Port, (hdrv)->nCS_Pin, GPIO_PIN_RESET)
 #define DRV8316C_CS_HIGH(hdrv)     	HAL_GPIO_WritePin((hdrv)->nCS_Port, (hdrv)->nCS_Pin, GPIO_PIN_SET)

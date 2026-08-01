@@ -78,6 +78,14 @@ void FOC_ADC_Start() {
 			/ 2.f* VBUS_ADC_SCALE;
 }
 
+void FOC_ADC_Stop() {
+	HAL_ADC_Stop_DMA(&hadc1);
+	HAL_ADC_Stop_DMA(&hadc2);
+
+	HAL_ADCEx_InjectedStop_IT(&hadc1);
+	HAL_ADCEx_InjectedStop_IT(&hadc2);
+}
+
 void FOC_Reset_State(FOC_Handle_t *hfoc) {
 	hfoc->is_running = 0;
 	hfoc->foc_svpwm_en = 0;
@@ -142,7 +150,7 @@ void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 
 	hfoc->spd_Kp = 0.0005f;
 	hfoc->spd_Ki = 0.0001f;
-	hfoc->spd_Kd = 0.000001f;      // 기본은 0에서 시작, 필요 시 �
+	hfoc->spd_Kd = 0.000001f;      // 기본은 0에서 시작, 필요 시 �
 
 	hfoc->iq_limit = SPD_IQ_LIMIT;
 
@@ -415,6 +423,13 @@ void FOC_Execute_Loop(FOC_Handle_t *hfoc) {
 	duty_a = duty_a < 0.0f ? 0.0f : (duty_a > PWM_PERIOD ? PWM_PERIOD : duty_a);
 	duty_b = duty_b < 0.0f ? 0.0f : (duty_b > PWM_PERIOD ? PWM_PERIOD : duty_b);
 	duty_c = duty_c < 0.0f ? 0.0f : (duty_c > PWM_PERIOD ? PWM_PERIOD : duty_c);
+
+#define MAX_DUTY 0.9f
+	float32_t max_pwm_duty = PWM_PERIOD * MAX_DUTY;
+	duty_a = duty_a < max_pwm_duty ? duty_a : max_pwm_duty;
+	duty_b = duty_b < max_pwm_duty ? duty_b : max_pwm_duty;
+	duty_c = duty_c < max_pwm_duty ? duty_c : max_pwm_duty;
+
 
 	// [9] 하드웨어 타이머 레지스터 적용
 	if (hfoc->foc_svpwm_en) {

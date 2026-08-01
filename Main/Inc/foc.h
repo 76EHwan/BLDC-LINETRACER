@@ -144,6 +144,8 @@ extern float_t g_odom_distance_m;
 float32_t FOC_Get_VBus(void);
 
 void FOC_ADC_Start(void);
+void FOC_ADC_Stop(void);
+
 void FOC_Reset_State(FOC_Handle_t *hfoc);
 void FOC_Init_Motor(FOC_Handle_t *hfoc, TIM_HandleTypeDef *TIMx,
 		ADC_HandleTypeDef *ADCx, LPTIM_HandleTypeDef *LPTIMx);
