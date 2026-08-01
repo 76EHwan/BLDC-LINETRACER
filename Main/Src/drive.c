@@ -14,6 +14,8 @@
 #define RAMP_TIM		(&htim14)
 #define Buzzer_LPTIM	(&hlptim3)
 #define Buzzer_LPTIM_IRQ_Handler	LPTIM3_IRQ_Handler
+#define Buzzer_DAC_Handler	(&hdac1)
+#define Buzzer_DAC_Channel	DAC_CHANNEL_1
 
 // @formatter:off
 DriveParam_t driveData = {
@@ -132,7 +134,7 @@ void Buzzer_Discount_Start() {
 }
 
 void Buzzer_Discount_Stop() {
-	HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, 0);
+	HAL_DAC_SetValue(Buzzer_DAC_Handler, Buzzer_DAC_Channel, DAC_ALIGN_12B_R, 0);
 	HAL_LPTIM_Counter_Stop_IT(Buzzer_LPTIM);
 }
 

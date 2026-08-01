@@ -62,7 +62,6 @@ float32_t FOC_Get_VBus(void) {
 // 1. regular(배터리) DMA + injected(상전류) IT 동시 구동 시작
 void FOC_ADC_Start() {
 	// regular DMA 먼저 시작 후, 돌고 있는 ADC에 injected IT를 얹는 순서
-
 	HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
 	HAL_ADCEx_Calibration_Start(&hadc2, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
 
