@@ -18,7 +18,7 @@
 #define Buzzer_DAC_Channel	DAC_CHANNEL_1
 
 // @formatter:off
-DriveParam_t driveData = {
+DriveParam_t driveData1 = {
 		.base_mps = 2.0f,
 		.max_mps = 10.f,
 		.accel = 4.f,
@@ -29,7 +29,64 @@ DriveParam_t driveData = {
 		.pit_in_distance_m = 0.15f,
 		.fan_en = 0,
 };
+
+DriveParam_t driveData2 = {
+		.base_mps = 2.0f,
+		.max_mps = 10.f,
+		.accel = 4.f,
+		.decel = 4.f,
+		.steer_gain_p = 12.0f,
+		.steer_gain_d = 0.0f,
+		.pos_atten_gain = 0.0f,
+		.pit_in_distance_m = 0.15f,
+		.fan_en = 0,
+};
+
+DriveParam_t driveData3 = {
+		.base_mps = 2.0f,
+		.max_mps = 10.f,
+		.accel = 4.f,
+		.decel = 4.f,
+		.steer_gain_p = 12.0f,
+		.steer_gain_d = 0.0f,
+		.pos_atten_gain = 0.0f,
+		.pit_in_distance_m = 0.15f,
+		.fan_en = 0,
+};
+
+DriveParam_t driveData4 = {
+		.base_mps = 2.0f,
+		.max_mps = 10.f,
+		.accel = 4.f,
+		.decel = 4.f,
+		.steer_gain_p = 12.0f,
+		.steer_gain_d = 0.0f,
+		.pos_atten_gain = 0.0f,
+		.pit_in_distance_m = 0.15f,
+		.fan_en = 0,
+};
+
+DriveParam_t driveData;
 // @formatter:on
+
+static uint8_t select_drive_setting_idx = 0;
+
+void Select_Drive_Setting(uint8_t index) {
+	switch (index) {
+	case 0:
+		driveData = driveData1;
+		break;
+	case 1:
+		driveData = driveData2;
+		break;
+	case 2:
+		driveData = driveData3;
+		break;
+	case 3:
+		driveData = driveData4;
+		break;
+	}
+}
 
 uint8_t g_total_L = 0;
 uint8_t g_total_R = 0;
@@ -134,7 +191,8 @@ void Buzzer_Discount_Start() {
 }
 
 void Buzzer_Discount_Stop() {
-	HAL_DAC_SetValue(Buzzer_DAC_Handler, Buzzer_DAC_Channel, DAC_ALIGN_12B_R, 0);
+	HAL_DAC_SetValue(Buzzer_DAC_Handler, Buzzer_DAC_Channel, DAC_ALIGN_12B_R,
+			0);
 	HAL_LPTIM_Counter_Stop_IT(Buzzer_LPTIM);
 }
 
@@ -163,6 +221,8 @@ void Drive_Stop_At_Distance(float target_distance_m) {
 // 1회차 주행 함수 모음
 // ============================================================================
 __STATIC_INLINE uint8_t Drive_Init_Sequence(void) {
+	Select_Drive_Setting(select_drive_setting_idx);
+
 	if (!IR_Sensor.is_calibration) {
 		if (Sensor_Load_Calibration() != FR_OK) {
 			LCD_Printf(0, 0, "Fail");
@@ -347,6 +407,8 @@ __STATIC_INLINE void Build_Segment_Plan(void) {
 }
 
 __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
+	Select_Drive_Setting(select_drive_setting_idx);
+
 	if (!IR_Sensor.is_calibration) {
 		if (Sensor_Load_Calibration() != FR_OK) {
 			LCD_Printf(0, 0, "Fail");
