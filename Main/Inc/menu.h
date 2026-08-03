@@ -44,4 +44,16 @@ void Update_Position_Abs_Gain(void);
 void Update_Pit_In_Distance_M(void);
 void Update_Fan_Enable(void);
 
+// 3 / 4회차 주행 파라미터
+void Update_Turn45_Len_S(void);
+void Update_Turn45_Len_C(void);
+void Update_Turn90_Len_S(void);
+void Update_Turn90_Len_C(void);
+void Update_Add45_Mps(void);
+void Update_Add90_Mps(void);
+void Update_Zero_Offset(void);
+void Update_Zero_Shift_Rate(void);
+void Update_Zero_Out_Turn(void);
+void Update_Zero_Out_Straight(void);
+
 #endif /* MENU_H_ */

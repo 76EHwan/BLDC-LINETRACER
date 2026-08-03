@@ -168,7 +168,10 @@ static volatile float_t g_current_steer = 0.0f;
 static volatile float_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
 
 void Steer_Motor() {
-	float_t line_pos = Sensor_Get_Position();
+	// ★ 영점이동: 센서가 본 위치에 오프셋을 더해 제어 목표를 옆으로 옮긴다.
+	//   제어기는 이 합을 0으로 만들려 하므로 로봇이 스스로 옆으로 이동한다.
+	//   g_line_offset 은 4회차 주행에서만 0이 아니다.
+	float_t line_pos = Sensor_Get_Position() + g_line_offset;
 	g_current_steer = arm_pid_f32(&steer_pid, line_pos);
 
 	float_t raw_atten = 1.0f - (fabsf(line_pos) * driveData.pos_atten_gain);

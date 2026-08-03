@@ -51,6 +51,7 @@ extern MenuContext_t sensor_menu;
 extern MenuContext_t motor_menu;
 extern MenuContext_t drive_menu;
 extern MenuContext_t drive_param_menu;
+extern MenuContext_t drive34_param_menu;
 
 // =========================================================
 // 1. 메뉴 아이템 배열 정의 (자동 개수 산정을 위해 먼저 정의)
@@ -91,9 +92,10 @@ MenuItem_t motor_menu_items[] = {
 MenuItem_t drive_menu_items[] = {
     { .name = "1st Drive",    .pfnActionCallback = Drive_First },
     { .name = "2nd Drive",    .pfnActionCallback = Drive_Second },
-    { .name = "3rd Drive",    .pfnActionCallback = NULL },
-    { .name = "4th Drive",    .pfnActionCallback = NULL },
+    { .name = "3rd Drive",    .pfnActionCallback = Drive_Third },
+    { .name = "4th Drive",    .pfnActionCallback = Drive_Fourth },
     { .name = "Update Param", .pfnActionCallback = NULL, 				.child_menu = &drive_param_menu },
+    { .name = "3rd/4th Prm",  .pfnActionCallback = NULL, 				.child_menu = &drive34_param_menu },
 };
 
 MenuItem_t drive_param_items[] = {
@@ -108,6 +110,20 @@ MenuItem_t drive_param_items[] = {
 	{ .name = "Pos Abs Gain", 	.pfnActionCallback = Update_Position_Abs_Gain	},
 	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
+};
+
+// 3 / 4회차 주행 전용 파라미터
+MenuItem_t drive34_param_items[] = {
+	{ .name = "Turn45 S m", 	.pfnActionCallback = Update_Turn45_Len_S		},
+	{ .name = "Turn45 C m", 	.pfnActionCallback = Update_Turn45_Len_C		},
+	{ .name = "Turn90 S m", 	.pfnActionCallback = Update_Turn90_Len_S		},
+	{ .name = "Turn90 C m", 	.pfnActionCallback = Update_Turn90_Len_C		},
+	{ .name = "Add45 m/s", 		.pfnActionCallback = Update_Add45_Mps			},
+	{ .name = "Add90 m/s", 		.pfnActionCallback = Update_Add90_Mps			},
+	{ .name = "Zero Offset", 	.pfnActionCallback = Update_Zero_Offset			},
+	{ .name = "Zero Rate /m", 	.pfnActionCallback = Update_Zero_Shift_Rate		},
+	{ .name = "ZeroOut Trn", 	.pfnActionCallback = Update_Zero_Out_Turn		},
+	{ .name = "ZeroOut Str", 	.pfnActionCallback = Update_Zero_Out_Straight	},
 };
 
 // =========================================================
@@ -149,6 +165,14 @@ MenuContext_t drive_param_menu = {
 	.category_name = "Update Param",
 	.pMenuItems = drive_param_items,
 	.item_count = MENU_ITEM_COUNT(drive_param_items),
+	.parent_menu = &drive_menu,
+	.cursor_index = 0
+};
+
+MenuContext_t drive34_param_menu = {
+	.category_name = "3rd/4th Param",
+	.pMenuItems = drive34_param_items,
+	.item_count = MENU_ITEM_COUNT(drive34_param_items),
 	.parent_menu = &drive_menu,
 	.cursor_index = 0
 };
@@ -496,6 +520,55 @@ void Update_Pit_In_Distance_M() {
 
 void Update_Fan_Enable() {
 	Update_Param_Menu(DATA_UINT8, (uint32_t*) &(driveData.fan_en), NULL, "Fan Enable");
+}
+
+// ===== 3 / 4회차 주행 파라미터 =====
+
+void Update_Turn45_Len_S() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.turn45_len_s_m),
+			"Turn45 S m");
+}
+
+void Update_Turn45_Len_C() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.turn45_len_c_m),
+			"Turn45 C m");
+}
+
+void Update_Turn90_Len_S() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.turn90_len_s_m),
+			"Turn90 S m");
+}
+
+void Update_Turn90_Len_C() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.turn90_len_c_m),
+			"Turn90 C m");
+}
+
+void Update_Add45_Mps() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.add45_mps), "Add45 m/s");
+}
+
+void Update_Add90_Mps() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.add90_mps), "Add90 m/s");
+}
+
+void Update_Zero_Offset() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.zero_offset), "Zero Offset");
+}
+
+void Update_Zero_Shift_Rate() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.zero_shift_rate),
+			"Zero Rate /m");
+}
+
+void Update_Zero_Out_Turn() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.zero_out_turn_m),
+			"ZeroOut Trn");
+}
+
+void Update_Zero_Out_Straight() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.zero_out_straight_m),
+			"ZeroOut Str");
 }
 
 void Menu_ProcessLoop() {
