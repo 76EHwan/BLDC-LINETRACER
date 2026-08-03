@@ -11,145 +11,27 @@
 #include "lptim.h"
 #include "lsm6ds3tr-c.h"
 
-#define RAMP_TIM		(&htim14)
-#define Buzzer_LPTIM	(&hlptim3)
-#define Buzzer_LPTIM_IRQ_Handler	LPTIM3_IRQ_Handler
-#define Buzzer_DAC_Handler	(&hdac1)
-#define Buzzer_DAC_Channel	DAC_CHANNEL_1
+#define RAMP_TIM        (&htim14)
+#define VIB_SAMPLE_MAX  10000
 
 // @formatter:off
-DriveParam_t driveData1 = {
-		.base_mps = 2.0f,
-		.max_mps = 10.f,
-		.accel = 4.f,
-		.decel = 4.f,
-		.steer_gain_p = 12.0f,
-		.steer_gain_d = 0.0f,
-		.pos_atten_gain = 0.0f,
-		.pit_in_distance_m = 0.15f,
-		.fan_en = 0,
+DriveParam_t driveData = {
+    .base_mps = 2.0f,
+    .max_mps = 10.f,
+    .accel = 4.f,
+    .decel = 4.f,
+    .steer_gain_p = 26.4f,
+    .steer_gain_d = 1.289f,
+    .pos_atten_gain = 0.0f,
+    .pit_in_distance_m = 0.15f,
+    .fan_en = 0,
 };
-
-DriveParam_t driveData2 = {
-		.base_mps = 2.0f,
-		.max_mps = 10.f,
-		.accel = 4.f,
-		.decel = 4.f,
-		.steer_gain_p = 12.0f,
-		.steer_gain_d = 0.0f,
-		.pos_atten_gain = 0.0f,
-		.pit_in_distance_m = 0.15f,
-		.fan_en = 0,
-};
-
-DriveParam_t driveData3 = {
-		.base_mps = 2.0f,
-		.max_mps = 10.f,
-		.accel = 4.f,
-		.decel = 4.f,
-		.steer_gain_p = 12.0f,
-		.steer_gain_d = 0.0f,
-		.pos_atten_gain = 0.0f,
-		.pit_in_distance_m = 0.15f,
-		.fan_en = 0,
-};
-
-DriveParam_t driveData4 = {
-		.base_mps = 2.0f,
-		.max_mps = 10.f,
-		.accel = 4.f,
-		.decel = 4.f,
-		.steer_gain_p = 12.0f,
-		.steer_gain_d = 0.0f,
-		.pos_atten_gain = 0.0f,
-		.pit_in_distance_m = 0.15f,
-		.fan_en = 0,
-};
-
-DriveParam_t driveData;
 // @formatter:on
-
-static uint8_t select_drive_setting_idx = 0;
-
-void Select_Drive_Setting(uint8_t index) {
-	switch (index) {
-	case 0:
-		driveData = driveData1;
-		break;
-	case 1:
-		driveData = driveData2;
-		break;
-	case 2:
-		driveData = driveData3;
-		break;
-	case 3:
-		driveData = driveData4;
-		break;
-	}
-}
 
 uint8_t g_total_L = 0;
 uint8_t g_total_R = 0;
 uint8_t g_total_C = 0;
 uint8_t g_total_STOP = 0;
-
-void Buzzer_LPTIM_IRQ_Handler() {
-	if (buzzer_timer_count > 0) {
-		buzzer_timer_count--;
-		if (buzzer_timer_count == 0) {
-			Buzzer_Stop();
-		}
-	}
-}
-
-// ============================================================================
-// 사용자 로봇의 실제 하드웨어 제원에 맞게 반드시 실측하여 입력해야 하는 값 (단위: 미터)
-// ============================================================================
-// 조향 마진 (이상적인 물리적 회전값의 몇 배까지 PID를 허용할 것인가)
-// 1.0에 가까울수록 차가 둔해지고(언더스티어), 너무 크면 다시 오버스티어가 납니다.
-#define STEER_SAFETY_MARGIN 1.5f
-
-void Steer_Motor_With_Anti_Oversteer(void) {
-	// 1. 센서 에러값을 가져오고 기존처럼 PID 연산 수행 (-1.0 ~ 1.0 범위)
-	float_t sensor_pos = Sensor_Get_Position();
-	float_t pid_steer = arm_pid_f32(&steer_pid, 0.0f - sensor_pos);
-
-	float_t final_steer = pid_steer; // 최종 적용될 조향값
-
-	// 2. 에러가 있을 때만 오버스티어 방지 로직 개입
-	if (sensor_pos != 0.0f) {
-		// 비율값(-1.0 ~ 1.0)을 실제 물리적 측면 오차 거리 x(미터)로 변환
-		float_t x = sensor_pos * SENSOR_HALF_WIDTH;
-
-		// 기하학적 곡률 반경 R 계산 (퓨어 퍼슈트 원리)
-		float_t R = (SENSOR_DIST_L * SENSOR_DIST_L + (x * x)) / (2.0f * x);
-		if (R < 0)
-			R = -R; // 반경은 절대값 처리
-
-		// 현재 직진 속도(V)에서 반경 R을 돌기 위해 필요한 이상적인 조향 속도차
-		// g_current_base_mps는 drive.c에서 관리되는 현재 베이스 속도
-		float_t ideal_steer = g_current_base_mps * (WHEEL_TRACK_W / R);
-
-		// 3. 허용 가능한 최대 조향 한계치(Limit) 설정
-		float_t max_steer_limit = ideal_steer * STEER_SAFETY_MARGIN;
-
-		// 4. PID 제어값이 물리적 한계를 넘어가려 하면 강제로 잘라버림 (Clamp)
-		if (final_steer > max_steer_limit) {
-			final_steer = max_steer_limit;
-		} else if (final_steer < -max_steer_limit) {
-			final_steer = -max_steer_limit;
-		}
-	}
-
-	// 5. 최종 안전하게 Clamp된 조향값을 양쪽 모터에 인가
-	float_t mps_L = g_current_base_mps - final_steer;
-	float_t mps_R = g_current_base_mps + final_steer;
-
-	foc_L.target_omega = mps_L * MPS_TO_OMEGA;
-	foc_R.target_omega = -mps_R * MPS_TO_OMEGA;
-	foc_L.omega_setpoint = foc_L.target_omega;
-	foc_R.omega_setpoint = foc_R.target_omega;
-}
 
 // ============================================================================
 // 타이머 및 가감속(Ramp) 변수
@@ -162,7 +44,7 @@ volatile float_t g_current_base_mps = 0.0f;
 volatile uint8_t g_is_braking = 0;
 uint32_t count_irq = 0;
 
-void Ramp_TIM_IRQ_Handler() {
+void Ramp_TIM_IRQ_Handler(void) {
 	Odom_Accumulate(RAMP_DT);
 
 	float d_mps = g_target_base_mps - g_current_base_mps;
@@ -173,27 +55,16 @@ void Ramp_TIM_IRQ_Handler() {
 	else
 		g_current_base_mps = g_target_base_mps;
 	Steer_Motor();
-//	Steer_Motor_With_Anti_Oversteer();
 }
 
-void Ramp_Start() {
+void Ramp_Start(void) {
 	g_target_base_mps = 0.f;
 	g_current_base_mps = 0.f;
 	HAL_TIM_Base_Start_IT(RAMP_TIM); // RAMP_TIM
 }
 
-void Ramp_Stop() {
+void Ramp_Stop(void) {
 	HAL_TIM_Base_Stop_IT(RAMP_TIM);
-}
-
-void Buzzer_Discount_Start() {
-	HAL_LPTIM_Counter_Start_IT(Buzzer_LPTIM, 0);
-}
-
-void Buzzer_Discount_Stop() {
-	HAL_DAC_SetValue(Buzzer_DAC_Handler, Buzzer_DAC_Channel, DAC_ALIGN_12B_R,
-			0);
-	HAL_LPTIM_Counter_Stop_IT(Buzzer_LPTIM);
 }
 
 // ============================================================================
@@ -212,7 +83,6 @@ void Drive_Stop_At_Distance(float target_distance_m) {
 	g_is_braking = 1;
 
 	while (g_current_base_mps > 0.001f) {
-
 	}
 	g_is_braking = 0;
 }
@@ -221,7 +91,7 @@ void Drive_Stop_At_Distance(float target_distance_m) {
 // 1회차 주행 함수 모음
 // ============================================================================
 __STATIC_INLINE uint8_t Drive_Init_Sequence(void) {
-	Select_Drive_Setting(select_drive_setting_idx);
+	LCD7789_Invert(0);
 
 	if (!IR_Sensor.is_calibration) {
 		if (Sensor_Load_Calibration() != FR_OK) {
@@ -255,7 +125,9 @@ __STATIC_INLINE uint8_t Drive_Init_Sequence(void) {
 	steer_pid.Kp = driveData.steer_gain_p;
 	steer_pid.Ki = 0.0f;
 	steer_pid.Kd = driveData.steer_gain_d;
+
 	arm_pid_init_f32(&steer_pid, 1);
+	arm_pid_init_f32(&steer_pid, 0);
 
 	Buzzer_Discount_Start();
 
@@ -286,7 +158,10 @@ __STATIC_INLINE uint8_t Process_Marker_Event(CrossEvent_t cross) {
 	return 0;
 }
 
-void Drive_First() {
+extern uint16_t g_last_stop_state;
+extern uint8_t g_last_stop_count;
+
+void Drive_First(void) {
 	if (!Drive_Init_Sequence())
 		return;
 
@@ -307,7 +182,7 @@ void Drive_First() {
 	if (IR_Sensor.is_lost_position) {
 		exit_reason_lost = 1;
 	}
-
+	LCD7789_Invert(0);
 	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
 
 	uint32_t end_tick = HAL_GetTick();
@@ -330,6 +205,8 @@ void Drive_First() {
 		LCD_Printf(0, 2, "R:%d", g_total_R);
 		LCD_Printf(0, 3, "C:%d", g_total_C);
 		LCD_Printf(0, 4, "T:%.2fs", lap_time);
+		LCD_Printf(0, 5, "U_Bit:0x%04X", g_last_stop_state);
+		LCD_Printf(0, 6, "U_Cnt:%d (<12)", g_last_stop_count);
 		uint8_t slot = Select_Save_Slot();
 		Save_MarkerLog_To_SD(slot);
 	}
@@ -407,7 +284,7 @@ __STATIC_INLINE void Build_Segment_Plan(void) {
 }
 
 __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
-	Select_Drive_Setting(select_drive_setting_idx);
+	LCD7789_Invert(0);
 
 	if (!IR_Sensor.is_calibration) {
 		if (Sensor_Load_Calibration() != FR_OK) {
@@ -456,7 +333,11 @@ __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
 	steer_pid.Kp = driveData.steer_gain_p;
 	steer_pid.Ki = 0.0f;
 	steer_pid.Kd = driveData.steer_gain_d;
+
 	arm_pid_init_f32(&steer_pid, 1);
+	arm_pid_init_f32(&steer_pid, 0);
+
+	Buzzer_Discount_Start();
 
 	Sensor_Start();
 	HAL_Delay(10);
@@ -551,7 +432,7 @@ __STATIC_INLINE void Check_Distance_And_Brake(DriveSecondState_t *state) {
 	}
 }
 
-void Drive_Second() {
+void Drive_Second(void) {
 	if (!Drive_Second_Init_Sequence())
 		return;
 	uint32_t start_tick = HAL_GetTick();
@@ -566,7 +447,11 @@ void Drive_Second() {
 		}
 		Check_Distance_And_Brake(&state);
 	}
+
+	LCD7789_Invert(0);
+
 	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
+
 	uint32_t end_tick = HAL_GetTick();
 
 	HAL_Delay(500);
@@ -586,6 +471,91 @@ void Drive_Second() {
 		LCD_Printf(0, 3, "C:%d", g_total_C);
 		LCD_Printf(0, 4, "T:%.2fs", lap_time); // ★ 랩타임 출력 추가
 	}
+
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
+		;
+	LCD_Clear();
+}
+
+// ============================================================================
+// 진동 분석을 위한 테스트 주행 모드
+// ============================================================================
+
+static float vib_data_buf[VIB_SAMPLE_MAX];
+static uint32_t vib_sample_count = 0;
+
+void Drive_Vibration_Test(void) {
+	if (!Drive_Init_Sequence())
+		return;
+	vib_sample_count = 0;
+	uint32_t start_tick = HAL_GetTick();
+	uint32_t last_sample_tick = start_tick;
+	g_target_base_mps = driveData.base_mps;
+
+	while (!IR_Sensor.is_lost_position) {
+		CrossEvent_t cross = Cross_Detect_Update();
+		if (cross == CROSS_STOP) {
+			break;
+		}
+
+		uint32_t current_tick = HAL_GetTick();
+		if ((current_tick - last_sample_tick) >= 1) {
+			last_sample_tick = current_tick;
+
+			if (vib_sample_count < VIB_SAMPLE_MAX) {
+				vib_data_buf[vib_sample_count++] = imu_data.Gyro_Z;
+			} else {
+				break;
+			}
+		}
+	}
+
+	// 3. 정지 및 모터 릴리즈
+	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
+
+	HAL_Delay(500);
+	Ramp_Stop();
+	Buzzer_Discount_Stop();
+	MTR_Safe_Stop();
+	Sensor_Stop();
+	Fan_Mtr_Stop();
+
+	LCD_Clear();
+	LCD_Printf(0, 0, "Saving Vib Data...");
+
+	if (SDCard_Mount() == FR_OK) {
+		FIL file;
+		UINT bw;
+		char filepath[64];
+
+		sprintf(filepath, "/Drive_Data/vib_log_%lu.csv", HAL_GetTick() % 1000);
+
+		if (f_open(&file, filepath, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK) {
+			char line_buf[64];
+
+			// CSV 헤더 작성
+			f_write(&file, "Index,Value\n", 12, &bw);
+
+			// 한 줄씩 변환하여 기록 (대용량 RAM 오버플로우 방지)
+			for (uint32_t i = 0; i < vib_sample_count; i++) {
+				int len = snprintf(line_buf, sizeof(line_buf), "%lu,%.4f\n", i,
+						vib_data_buf[i]);
+				f_write(&file, line_buf, len, &bw);
+			}
+			f_close(&file);
+			LCD_Printf(0, 1, "Saved!");
+		} else {
+			LCD_Printf(0, 1, "SD Open Fail");
+		}
+
+		// ★ 수정: 사용 완료 후 반드시 언마운트
+		SDCard_Unmount();
+	} else {
+		LCD_Printf(0, 1, "SD Mount Fail");
+	}
+
+	LCD_Printf(0, 3, "Samples: %lu", vib_sample_count);
+	LCD_Printf(0, 4, "Press Hold");
 
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
 		;

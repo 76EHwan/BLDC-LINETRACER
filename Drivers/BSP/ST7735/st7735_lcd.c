@@ -514,3 +514,8 @@ void LCD7735_Display_Random_BMP_From_SD(const TCHAR *address) {
 	f_close(&file);
 	SDCard_Unmount();
 }
+
+void LCD7735_Set_Color(uint16_t point, uint16_t back) {
+	LCD7735_POINT_COLOR = point;
+	LCD7735_BACK_COLOR = back;
+}

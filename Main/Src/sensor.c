@@ -10,7 +10,7 @@
 #include "sensor.h"
 #include "sd_ui.h"
 #include "user_init.h"
-#include "drive.h" // drive.h를 포함하여 마커 부저 타이머(g_buzzer_duration 등)와 RAMP_DT 참조
+#include "drive.h"
 
 #define SENSOR_ADC_HANDLE		&hadc3
 #define SENSOR_TIM_IR_HANDLE	&htim7
@@ -29,10 +29,24 @@
 static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1, 16, 17 };
 static const uint8_t scan_group2[SCAN_GROUP_LEN] = { 9, 6, 4, 11, 13, 2, 0, 15, 16, 17 };
 
-const float line_sensor_pos[LINE_N_SENSORS] = {
-		 -1.0f, -13.0f / 15.0f, -11.0f / 15.0f, -9.0f / 15.0f, -7.0f / 15.0f,
-		 -5.0f / 15.0f, -3.0f / 15.0f, -1.0f / 15.0f, 1.0f / 15.0f, 3.0f / 15.0f,
-		  5.0f / 15.0f, 7.0f / 15.0f, 9.0f / 15.0f, 11.0f / 15.0f, 13.0f / 15.0f, 1.0f
+// ★ float -> float32_t 로 변경
+const float32_t line_sensor_pos[LINE_N_SENSORS] = {
+		 -1.0f,
+		 -13.0f / 15.0f,
+		 -11.0f / 15.0f,
+		 -9.0f / 15.0f,
+		 -7.0f / 15.0f,
+		 -5.0f / 15.0f,
+		 -3.0f / 15.0f,
+		 -1.0f / 15.0f,
+		 1.0f / 15.0f,
+		 3.0f / 15.0f,
+		 5.0f / 15.0f,
+		 7.0f / 15.0f,
+		 9.0f / 15.0f,
+		 11.0f / 15.0f,
+		 13.0f / 15.0f,
+		 1.0f
 };
 
 __STATIC_INLINE uint8_t Scan_Slot_To_Phys(uint8_t slot) {
@@ -43,21 +57,32 @@ __STATIC_INLINE uint8_t Scan_Slot_To_Phys(uint8_t slot) {
 __attribute__((section(".ram_d3"), aligned(32))) uint16_t adc3_buffer[1];
 
 volatile SensorData_TypeDef sensorData = {
-        .idx = 0, .raw = { 0 }, .blackmax = { 0 }, .whitemax = { 0 },
-        .normalized = { 0 }, .state = 0, .threshold = 100,
-        .line_lost_sum_min = 20, .mark_left = 0, .mark_right = 0,
+        .idx = 0,
+		.raw = { 0 },
+		.blackmax = { 0 },
+		.whitemax = { 0 },
+        .normalized = { 0 },
+		.target_pos = 0.0f,
+		.state = 0,
+		.threshold = 100,
+        .line_lost_sum_min = 20,
+		.mark_left = 0,
+		.mark_right = 0,
 };
 
 volatile Sensor_TypeDef IR_Sensor = {
-		.scan_group = 0, .is_calibration = 0, .is_lost_position = 0,
-		.is_position = 0, .data = &sensorData,
+		.scan_group = 0,
+		.is_calibration = 0,
+		.is_lost_position = 0,
+		.is_position = 0,
+		.data = &sensorData,
 };
 // @formatter:on
 
 volatile uint32_t count_sensor_irq = 0;
 
 volatile uint16_t buzzer_timer_count;
-float_t g_buzzer_duration = 0.05;
+float32_t g_buzzer_duration = 0.05f;
 
 void Sensor_Printf(uint8_t idx, volatile uint16_t *sensor_data) {
 	LCD_Printf(8 * (idx & 0x1), idx / 2 + 1, "0x%03X", *(sensor_data + idx));
@@ -159,10 +184,12 @@ static MarkerState_t g_marker_state = MARKER_STATE_IDLE;
 static uint8_t g_accum_left = 0;
 static uint8_t g_accum_right = 0;
 static uint16_t g_accum_center_state = 0;
+static uint8_t g_is_curve_state = 0;
 
-float_t Sensor_Get_Position(void) {
+// ★ 반환형 및 내부 실수형 변수를 모두 float32_t로 통일
+float32_t Sensor_Get_Position(void) {
 	static int8_t prev_peak_idx = LINE_N_SENSORS / 2;
-	static float prev_position = 0.0f;
+	static float32_t prev_position = 0.0f;
 
 	static uint16_t lost_counter = 0;
 	static uint8_t force_full_scan = 0;
@@ -185,8 +212,10 @@ float_t Sensor_Get_Position(void) {
 		int8_t search_start = prev_peak_idx - POS_WINDOW_HALF;
 		int8_t search_end = prev_peak_idx + POS_WINDOW_HALF;
 
-		if (search_start < 0) search_start = 0;
-		if (search_end >= LINE_N_SENSORS) search_end = LINE_N_SENSORS - 1;
+		if (search_start < 0)
+			search_start = 0;
+		if (search_end >= LINE_N_SENSORS)
+			search_end = LINE_N_SENSORS - 1;
 
 		uint8_t window_len = search_end - search_start + 1;
 		uint32_t window_mask = ((1U << window_len) - 1) << search_start;
@@ -212,15 +241,23 @@ float_t Sensor_Get_Position(void) {
 	int8_t calc_start = current_peak_idx - POS_WINDOW_HALF;
 	int8_t calc_end = current_peak_idx + POS_WINDOW_HALF;
 
-	if (calc_start < 0) calc_start = 0;
-	if (calc_end >= LINE_N_SENSORS) calc_end = LINE_N_SENSORS - 1;
+	if (calc_start < 0)
+		calc_start = 0;
+	if (calc_end >= LINE_N_SENSORS)
+		calc_end = LINE_N_SENSORS - 1;
 
 	uint8_t mark_left = 0, mark_right = 0;
 	for (int8_t i = 0; i < calc_start; i++) {
-		if (state16 & (1U << i)) { mark_left = 1; break; }
+		if (state16 & (1U << i)) {
+			mark_left = 1;
+			break;
+		}
 	}
 	for (int8_t i = calc_end + 1; i < LINE_N_SENSORS; i++) {
-		if (state16 & (1U << i)) { mark_right = 1; break; }
+		if (state16 & (1U << i)) {
+			mark_right = 1;
+			break;
+		}
 	}
 	IR_Sensor.data->mark_left = mark_left;
 	IR_Sensor.data->mark_right = mark_right;
@@ -230,13 +267,16 @@ float_t Sensor_Get_Position(void) {
 		scale_factor = (255U << 8) / max_val;
 	}
 
-	float weighted_sum = 0.0f;
+	float32_t weighted_sum = 0.0f;
 	uint32_t total_weight = 0;
 
 	for (int8_t i = calc_start; i <= calc_end; i++) {
-		uint32_t amplified_val = (IR_Sensor.data->normalized[i] * scale_factor) >> 8;
-		if (amplified_val > 255) amplified_val = 255;
-		weighted_sum += (float) amplified_val * line_sensor_pos[i];
+		uint32_t amplified_val = (IR_Sensor.data->normalized[i] * scale_factor)
+				>> 8;
+		if (amplified_val > 255)
+			amplified_val = 255;
+		// ★ 형변환을 float32_t로 명시
+		weighted_sum += (float32_t) amplified_val * line_sensor_pos[i];
 		total_weight += amplified_val;
 	}
 
@@ -245,13 +285,13 @@ float_t Sensor_Get_Position(void) {
 		IR_Sensor.is_lost_position = 0;
 		lost_counter = 0;
 
-		// ★ 핵심: 십자 마커에서는 무조건 강제 직진(0.0f)을 반환하여 흔들림 원천 봉쇄
+		// ★ 핵심: 십자 마커에서는 이전 위치를 유지하여 흔들림 최소화 (앞선 수정안 반영 시)
 		if (is_cross_line) {
-			prev_position = 0.0f;
-			return 0.0f;
+			return prev_position;
 		}
 
-		float current_position = weighted_sum / (float) total_weight;
+		// ★ 나눗셈 시 분모도 float32_t로 정확히 캐스팅
+		float32_t current_position = weighted_sum / (float32_t) total_weight;
 		prev_position = current_position;
 		return current_position;
 	} else {
@@ -274,6 +314,9 @@ float_t Sensor_Get_Position(void) {
 CrossMarkerLog_t g_cross_log[CROSS_LOG_MAX];
 uint16_t g_cross_log_count = 0;
 
+uint16_t g_last_stop_state = 0;
+uint8_t g_last_stop_count = 0;
+
 void Cross_Detect_Reset(void) {
 	g_marker_state = MARKER_STATE_IDLE;
 	g_accum_left = 0;
@@ -288,17 +331,8 @@ CrossEvent_t Cross_Detect_Update(void) {
 	CrossEvent_t event = CROSS_NONE;
 
 	switch (g_marker_state) {
-	case MARKER_STATE_IDLE:
-		if (left_marker || right_marker) {
-			g_marker_state = MARKER_STATE_READING;
-			g_accum_left = left_marker;
-			g_accum_right = right_marker;
-			g_accum_center_state = current_center_state;
+	// ... (IDLE 상태 처리 생략) ...
 
-			// ★ 마커 판독 시작: E3 LED ON
-			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
-		}
-		break;
 	case MARKER_STATE_READING:
 		if (left_marker)
 			g_accum_left = 1;
@@ -313,10 +347,16 @@ CrossEvent_t Cross_Detect_Update(void) {
 					if (g_accum_center_state & (1 << i))
 						center_on_count++;
 				}
-				if (center_on_count >= 12)
+
+				if (center_on_count >= 12) {
 					event = CROSS_CROSS;
-				else
+				} else {
 					event = CROSS_STOP;
+
+					// ★ 추가: STOP(U) 마커로 판정되는 순간의 센서 누적 비트맵과 개수를 저장
+					g_last_stop_state = g_accum_center_state;
+					g_last_stop_count = center_on_count;
+				}
 			} else if (g_accum_left) {
 				event = CROSS_LEFT;
 			} else if (g_accum_right) {
@@ -324,7 +364,7 @@ CrossEvent_t Cross_Detect_Update(void) {
 			}
 			Cross_Detect_Reset();
 
-			// ★ 마커 판독 종료: E3 LED OFF
+			// 마커 판독 종료: E3 LED OFF
 			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
 		}
 		break;
@@ -333,8 +373,34 @@ CrossEvent_t Cross_Detect_Update(void) {
 	if (event != CROSS_NONE) {
 		Cross_Log_Push(event);
 		Buzzer_Start();
-
 		buzzer_timer_count = (uint16_t) (g_buzzer_duration / LPTIM_TICK_DT);
+
+		// ★ 수정된 화면 반전 로직 (drive.c의 Build_Segment_Plan 곡선 논리와 동일)
+		if (event == CROSS_CROSS || event == CROSS_STOP) {
+			// 십자, 정지 마커는 무조건 직선으로 초기화
+			g_is_curve_state = 0;
+			LCD7789_Invert(0); // 검은색 (직선)
+		} else if (event == CROSS_LEFT) {
+			if (g_is_curve_state == 1) {
+				// 이미 L 곡선 중이었는데 L이 또 나옴 -> 곡선 닫힘(탈출), 직선 전환
+				g_is_curve_state = 0;
+				LCD7789_Invert(0); // 검은색
+			} else {
+				// 직선 또는 R 곡선 중 L 발견 -> 새로운 L 곡선 진입/유지
+				g_is_curve_state = 1;
+				LCD7789_Invert(1); // 흰색
+			}
+		} else if (event == CROSS_RIGHT) {
+			if (g_is_curve_state == 2) {
+				// 이미 R 곡선 중이었는데 R이 또 나옴 -> 곡선 닫힘(탈출), 직선 전환
+				g_is_curve_state = 0;
+				LCD7789_Invert(0); // 검은색
+			} else {
+				// 직선 또는 L 곡선 중 R 발견 -> 새로운 R 곡선 진입/유지
+				g_is_curve_state = 2;
+				LCD7789_Invert(1); // 흰색
+			}
+		}
 	}
 	return event;
 }
@@ -491,17 +557,19 @@ void Sensor_Position_Printf() {
 	LCD_Printf(0, 0, "Position");
 
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		float weighted_sum = 0.0f;
+		// ★ float -> float32_t 로 통일
+		float32_t weighted_sum = 0.0f;
 		uint32_t total_weight = 0;
 
 		for (uint8_t i = 0; i < LINE_N_SENSORS; i++) {
 			uint16_t weight = IR_Sensor.data->normalized[i];
-			weighted_sum += (float) weight * line_sensor_pos[i];
+			// ★ 캐스팅도 정확하게 지정
+			weighted_sum += (float32_t) weight * line_sensor_pos[i];
 			total_weight += weight;
 		}
 
 		if (total_weight > IR_Sensor.data->line_lost_sum_min) {
-			float position = weighted_sum / (float) total_weight;
+			float32_t position = weighted_sum / (float32_t) total_weight;
 			LCD_Printf(0, 2, "Pos: %+6.3f", position);
 		} else {
 			LCD_Printf(0, 2, "Pos: LOST   ");

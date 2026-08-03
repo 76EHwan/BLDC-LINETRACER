@@ -89,10 +89,11 @@ MenuItem_t motor_menu_items[] = {
 };
 
 MenuItem_t drive_menu_items[] = {
-    { .name = "1st Drive",    .pfnActionCallback = Drive_First },
-    { .name = "2nd Drive",    .pfnActionCallback = Drive_Second },
+    { .name = "1st Drive",    .pfnActionCallback = Drive_First 				},
+    { .name = "2nd Drive",    .pfnActionCallback = Drive_Second 			},
     { .name = "3rd Drive",    .pfnActionCallback = NULL },
     { .name = "4th Drive",    .pfnActionCallback = NULL },
+	{ .name = "Vibe Test",    .pfnActionCallback = Drive_Vibration_Test		},
     { .name = "Update Param", .pfnActionCallback = NULL, 				.child_menu = &drive_param_menu },
 };
 
@@ -390,6 +391,7 @@ __STATIC_INLINE void Update_Param_Float(Data_TypeDef param_Data_Type,
 		float_t *floatData) {
 	UserInput_t btn = INPUT_CMD_NONE;
 	uint8_t index = 0;
+
 	while ((btn = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
 		float_t step = 1.f;
 		for (uint8_t i = 0; i < index; i++) {
@@ -432,6 +434,11 @@ __STATIC_INLINE void Update_Param_Float(Data_TypeDef param_Data_Type,
 __STATIC_INLINE void Update_Param_Menu(Data_TypeDef param_Data_Type,
 		uint32_t *intergalData, float_t *floatData, char *dataName) {
 	LCD_Printf(0, 0, "%-16s", dataName);
+	LCD_Printf(0, 6, "single LR: -1 +1");
+	LCD_Printf(0, 7, "hold   LR: -1 +1");
+	LCD_Printf(0, 8, "double LR: -5 +5");
+	LCD_Printf(0, 9, "single UD: Scale");
+	LCD_Printf(0, 10, "hold   K : Exit");
 	switch (param_Data_Type) {
 	case DATA_UINT8:
 	case DATA_UINT16:
