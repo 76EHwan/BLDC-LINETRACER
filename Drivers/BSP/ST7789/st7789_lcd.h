@@ -51,5 +51,6 @@ void LCD7789_Printf(uint16_t x, uint16_t y, const char *text, ...);
 void LCD7789_Display_Random_BMP_From_SD(const TCHAR *address);
 void LCD7789_Set_Color(uint16_t point, uint16_t back);
 void LCD7789_Sleep(uint8_t enable);
+void LCD7789_Invert(uint8_t enable);
 
 #endif /* BSP_ST7789_ST7789_LCD_H */

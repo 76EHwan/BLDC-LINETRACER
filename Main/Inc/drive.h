@@ -5,13 +5,13 @@
 #include "sensor.h"
 #include "arm_math.h"
 
-// motor.h에서 이동된 주행 타이머 설정
+// motor.hìì ì´ëë ì£¼í íì´ë¨¸ ì¤ì 
 #define RAMP_DT		0.0005f
 #define Ramp_TIM_IRQ_Handler TIM14_IRQ_Handler
 
-#define SENSOR_DIST_L       0.13f  // 바퀴 회전 축 중심부터 센서바까지의 앞뒤 거리
-#define WHEEL_TRACK_W       0.186f  // 좌우 바퀴 중심 사이의 간격
-#define SENSOR_HALF_WIDTH   0.08f // 센서바 정중앙부터 맨 끝 15번 센서까지의 거리
+#define SENSOR_DIST_L       0.13f  // ë°í´ íì  ì¶ ì¤ì¬ë¶í° ì¼ìë°ê¹ì§ì ìë¤ ê±°ë¦¬
+#define WHEEL_TRACK_W       0.186f  // ì¢ì° ë°í´ ì¤ì¬ ì¬ì´ì ê°ê²©
+#define SENSOR_HALF_WIDTH   0.08f // ì¼ìë° ì ì¤ìë¶í° ë§¨ ë 15ë² ì¼ìê¹ì§ì ê±°ë¦¬
 
 typedef struct {
 	float_t mpsL;
@@ -29,7 +29,7 @@ typedef struct {
 
 extern DriveParam_t driveData;
 
-// drive.c에서 정의된 가감속 및 주행 상태 변수들
+// drive.cìì ì ìë ê°ê°ì ë° ì£¼í ìí ë³ìë¤
 extern float_t accel;
 extern float_t decel;
 extern volatile uint8_t g_is_braking;
@@ -37,12 +37,13 @@ extern volatile float g_target_base_mps;
 extern volatile float g_current_base_mps;
 
 
-// 주행 시퀀스 함수
+// ì£¼í ìíì¤ í¨ì
 void Drive_Stop_At_Distance(float_t target_distance_m);
 void Drive_First(void);
-void Drive_Second(void); // 2회차 주행 함수 추가
+void Drive_Second(void); // 2íì°¨ ì£¼í í¨ì ì¶ê°
+void Drive_Vibration_Test(void);
 
-// 가감속 제어 함수
+// ê°ê°ì ì ì´ í¨ì
 void Ramp_Start(void);
 void Ramp_Stop(void);
 

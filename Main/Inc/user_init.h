@@ -8,6 +8,7 @@
 #ifndef USER_INIT_H_
 #define USER_INIT_H
 
+#include "st7735_lcd.h"
 #include "st7789_lcd.h"
 
 void User_Init(void);
@@ -18,7 +19,7 @@ void User_Init(void);
 #define LCD_Clear		LCD7789_Clear
 #define LCD_Set_Color 	LCD7789_Set_Color
 #define LCD_Sleep_Mode	LCD7789_Sleep
-
+#define LCD_Invert		LCD7789_Invert
 #define FOC_CONTROL
 //#define SENSOR_TRAP_CONTROL
 

@@ -4,12 +4,13 @@
 #include "main.h"
 #include "adc.h"
 #include "tim.h"
+#include "arm_math.h"
 
 #define NUM_SENSORS 18
 #define LEFT_MARK_SENSOR_INDEX 16
 #define RIGHT_MARK_SENSOR_INDEX 17
 
-#define POS_WINDOW_HALF   	4
+#define POS_WINDOW_HALF   	3
 #define POS_WINDOW_SIZE     (POS_WINDOW_HALF * 2)
 
 #define LINE_N_SENSORS      16
@@ -37,6 +38,7 @@ typedef struct {
 	uint16_t blackmax[NUM_SENSORS];
 	uint16_t normalized_coef_bias[NUM_SENSORS];
 	uint16_t normalized[NUM_SENSORS];
+	float32_t target_pos;
 	uint32_t state;
 	uint16_t threshold;
 	uint8_t line_lost_sum_min;
@@ -68,6 +70,9 @@ extern const float line_sensor_pos[LINE_N_SENSORS];
 // sensor.c에서 관리되는 마커 기록용 로그 배열과 카운터
 extern CrossMarkerLog_t g_cross_log[CROSS_LOG_MAX];
 extern uint16_t g_cross_log_count;
+
+extern uint16_t g_last_stop_state;
+extern uint8_t g_last_stop_count;
 
 extern volatile uint16_t buzzer_timer_count;
 extern float_t g_buzzer_duration;

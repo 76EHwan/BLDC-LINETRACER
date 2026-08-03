@@ -55,8 +55,8 @@ void Delete_All_Marker_Logs(void) {
 void User_Init() {
 	Button_init();
 	Buzzer_Init();
-	Buzzer_Start();
-	LCD7789_Test();
+//	Buzzer_Start();
+	LCD_Test();
 	LSM6DS3_Init();
 	Buzzer_Stop();
 	MX_DRV8316C_Init();
@@ -73,14 +73,14 @@ void User_Init() {
 	LCD_Printf(0, 8, "FOC R ADC Cali");
 	FOC_Calibrate_Offset(&foc_R);
 	LCD_Printf(0, 9, "%5.f %5.f", foc_R.offset_a, foc_R.offset_c);
-
+	LCD_Printf(0, 10, "VBAT: %5.3f V", g_vbus_filt);
 	FOC_ADC_Stop();
 
 //	uint8_t encBuffer[3] = { 0 };
 //	MT6701_Init(&encDataL, encBuffer);
 //	LCD_Printf(0, 8, "ENC %02X%02X%02X", encBuffer[2], encBuffer[1], encBuffer[0]);
 
-	LCD_Printf(0, 10, "IMU Cali");
+	LCD_Printf(0, 11, "IMU Cali");
 	LSM6DS3_Gyro_Calibrate_Z_Only();
 
 //	SDCard_DebugTest();

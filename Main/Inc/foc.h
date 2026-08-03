@@ -177,6 +177,9 @@ extern uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
 extern float_t g_odom_distance_m;
 
+extern volatile float32_t g_vbus_filt;
+
+
 float32_t FOC_Get_VBus(void);
 
 void FOC_ADC_Start(void);

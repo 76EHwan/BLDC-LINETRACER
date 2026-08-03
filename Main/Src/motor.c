@@ -164,14 +164,18 @@ void Fan_Mtr_Stop() {
 // ============================================================================
 
 arm_pid_instance_f32 steer_pid;
-static volatile float_t g_current_steer = 0.0f;
-static volatile float_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
-
+static volatile float32_t g_current_steer = 0.0f;
+static volatile float32_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
 void Steer_Motor() {
-	float_t line_pos = Sensor_Get_Position();
-	g_current_steer = arm_pid_f32(&steer_pid, line_pos);
+	// 1. float32_t 자료형 사용으로 단정밀도(Single-Precision) 강제
+	float32_t line_pos = Sensor_Get_Position();
+	float32_t error = line_pos - IR_Sensor.data->target_pos;
 
-	float_t raw_atten = 1.0f - (fabsf(line_pos) * driveData.pos_atten_gain);
+	// 2. arm_pid_f32 입출력에 완벽히 매칭됨
+	g_current_steer = arm_pid_f32(&steer_pid, error);
+
+	// 3. fabsf()와 1.0f 등 단정밀도 전용 수학 함수/리터럴 사용
+	float32_t raw_atten = 1.0f - (fabsf(error) * driveData.pos_atten_gain);
 
 	if (raw_atten < 0.4f) {
 		raw_atten = 0.4f;
@@ -186,14 +190,15 @@ void Steer_Motor() {
 	}
 
 	// 필터가 적용된 실제 주행 속도
-	float_t active_mps = g_current_base_mps * filtered_atten;
+	float32_t active_mps = g_current_base_mps * filtered_atten;
 
-	// 양쪽 모터 목표 속도 산출
-	float mps_L = active_mps * (1.f + g_current_steer * THREAD_DIV2);
-	float mps_R = active_mps * (1.f - g_current_steer * THREAD_DIV2);
+	// 양쪽 모터 목표 속도 산출 (상수를 1.0f 형태로 명시)
+	float32_t mps_L = active_mps * (1.0f + g_current_steer * THREAD_DIV2);
+	float32_t mps_R = active_mps * (1.0f - g_current_steer * THREAD_DIV2);
 
 	foc_L.target_omega = mps_L * MPS_TO_OMEGA;
 	foc_R.target_omega = -mps_R * MPS_TO_OMEGA;
+
 	foc_L.omega_setpoint = foc_L.target_omega;
 	foc_R.omega_setpoint = foc_R.target_omega;
 }
@@ -688,8 +693,10 @@ void MTR_Speed_FOC() {
 		foc_L.target_omega = omega;
 		foc_R.target_omega = omega;
 
-		LCD_Printf(0, 0, "%cIqKp:%6.3f", sel == 0 ? '>' : ' ', foc_L.pid_iq.Kp);
-		LCD_Printf(0, 1, "%cIqKi:%6.3f", sel == 1 ? '>' : ' ', foc_L.pid_iq.Ki);
+		LCD_Printf(0, 0, "%cIqKp:%6.3f", sel == 0 ? '>' : ' ',
+				foc_L.pid_iq.Kp);
+		LCD_Printf(0, 1, "%cIqKi:%6.3f", sel == 1 ? '>' : ' ',
+				foc_L.pid_iq.Ki);
 		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ',
 				foc_L.spd_Kp * 1000);
 		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ',
