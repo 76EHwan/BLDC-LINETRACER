@@ -10,7 +10,7 @@
 #define LEFT_MARK_SENSOR_INDEX 16
 #define RIGHT_MARK_SENSOR_INDEX 17
 
-#define POS_WINDOW_HALF   	4
+#define POS_WINDOW_HALF   	3
 #define POS_WINDOW_SIZE     (POS_WINDOW_HALF * 2)
 
 #define LINE_N_SENSORS      16

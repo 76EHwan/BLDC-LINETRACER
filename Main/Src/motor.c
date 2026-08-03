@@ -693,11 +693,14 @@ void MTR_Speed_FOC() {
 		foc_L.target_omega = omega;
 		foc_R.target_omega = omega;
 
-		LCD_Printf(0, 0, "%cIqKp:%6.3f", sel == 0 ? '>' : ' ', foc_L.pid_iq.Kp);
-		LCD_Printf(0, 1, "%cIqKi:%6.3f", sel == 1 ? '>' : ' ', foc_L.pid_iq.Ki);
+		LCD_Printf(0, 0, "%cIqKp:%6.3f", sel == 0 ? '>' : ' ',
+				foc_L.pid_iq.Kp);
+		LCD_Printf(0, 1, "%cIqKi:%6.3f", sel == 1 ? '>' : ' ',
+				foc_L.pid_iq.Ki);
 		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ',
 				foc_L.spd_Kp * 1000);
-		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ', foc_L.spd_Ki);
+		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ',
+				foc_L.spd_Ki);
 		LCD_Printf(0, 4, "%cSpKd:%6.3f", sel == 4 ? '>' : ' ',
 				foc_L.spd_Kd * 1000);
 		LCD_Printf(0, 6, "ref:%6.1f", omega);

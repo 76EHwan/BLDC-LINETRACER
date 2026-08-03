@@ -29,7 +29,6 @@
 static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1, 16, 17 };
 static const uint8_t scan_group2[SCAN_GROUP_LEN] = { 9, 6, 4, 11, 13, 2, 0, 15, 16, 17 };
 
-// ★ float -> float32_t 로 변경
 const float32_t line_sensor_pos[LINE_N_SENSORS] = {
 		 -1.0f,
 		 -13.0f / 15.0f,
@@ -49,13 +48,6 @@ const float32_t line_sensor_pos[LINE_N_SENSORS] = {
 		 1.0f
 };
 
-__STATIC_INLINE uint8_t Scan_Slot_To_Phys(uint8_t slot) {
-	if (slot < SCAN_CYCLE_LEN_HALF) return scan_group1[slot];
-	return scan_group2[slot - SCAN_CYCLE_LEN_HALF];
-}
-
-__attribute__((section(".ram_d3"), aligned(32))) uint16_t adc3_buffer[1];
-
 volatile SensorData_TypeDef sensorData = {
         .idx = 0,
 		.raw = { 0 },
@@ -64,8 +56,8 @@ volatile SensorData_TypeDef sensorData = {
         .normalized = { 0 },
 		.target_pos = 0.0f,
 		.state = 0,
-		.threshold = 100,
-        .line_lost_sum_min = 20,
+		.threshold = 150,
+        .line_lost_sum_min = 80,
 		.mark_left = 0,
 		.mark_right = 0,
 };
@@ -79,10 +71,18 @@ volatile Sensor_TypeDef IR_Sensor = {
 };
 // @formatter:on
 
+__attribute__((section(".ram_d3"), aligned(32)))         uint16_t adc3_buffer[1];
+
 volatile uint32_t count_sensor_irq = 0;
 
 volatile uint16_t buzzer_timer_count;
 float32_t g_buzzer_duration = 0.05f;
+
+__STATIC_INLINE uint8_t Scan_Slot_To_Phys(uint8_t slot) {
+	if (slot < SCAN_CYCLE_LEN_HALF)
+		return scan_group1[slot];
+	return scan_group2[slot - SCAN_CYCLE_LEN_HALF];
+}
 
 void Sensor_Printf(uint8_t idx, volatile uint16_t *sensor_data) {
 	LCD_Printf(8 * (idx & 0x1), idx / 2 + 1, "0x%03X", *(sensor_data + idx));
@@ -186,13 +186,14 @@ static uint8_t g_accum_right = 0;
 static uint16_t g_accum_center_state = 0;
 static uint8_t g_is_curve_state = 0;
 
-// ★ 반환형 및 내부 실수형 변수를 모두 float32_t로 통일
 float32_t Sensor_Get_Position(void) {
 	static int8_t prev_peak_idx = LINE_N_SENSORS / 2;
 	static float32_t prev_position = 0.0f;
 
 	static uint16_t lost_counter = 0;
 	static uint8_t force_full_scan = 0;
+
+	static uint8_t cross_state = 0;
 
 	uint16_t max_val = 0;
 	int8_t current_peak_idx = LINE_N_SENSORS / 2;
@@ -208,6 +209,7 @@ float32_t Sensor_Get_Position(void) {
 			}
 		}
 		force_full_scan = 0;
+		cross_state = 0;
 	} else {
 		int8_t search_start = prev_peak_idx - POS_WINDOW_HALF;
 		int8_t search_end = prev_peak_idx + POS_WINDOW_HALF;
@@ -220,19 +222,25 @@ float32_t Sensor_Get_Position(void) {
 		uint8_t window_len = search_end - search_start + 1;
 		uint32_t window_mask = ((1U << window_len) - 1) << search_start;
 		uint8_t active_in_window = __builtin_popcount(state16 & window_mask);
+		uint8_t active_out_window = __builtin_popcount(state16 & ~window_mask);
 
-		for (int8_t i = search_start; i <= search_end; i++) {
-			if (IR_Sensor.data->normalized[i] > max_val) {
-				max_val = IR_Sensor.data->normalized[i];
-				current_peak_idx = i;
+		if (cross_state == 0) {
+			for (int8_t i = search_start; i <= search_end; i++) {
+				if (IR_Sensor.data->normalized[i] > max_val) {
+					max_val = IR_Sensor.data->normalized[i];
+					current_peak_idx = i;
+				}
 			}
-		}
-
-		// ★ 판단: 십자 마커 발견 시
-		if (active_in_window > 6) {
-			current_peak_idx = prev_peak_idx;
+			if (active_in_window > POS_WINDOW_HALF + 1) {
+				cross_state = 1;
+			}
+		} else {
+			current_peak_idx = LINE_N_SENSORS / 2;
 			max_val = IR_Sensor.data->normalized[current_peak_idx];
 			is_cross_line = 1;
+			if (!active_out_window && active_in_window < 3) {
+				cross_state = 0;
+			}
 		}
 	}
 
@@ -259,38 +267,31 @@ float32_t Sensor_Get_Position(void) {
 			break;
 		}
 	}
+
 	IR_Sensor.data->mark_left = mark_left;
 	IR_Sensor.data->mark_right = mark_right;
 
-	uint32_t scale_factor = 256;
-	if (max_val > 20 && max_val < 255) {
-		scale_factor = (255U << 8) / max_val;
-	}
-
+	// 1. 증폭(scale_factor) 로직 완전 제거
 	float32_t weighted_sum = 0.0f;
 	uint32_t total_weight = 0;
 
+	// 2. 순수한 센서 원본 값만 누적
 	for (int8_t i = calc_start; i <= calc_end; i++) {
-		uint32_t amplified_val = (IR_Sensor.data->normalized[i] * scale_factor)
-				>> 8;
-		if (amplified_val > 255)
-			amplified_val = 255;
-		// ★ 형변환을 float32_t로 명시
-		weighted_sum += (float32_t) amplified_val * line_sensor_pos[i];
-		total_weight += amplified_val;
+		uint16_t val = IR_Sensor.data->normalized[i];
+
+		weighted_sum += (float32_t) val * line_sensor_pos[i];
+		total_weight += val;
 	}
 
-	// ★ 핵심: max_val > 40 조건을 추가하여 미세 노이즈가 라인으로 둔갑하는 현상 차단
-	if (total_weight > IR_Sensor.data->line_lost_sum_min && max_val > 40) {
+	// 3. 증폭 뻥튀기가 사라졌으므로, 튜닝 변수인 line_lost_sum_min 하나로 완벽히 제어 가능
+	if (total_weight > IR_Sensor.data->line_lost_sum_min) {
 		IR_Sensor.is_lost_position = 0;
 		lost_counter = 0;
 
-		// ★ 핵심: 십자 마커에서는 이전 위치를 유지하여 흔들림 최소화 (앞선 수정안 반영 시)
 		if (is_cross_line) {
 			return prev_position;
 		}
 
-		// ★ 나눗셈 시 분모도 float32_t로 정확히 캐스팅
 		float32_t current_position = weighted_sum / (float32_t) total_weight;
 		prev_position = current_position;
 		return current_position;
@@ -302,11 +303,9 @@ float32_t Sensor_Get_Position(void) {
 			IR_Sensor.is_lost_position = 1;
 			lost_counter = 0;
 		}
-
 		return prev_position;
 	}
 }
-
 // ==============================================
 // 마커 인식 알고리즘
 // ==============================================
@@ -331,8 +330,15 @@ CrossEvent_t Cross_Detect_Update(void) {
 	CrossEvent_t event = CROSS_NONE;
 
 	switch (g_marker_state) {
-	// ... (IDLE 상태 처리 생략) ...
-
+	case MARKER_STATE_IDLE:
+		if (left_marker || right_marker) {
+			g_marker_state = MARKER_STATE_READING;
+			g_accum_left = left_marker;
+			g_accum_right = right_marker;
+			g_accum_center_state = current_center_state;
+			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+		}
+		break;
 	case MARKER_STATE_READING:
 		if (left_marker)
 			g_accum_left = 1;
@@ -347,13 +353,11 @@ CrossEvent_t Cross_Detect_Update(void) {
 					if (g_accum_center_state & (1 << i))
 						center_on_count++;
 				}
-
 				if (center_on_count >= 12) {
 					event = CROSS_CROSS;
 				} else {
 					event = CROSS_STOP;
 
-					// ★ 추가: STOP(U) 마커로 판정되는 순간의 센서 누적 비트맵과 개수를 저장
 					g_last_stop_state = g_accum_center_state;
 					g_last_stop_count = center_on_count;
 				}
@@ -363,8 +367,6 @@ CrossEvent_t Cross_Detect_Update(void) {
 				event = CROSS_RIGHT;
 			}
 			Cross_Detect_Reset();
-
-			// 마커 판독 종료: E3 LED OFF
 			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
 		}
 		break;
@@ -375,30 +377,24 @@ CrossEvent_t Cross_Detect_Update(void) {
 		Buzzer_Start();
 		buzzer_timer_count = (uint16_t) (g_buzzer_duration / LPTIM_TICK_DT);
 
-		// ★ 수정된 화면 반전 로직 (drive.c의 Build_Segment_Plan 곡선 논리와 동일)
 		if (event == CROSS_CROSS || event == CROSS_STOP) {
-			// 십자, 정지 마커는 무조건 직선으로 초기화
 			g_is_curve_state = 0;
-			LCD7789_Invert(0); // 검은색 (직선)
+			LCD7789_Invert(0);
 		} else if (event == CROSS_LEFT) {
 			if (g_is_curve_state == 1) {
-				// 이미 L 곡선 중이었는데 L이 또 나옴 -> 곡선 닫힘(탈출), 직선 전환
 				g_is_curve_state = 0;
-				LCD7789_Invert(0); // 검은색
+				LCD7789_Invert(0);
 			} else {
-				// 직선 또는 R 곡선 중 L 발견 -> 새로운 L 곡선 진입/유지
 				g_is_curve_state = 1;
-				LCD7789_Invert(1); // 흰색
+				LCD7789_Invert(1);
 			}
 		} else if (event == CROSS_RIGHT) {
 			if (g_is_curve_state == 2) {
-				// 이미 R 곡선 중이었는데 R이 또 나옴 -> 곡선 닫힘(탈출), 직선 전환
 				g_is_curve_state = 0;
-				LCD7789_Invert(0); // 검은색
+				LCD7789_Invert(0);
 			} else {
-				// 직선 또는 L 곡선 중 R 발견 -> 새로운 R 곡선 진입/유지
 				g_is_curve_state = 2;
-				LCD7789_Invert(1); // 흰색
+				LCD7789_Invert(1);
 			}
 		}
 	}
@@ -409,15 +405,10 @@ void Cross_Log_Push(CrossEvent_t type) {
 	CrossMarkerLog_t *log = &g_cross_log[g_cross_log_count % CROSS_LOG_MAX];
 	log->type = type;
 	log->dist_from_prev_m = g_odom_distance_m;
-	log->yaw_angle = imu_data.Yaw_Angle; // ★ 현재 IMU Yaw 각도 기록
-
+	log->yaw_angle = imu_data.Yaw_Angle;
 	g_cross_log_count++;
 	Odom_Reset();
 }
-
-// ==============================================
-// 센서 값 디버깅 함수
-// ==============================================
 
 void Sensor_Calibration() {
 	for (uint8_t i = 0; i < NUM_SENSORS; i++) {
@@ -587,15 +578,11 @@ void Sensor_Position_Printf() {
 void IMU_Test(void) {
 	LCD_Printf(0, 0, "IMU Test");
 
-	// 테스트 시작 전 초기 각도를 0으로 리셋 (새로 만드신 함수 사용)
 	LSM6DS3_Reset_Yaw();
 
-	// K 버튼을 길게 누를 때까지 반복
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		// 백그라운드 인터럽트에서 알아서 계산 중인 각도를 그대로 가져와 출력
 		LCD_Printf(0, 1, "Yaw: %+6.3f", imu_data.Yaw_Angle);
 
-		// LCD 화면이 너무 빠르게 갱신되어 깜빡거리는 것을 방지
 		HAL_Delay(50);
 	}
 
