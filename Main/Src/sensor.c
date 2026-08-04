@@ -71,7 +71,7 @@ volatile Sensor_TypeDef IR_Sensor = {
 };
 // @formatter:on
 
-__attribute__((section(".ram_d3"), aligned(32)))         uint16_t adc3_buffer[1];
+__attribute__((section(".ram_d3"), aligned(32)))          uint16_t adc3_buffer[1];
 
 volatile uint32_t count_sensor_irq = 0;
 
@@ -306,8 +306,9 @@ float32_t Sensor_Get_Position(void) {
 		return prev_position;
 	}
 }
+
 // ==============================================
-// 마커 인식 알고리즘
+// 마커 인식 알고리즘 및 최대 편각(Peak Yaw) 추적
 // ==============================================
 
 CrossMarkerLog_t g_cross_log[CROSS_LOG_MAX];
@@ -315,6 +316,11 @@ uint16_t g_cross_log_count = 0;
 
 uint16_t g_last_stop_state = 0;
 uint8_t g_last_stop_count = 0;
+
+// ★ 편각 추적용 전역 변수 선언
+static float g_segment_start_yaw = 0.0f;
+static float g_peak_delta_yaw = 0.0f;
+static float g_max_abs_yaw = 0.0f;
 
 void Cross_Detect_Reset(void) {
 	g_marker_state = MARKER_STATE_IDLE;
@@ -324,6 +330,25 @@ void Cross_Detect_Reset(void) {
 }
 
 CrossEvent_t Cross_Detect_Update(void) {
+	// ★ 1. 루프가 돌 때마다 현재 구간의 편각(Delta Yaw)을 계산하고 최대값(Peak)을 갱신합니다.
+	float current_yaw = imu_data.Yaw_Angle;
+	float delta = current_yaw - g_segment_start_yaw;
+
+	// Wrap-around 방어 (-180 ~ 180 정규화)
+	while (delta > 180.0f) {
+		delta -= 360.0f;
+	}
+	while (delta < -180.0f) {
+		delta += 360.0f;
+	}
+
+	// 절댓값이 기존 최대치보다 크면 Peak 갱신
+	if (fabsf(delta) > g_max_abs_yaw) {
+		g_max_abs_yaw = fabsf(delta);
+		g_peak_delta_yaw = delta;
+	}
+
+	// 2. 기존 마커 인식 로직
 	uint8_t left_marker = IR_Sensor.data->mark_left;
 	uint8_t right_marker = IR_Sensor.data->mark_right;
 	uint16_t current_center_state = (uint16_t) (IR_Sensor.data->state & 0xFFFF);
@@ -405,7 +430,21 @@ void Cross_Log_Push(CrossEvent_t type) {
 	CrossMarkerLog_t *log = &g_cross_log[g_cross_log_count % CROSS_LOG_MAX];
 	log->type = type;
 	log->dist_from_prev_m = g_odom_distance_m;
-	log->yaw_angle = imu_data.Yaw_Angle;
+
+	if (g_cross_log_count == 0) {
+		// Drive_Init_Sequence에서 카운트가 0으로 초기화된 직후 첫 마커(시작선) 처리
+		// 이전 구간이 없으므로 회전량을 0으로 기록
+		log->yaw_angle = 0.0f;
+	} else {
+		// ★ 마커를 밟은 '순간'의 각도가 아닌, 구간을 지나는 동안 추적된 '최대 편각(Peak)'을 저장
+		log->yaw_angle = g_peak_delta_yaw;
+	}
+
+	// ★ 다음 마커 구간을 위해 추적기 리셋 (현재 절대 각도를 새로운 시작점으로)
+	g_segment_start_yaw = imu_data.Yaw_Angle;
+	g_max_abs_yaw = 0.0f;
+	g_peak_delta_yaw = 0.0f;
+
 	g_cross_log_count++;
 	Odom_Reset();
 }
