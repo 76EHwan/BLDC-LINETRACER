@@ -16,15 +16,25 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 2.2f,
+    .base_mps = 1.2f,
     .max_mps = 10.f,
-    .accel = 4.f,
-    .decel = 4.f,
-    .steer_gain_p = 20.4f,
-    .steer_gain_d = 1.1f,
+    .accel = 6.f,
+    .decel = 6.f,
+    .steer_gain_p = 16.4f,
+    .steer_gain_d = 0.1f,
     .pos_atten_gain = 0.0f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
+	.turn45_len_s_m = 0.19f,
+	.turn45_len_c_m = 0.30f,
+	.turn90_len_s_m = 0.35f,
+	.turn90_len_c_m = 0.46f,
+	.add45_mps = 0.8f,
+	.add90_mps = 0.4f,
+	.zero_offset = 0.33f,
+	.zero_shift_rate = 2.0f,
+	.zero_out_turn_m = 0.10f,
+	.zero_out_straight_m = 0.15f,
 };
 // @formatter:on
 
@@ -32,6 +42,33 @@ uint8_t g_total_L = 0;
 uint8_t g_total_R = 0;
 uint8_t g_total_C = 0;
 uint8_t g_total_STOP = 0;
+
+// ===== 영점이동 상태 (4회차 주행에서만 사용) =====
+// g_line_offset_rate 가 0 이면 슬루가 멈추므로 1~3회차 주행은 영향을 받지 않는다.
+volatile float_t g_line_offset = 0.0f;
+volatile float_t g_line_offset_target = 0.0f;
+volatile float_t g_line_offset_rate = 0.0f;
+
+// 오프셋을 목표값 쪽으로 조금씩 옮긴다.
+// ★ 증분이 시간이 아니라 "전진 거리"에 비례하므로, 주행 속도와 무관하게
+//   지면에 그려지는 이동 궤적이 항상 같다.
+__STATIC_INLINE void Line_Offset_Update(void) {
+	if (g_line_offset_rate <= 0.0f) {
+		return;
+	}
+
+	// 이번 주기에 옮길 수 있는 최대량 = (1m당 이동량) x (이번 주기 전진 거리)
+	float_t step = g_line_offset_rate * g_current_base_mps * RAMP_DT;
+	float_t diff = g_line_offset_target - g_line_offset;
+
+	if (diff > step)
+		g_line_offset += step;
+	else if (diff < -step)
+		g_line_offset -= step;
+	else
+		g_line_offset = g_line_offset_target;
+}
+
 
 // ============================================================================
 // 타이머 및 가감속(Ramp) 변수
@@ -55,6 +92,7 @@ void Ramp_TIM_IRQ_Handler(void) {
 	else
 		g_current_base_mps = g_target_base_mps;
 	Steer_Motor();
+	Line_Offset_Update();
 }
 
 void Ramp_Start(void) {
@@ -560,4 +598,450 @@ void Drive_Vibration_Test(void) {
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
 		;
 	LCD_Clear();
+}
+
+// ============================================================================
+// 3 / 4회차 주행 공용 : 구간 계획
+// ============================================================================
+// 2회차는 "직선 구간만 가속"이었다.
+// 3회차는 곡선을 길이로 45도 / 90도 / 긴 곡선으로 나누고, 짧은 곡선은
+// 감속하지 않고 오히려 가산 속도를 얹어 통과한다.
+// 4회차는 여기에 곡선 안쪽으로 붙는 영점이동을 더한다.
+
+typedef enum {
+	SEG_STRAIGHT = 0, SEG_TURN_45, SEG_TURN_90, SEG_TURN_LONG,
+} SegmentKind_t;
+
+typedef enum {
+	SEG_DIR_STRAIGHT = 0, SEG_DIR_LEFT, SEG_DIR_RIGHT,
+} SegmentDir_t;
+
+typedef struct {
+	uint8_t kind;			// SegmentKind_t
+	uint8_t dir;			// SegmentDir_t
+	float_t len_m;			// 이 구간의 길이 (마커 i -> i+1)
+	float_t cruise_mps;		// 이 구간을 통과할 목표 속도
+	float_t zero_mid;		// 구간 주행 중 유지할 영점 오프셋
+	float_t zero_end;		// 구간 탈출 시 취할 영점 오프셋
+	float_t zero_out_m;		// 탈출 전환에 쓸 추가 여유 거리
+} SegmentPlan3_t;
+
+static SegmentPlan3_t seg3[CROSS_LOG_MAX];
+
+// 마커 종류로부터 각 구간이 직선인지 곡선인지, 곡선이면 어느 방향인지 판정한다.
+// ★ 2회차 Build_Segment_Plan() 과 동일한 상태 천이 규칙을 사용한다.
+//   (L 마커가 좌곡선을 열고, 다음 L 마커가 그 곡선을 닫는다)
+__STATIC_INLINE void Build_Segment_Direction(uint16_t count) {
+	uint8_t curve_state = 0; // 0: 직선, 1: 좌곡선 중, 2: 우곡선 중
+
+	for (uint16_t i = 0; i < count; i++) {
+		CrossEvent_t cur = ref_log[i].type;
+
+		if (cur == CROSS_CROSS) {
+			curve_state = 0;
+		} else if (cur == CROSS_LEFT) {
+			curve_state = (curve_state == 1) ? 0 : 1;
+		} else if (cur == CROSS_RIGHT) {
+			curve_state = (curve_state == 2) ? 0 : 2;
+		}
+
+		if (curve_state == 1)
+			seg3[i].dir = SEG_DIR_LEFT;
+		else if (curve_state == 2)
+			seg3[i].dir = SEG_DIR_RIGHT;
+		else
+			seg3[i].dir = SEG_DIR_STRAIGHT;
+
+		// 구간 길이는 "다음 마커까지의 거리"이다. 마지막 구간은 알 수 없다.
+		seg3[i].len_m =
+				(i + 1 < count) ? ref_log[i + 1].dist_from_prev_m : 0.0f;
+	}
+}
+
+// 곡선 구간의 길이로 45도 / 90도 / 긴 곡선을 판별한다.
+// 다음 구간이 곡선이면 마커 간 거리가 더 길게 잡히므로 임계값을 따로 쓴다.
+__STATIC_INLINE void Build_Segment_Kind(uint16_t count) {
+	for (uint16_t i = 0; i < count; i++) {
+		if (seg3[i].dir == SEG_DIR_STRAIGHT) {
+			seg3[i].kind = SEG_STRAIGHT;
+			continue;
+		}
+
+		uint8_t next_is_curve = (i + 1 < count)
+				&& (seg3[i + 1].dir != SEG_DIR_STRAIGHT);
+		float_t len = seg3[i].len_m;
+		float_t th45 =
+				next_is_curve ?
+						driveData.turn45_len_c_m : driveData.turn45_len_s_m;
+		float_t th90 =
+				next_is_curve ?
+						driveData.turn90_len_c_m : driveData.turn90_len_s_m;
+
+		// 길이를 모르는 마지막 구간은 안전하게 긴 곡선으로 본다.
+		if (len <= 0.0f)
+			seg3[i].kind = SEG_TURN_LONG;
+		else if (len < th45)
+			seg3[i].kind = SEG_TURN_45;
+		else if (len < th90)
+			seg3[i].kind = SEG_TURN_90;
+		else
+			seg3[i].kind = SEG_TURN_LONG;
+	}
+}
+
+// 구간 종류별 통과 속도를 배정한다.
+__STATIC_INLINE void Build_Segment_Speed(uint16_t count) {
+	for (uint16_t i = 0; i < count; i++) {
+		float_t v;
+
+		switch (seg3[i].kind) {
+		case SEG_STRAIGHT:
+			v = driveData.max_mps;
+			break;
+		case SEG_TURN_45:
+			v = driveData.base_mps + driveData.add45_mps;
+			break;
+		case SEG_TURN_90:
+			v = driveData.base_mps + driveData.add90_mps;
+			break;
+		default:
+			v = driveData.base_mps;
+			break;
+		}
+
+		// ★ 정지 마커가 걸린 구간은 가산 속도 없이 기본 속도로만 통과한다.
+		if (ref_log[i].type == CROSS_STOP
+				|| (i + 1 < count && ref_log[i + 1].type == CROSS_STOP)) {
+			v = driveData.base_mps;
+		}
+
+		if (v > driveData.max_mps)
+			v = driveData.max_mps;
+		if (v < driveData.base_mps)
+			v = driveData.base_mps;
+
+		seg3[i].cruise_mps = v;
+	}
+}
+
+// 구간별 영점 오프셋을 미리 계획한다. (4회차 전용)
+// 규칙은 "항상 다음에 올 곡선의 안쪽으로 미리 붙는다".
+// ★ 부호: 음수 = 로봇이 왼쪽으로, 양수 = 로봇이 오른쪽으로.
+__STATIC_INLINE void Build_Segment_ZeroShift(uint16_t count, uint8_t enable) {
+	const float_t z = driveData.zero_offset;
+
+	for (uint16_t i = 0; i < count; i++) {
+		if (!enable) {
+			seg3[i].zero_mid = 0.0f;
+			seg3[i].zero_end = 0.0f;
+			seg3[i].zero_out_m = 0.0f;
+			continue;
+		}
+
+		uint8_t next_dir = (i + 1 < count) ? seg3[i + 1].dir : SEG_DIR_STRAIGHT;
+
+		if (seg3[i].dir == SEG_DIR_LEFT) {
+			seg3[i].zero_mid = -z;	// 좌곡선 안쪽 = 왼쪽
+			// 다음이 우회전이면 중앙으로 빠져나가고, 아니면 그대로 유지
+			seg3[i].zero_end = (next_dir == SEG_DIR_RIGHT) ? 0.0f : -z;
+			seg3[i].zero_out_m = driveData.zero_out_turn_m;
+		} else if (seg3[i].dir == SEG_DIR_RIGHT) {
+			seg3[i].zero_mid = z;	// 우곡선 안쪽 = 오른쪽
+			seg3[i].zero_end = (next_dir == SEG_DIR_LEFT) ? 0.0f : z;
+			seg3[i].zero_out_m = driveData.zero_out_turn_m;
+		} else {
+			seg3[i].zero_mid = 0.0f;	// 직선에서는 가운데
+			// 다음 곡선 방향으로 미리 붙어서 빠져나간다
+			if (next_dir == SEG_DIR_LEFT)
+				seg3[i].zero_end = -z;
+			else if (next_dir == SEG_DIR_RIGHT)
+				seg3[i].zero_end = z;
+			else
+				seg3[i].zero_end = 0.0f;
+			seg3[i].zero_out_m = driveData.zero_out_straight_m;
+		}
+
+		// ★ 정지 마커 주변에서는 영점이동을 하지 않는다.
+		if (ref_log[i].type == CROSS_STOP
+				|| (i + 1 < count && ref_log[i + 1].type == CROSS_STOP)) {
+			seg3[i].zero_mid = 0.0f;
+			seg3[i].zero_end = 0.0f;
+		}
+	}
+}
+
+// ============================================================================
+// 3 / 4회차 주행 : 초기화 및 주행 루프
+// ============================================================================
+typedef struct {
+	uint16_t idx;			// 다음에 볼 마커 번호
+	uint8_t mismatch;		// 맵과 어긋났는가
+	uint8_t braking_started;
+	uint8_t zero_exit_started;
+	uint8_t use_zero_shift;	// 4회차이면 1
+	float_t marker_start_dist;
+	float_t seg_len;
+	float_t cruise_mps;
+	float_t exit_mps;
+} DriveThirdState_t;
+
+__STATIC_INLINE uint8_t Drive_Third_Init_Sequence(uint8_t use_zero_shift) {
+	if (!IR_Sensor.is_calibration) {
+		if (Sensor_Load_Calibration() != FR_OK) {
+			LCD_Printf(0, 0, "Fail");
+			HAL_Delay(1000);
+			return 0;
+		}
+	}
+
+	ref_log_count = g_cross_log_count;
+
+	if (ref_log_count == 0) {
+		LCD_Printf(0, 0, "No Log Data");
+		HAL_Delay(1000);
+		return 0;
+	}
+
+	// ★ 로그가 버퍼보다 많이 쌓였으면 잘라낸다. 넘치면 배열 밖을 건드린다.
+	if (ref_log_count > CROSS_LOG_MAX)
+		ref_log_count = CROSS_LOG_MAX;
+
+	for (uint16_t i = 0; i < ref_log_count; i++) {
+		ref_log[i] = g_cross_log[i];
+	}
+
+	Build_Segment_Direction(ref_log_count);
+	Build_Segment_Kind(ref_log_count);
+	Build_Segment_Speed(ref_log_count);
+	Build_Segment_ZeroShift(ref_log_count, use_zero_shift);
+
+	if (driveData.fan_en) {
+		Fan_Mtr_Start();
+		Fan_Mtr_Set_Duty(driveData.fan_en * 100);
+		HAL_Delay(1000);
+	}
+
+	accel = driveData.accel;
+	decel = driveData.decel;
+	Odom_Reset();
+
+	g_cross_log_count = 0;
+	Cross_Detect_Reset();
+
+	IR_Sensor.is_lost_position = 0;
+	IR_Sensor.data->mark_left = 0;
+	IR_Sensor.data->mark_right = 0;
+
+	g_total_L = 0;
+	g_total_R = 0;
+	g_total_C = 0;
+	g_total_STOP = 0;
+
+	steer_pid.Kp = driveData.steer_gain_p;
+	steer_pid.Ki = 0.0f;
+	steer_pid.Kd = driveData.steer_gain_d;
+	arm_pid_init_f32(&steer_pid, 1);
+
+	// ★ 마커 부저를 자동으로 끄는 LPTIM. 이걸 켜지 않으면 마커에서 울린 부저가
+	//   계속 울린다. (1회차 Drive_Init_Sequence 와 동일)
+	Buzzer_Discount_Start();
+
+	Sensor_Start();
+	HAL_Delay(10);
+	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
+	Ramp_Start();	// 여기서 g_line_offset 계열이 모두 0으로 초기화된다
+
+	// 4회차이면 영점이동 슬루를 켠다.
+	if (use_zero_shift)
+		g_line_offset_rate = driveData.zero_shift_rate;
+
+	LSM6DS3_Reset_Yaw();
+	g_target_base_mps = driveData.base_mps;
+	return 1;
+}
+
+// 맵과 어긋났을 때의 안전 복귀. 가속과 영점이동을 모두 끈다.
+__STATIC_INLINE void Drive_Third_Fallback(DriveThirdState_t *state) {
+	state->mismatch = 1;
+	state->cruise_mps = driveData.base_mps;
+	state->exit_mps = driveData.base_mps;
+	state->seg_len = 0.0f;
+	g_target_base_mps = driveData.base_mps;
+	g_line_offset_target = 0.0f;
+}
+
+__STATIC_INLINE uint8_t Process_Marker_Event_Third(CrossEvent_t cross,
+		DriveThirdState_t *state) {
+	if (cross == CROSS_STOP) {
+		LSM6DS3_Reset_Yaw();
+		g_total_STOP++;
+		if (g_total_STOP >= 2)
+			return 1;
+	} else {
+		if (cross == CROSS_LEFT)
+			g_total_L++;
+		else if (cross == CROSS_RIGHT)
+			g_total_R++;
+		else if (cross == CROSS_CROSS)
+			g_total_C++;
+	}
+
+	if (!state->mismatch) {
+		if (state->idx >= ref_log_count || ref_log[state->idx].type != cross) {
+			// ★ 맵과 어긋났다. 이후로는 기본 속도로만 달린다.
+			Drive_Third_Fallback(state);
+		}
+	}
+
+	if (!state->mismatch && (state->idx + 1 < ref_log_count)) {
+		const SegmentPlan3_t *seg = &seg3[state->idx];
+
+		state->seg_len = seg->len_m;
+		state->cruise_mps = seg->cruise_mps;
+		state->exit_mps = seg3[state->idx + 1].cruise_mps;
+
+		// 구간 진입 시에는 일단 구간 중 자세를 목표로 잡는다.
+		if (state->use_zero_shift)
+			g_line_offset_target = seg->zero_mid;
+	} else {
+		state->cruise_mps = driveData.base_mps;
+		state->exit_mps = driveData.base_mps;
+		state->seg_len = 0.0f;
+		g_target_base_mps = driveData.base_mps;
+		if (state->use_zero_shift)
+			g_line_offset_target = 0.0f;
+	}
+
+	state->marker_start_dist = g_odom_distance_m;
+	state->braking_started = 0;
+	state->zero_exit_started = 0;
+	state->idx++;
+
+	return 0;
+}
+
+// 구간 안에서의 가감속 판단. 2회차 Check_Distance_And_Brake 를 임의 속도로 확장한 것.
+__STATIC_INLINE void Check_Distance_And_Brake_Third(DriveThirdState_t *state) {
+	if (state->mismatch || state->seg_len <= 0.0f)
+		return;
+
+	float_t traveled = g_odom_distance_m - state->marker_start_dist;
+	float_t remaining = state->seg_len - traveled;
+
+	if (!state->braking_started) {
+		float_t v1 = g_current_base_mps;
+		float_t v2 = state->exit_mps;
+		float_t brake_dist = 0.0f;
+
+		// 지금 속도에서 다음 구간 진입 속도까지 줄이는 데 필요한 거리
+		// ★ decel 이 0 이면 0으로 나누게 되므로 반드시 막는다.
+		if (v1 > v2 && driveData.decel > 0.0f) {
+			brake_dist = (v1 * v1 - v2 * v2)
+					/ (2.0f * driveData.decel)+ BRAKE_MARGIN_M;
+		}
+
+		if (remaining <= brake_dist) {
+			g_target_base_mps = v2;
+			state->braking_started = 1;
+		} else if (traveled >= ACCEL_START_MARGIN_M) {
+			// 마커를 완전히 빠져나온 뒤부터 이 구간의 통과 속도로 올린다
+			g_target_base_mps = state->cruise_mps;
+		}
+	}
+}
+
+// 구간 안에서의 영점이동 전환 판단. (4회차 전용)
+__STATIC_INLINE void Check_Distance_And_Zero_Shift(DriveThirdState_t *state) {
+	if (!state->use_zero_shift || state->mismatch || state->seg_len <= 0.0f)
+		return;
+	if (state->zero_exit_started || state->idx == 0)
+		return;
+
+	const SegmentPlan3_t *seg = &seg3[state->idx - 1];
+
+	float_t traveled = g_odom_distance_m - state->marker_start_dist;
+	float_t remaining = state->seg_len - traveled;
+
+	// ★ 탈출 오프셋까지 옮기는 데 필요한 전진 거리.
+	//   이 항을 빼먹으면 이동이 끝나기 전에 구간이 끝나버린다.
+	float_t shift_need_m = 0.0f;
+	if (driveData.zero_shift_rate > 0.0f) {
+		float_t gap = seg->zero_end - g_line_offset;
+		if (gap < 0.0f)
+			gap = -gap;
+		shift_need_m = gap / driveData.zero_shift_rate;
+	}
+
+	if (remaining <= (shift_need_m + seg->zero_out_m)) {
+		g_line_offset_target = seg->zero_end;
+		state->zero_exit_started = 1;
+	}
+}
+
+__STATIC_INLINE void Drive_Third_Common(uint8_t use_zero_shift,
+		const char *title) {
+	if (!Drive_Third_Init_Sequence(use_zero_shift))
+		return;
+
+	uint32_t start_tick = HAL_GetTick();
+	DriveThirdState_t state = { 0 };
+	state.use_zero_shift = use_zero_shift;
+	state.marker_start_dist = g_odom_distance_m;
+	state.cruise_mps = driveData.base_mps;
+	state.exit_mps = driveData.base_mps;
+
+	while (!IR_Sensor.is_lost_position) {
+		CrossEvent_t cross = Cross_Detect_Update();
+		if (cross != CROSS_NONE) {
+			if (Process_Marker_Event_Third(cross, &state))
+				break;
+		}
+		Check_Distance_And_Brake_Third(&state);
+		Check_Distance_And_Zero_Shift(&state);
+	}
+
+	// ★ 정지 구간에서는 영점을 중앙으로 되돌린다.
+	//   여기서 g_line_offset 을 곧바로 0 으로 써버리면 아직 달리는 중에
+	//   조향이 크게 튀므로, 슬루는 살려둔 채 목표만 중앙으로 준다.
+	g_line_offset_target = 0.0f;
+
+	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
+
+	// 완전히 멈춘 뒤 정리한다. rate 를 먼저 꺼야 ISR 이 다시 건드리지 않는다.
+	g_line_offset_rate = 0.0f;
+	g_line_offset = 0.0f;
+	g_line_offset_target = 0.0f;
+
+	uint32_t end_tick = HAL_GetTick();
+
+	HAL_Delay(500);
+	Ramp_Stop();
+	Buzzer_Discount_Stop();
+	MTR_Safe_Stop();
+	Sensor_Stop();
+	Fan_Mtr_Stop();
+
+	float lap_time = (end_tick - start_tick) / 1000.0f;
+	if (IR_Sensor.is_lost_position) {
+		LCD_Printf(0, 0, "Line Lost");
+	} else {
+		LCD_Printf(0, 0, "%s", title);
+		LCD_Printf(0, 1, "L:%d", g_total_L);
+		LCD_Printf(0, 2, "R:%d", g_total_R);
+		LCD_Printf(0, 3, "C:%d", g_total_C);
+		LCD_Printf(0, 4, "T:%.2fs", lap_time);
+		LCD_Printf(0, 5, "Miss:%d", state.mismatch);
+	}
+
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
+		;
+	LCD_Clear();
+}
+
+void Drive_Third() {
+	Drive_Third_Common(0, "End(3rd)");
+}
+
+void Drive_Fourth() {
+	Drive_Third_Common(1, "End(4th)");
 }

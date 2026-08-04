@@ -57,21 +57,20 @@ extern MenuContext_t drive_param_menu;
 // =========================================================
 // @formatter:off
 MenuItem_t main_menu_items[] = {
-    { .name = "Sensor Menu", .pfnActionCallback = NULL,             .child_menu = &sensor_menu },
-    { .name = "Motor Menu",  .pfnActionCallback = NULL,             .child_menu = &motor_menu },
-    { .name = "Drive Menu",  .pfnActionCallback = NULL,             .child_menu = &drive_menu },
-    { .name = "Boot Load",   .pfnActionCallback = Boot_Loading,     .child_menu = NULL },
-    { .name = "Last Used",   .pfnActionCallback = LastUsed_Execute, .child_menu = NULL }
+    { .name = "Sensor Menu", .child_menu = &sensor_menu 			},
+    { .name = "Motor Menu",  .child_menu = &motor_menu 				},
+    { .name = "Drive Menu",  .child_menu = &drive_menu 				},
+    { .name = "Boot Load",   .pfnActionCallback = Boot_Loading,     },
+    { .name = "Last Used",   .pfnActionCallback = LastUsed_Execute, }
 };
 
 MenuItem_t sensor_menu_items[] = {
-    { .name = "Calibration",  .pfnActionCallback = Sensor_Calibration },
-    { .name = "Raw",          .pfnActionCallback = Sensor_Raw_Printf },
-    { .name = "Normalized",   .pfnActionCallback = Sensor_Normalize_Printf },
-    { .name = "State",        .pfnActionCallback = Sensor_State_Printf },
-	{ .name = "Position",     .pfnActionCallback = Sensor_Position_Printf },
-    { .name = "Update Thres", .pfnActionCallback = NULL },
-    { .name = "IMU Test",     .pfnActionCallback = IMU_Test }
+    { .name = "Calibration",  .pfnActionCallback = Sensor_Calibration 		},
+    { .name = "Raw",          .pfnActionCallback = Sensor_Raw_Printf 		},
+    { .name = "Normalized",   .pfnActionCallback = Sensor_Normalize_Printf 	},
+    { .name = "State",        .pfnActionCallback = Sensor_State_Printf 		},
+	{ .name = "Position",     .pfnActionCallback = Sensor_Position_Printf 	},
+    { .name = "IMU Test",     .pfnActionCallback = IMU_Test 				}
 };
 
 MenuItem_t motor_menu_items[] = {
@@ -89,12 +88,12 @@ MenuItem_t motor_menu_items[] = {
 };
 
 MenuItem_t drive_menu_items[] = {
-    { .name = "1st Drive",    .pfnActionCallback = Drive_First 				},
-    { .name = "2nd Drive",    .pfnActionCallback = Drive_Second 			},
-    { .name = "3rd Drive",    .pfnActionCallback = NULL },
-    { .name = "4th Drive",    .pfnActionCallback = NULL },
-	{ .name = "Vibe Test",    .pfnActionCallback = Drive_Vibration_Test		},
-    { .name = "Update Param", .pfnActionCallback = NULL, 				.child_menu = &drive_param_menu },
+    { .name = "1st Drive",    .pfnActionCallback = Drive_First 			},
+    { .name = "2nd Drive",    .pfnActionCallback = Drive_Second 		},
+    { .name = "3rd Drive",    .pfnActionCallback = Drive_Third 			},
+    { .name = "4th Drive",    .pfnActionCallback = Drive_Fourth			},
+	{ .name = "Vibe Test",    .pfnActionCallback = Drive_Vibration_Test	},
+    { .name = "Update Param", .child_menu = &drive_param_menu 			},
 };
 
 MenuItem_t drive_param_items[] = {
