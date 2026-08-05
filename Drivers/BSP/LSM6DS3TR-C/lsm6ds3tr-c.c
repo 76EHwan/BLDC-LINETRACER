@@ -41,7 +41,7 @@ HAL_StatusTypeDef LSM6DS3_Init() {
 			&data, 1, 100);
 
 	// 3. 자이로스코프 설정 (CTRL2_G)
-	data = 0x4C;
+	data = 0x8C;
 	HAL_I2C_Mem_Write(IMU_I2C, LSM6DS3_ADDR, REG_CTRL2_G, I2C_MEMADD_SIZE_8BIT,
 			&data, 1, 100);
 

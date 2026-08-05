@@ -255,7 +255,7 @@ void HAL_LPTIM_MspInit(LPTIM_HandleTypeDef* lptimHandle)
     __HAL_RCC_LPTIM3_CLK_ENABLE();
 
     /* LPTIM3 interrupt Init */
-    HAL_NVIC_SetPriority(LPTIM3_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(LPTIM3_IRQn, 7, 0);
     HAL_NVIC_EnableIRQ(LPTIM3_IRQn);
   /* USER CODE BEGIN LPTIM3_MspInit 1 */
 
