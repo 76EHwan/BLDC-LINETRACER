@@ -56,8 +56,8 @@ volatile SensorData_TypeDef sensorData = {
         .normalized = { 0 },
 		.target_pos = 0.0f,
 		.state = 0,
-		.threshold = 150,
-        .line_lost_sum_min = 80,
+		.threshold = 95,
+        .line_lost_sum_min = 20,
 		.mark_left = 0,
 		.mark_right = 0,
 };
