@@ -347,7 +347,6 @@ __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
 	g_target_base_mps = driveData.base_mps;
 	return 1;
 }
-
 __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 		DriveSecondState_t *state) {
 	if (cross == CROSS_STOP) {
@@ -362,6 +361,18 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 			g_total_R++;
 		else if (cross == CROSS_CROSS)
 			g_total_C++;
+	}
+
+	// [추가된 크로스 복구 알고리즘]
+	// 에러(mismatch) 상태일 때 크로스 마커를 만나면 로그를 재탐색하여 인덱스를 동기화하고 복구
+	if (state->mismatch && cross == CROSS_CROSS) {
+		for (uint16_t i = state->idx; i < ref_log_count; i++) {
+			if (ref_log[i].type == CROSS_CROSS) {
+				state->idx = i;      // 인덱스 재동기화
+				state->mismatch = 0; // 에러 상태 해제 (정상 주행으로 복구)
+				break;
+			}
+		}
 	}
 
 	if (!state->mismatch) {
@@ -407,27 +418,37 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 }
 
 __STATIC_INLINE void Check_Distance_And_Brake(DriveSecondState_t *state) {
-	if (state->accel_active && !state->braking_started) {
+	// [수정] !state->braking_started 래치 조건을 제거하여 남은 거리를 지속적으로 평가
+	if (state->accel_active) {
 		float_t traveled = g_odom_distance_m - state->marker_start_dist;
 		float_t remaining = state->seg_len_predicted - traveled;
 
 		float_t v1 = g_current_base_mps;
 		float_t v2 = driveData.base_mps;
-		float_t brake_dist = 0.0f;
 
-		// 최고 속도가 아닌 현재 속도(v1)를 기준으로 제동 거리를 동적으로 계산
+		// [수정] v1 <= v2 인 상황에서도 최소한의 마진(BRAKE_MARGIN_M)은 보장되도록 기본값 할당
+		float_t brake_dist = BRAKE_MARGIN_M;
 		if (v1 > v2) {
-			brake_dist = (v1 * v1 - v2 * v2)
-					/ (2.0f * driveData.decel)+ BRAKE_MARGIN_M;
+			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 		}
 
+		// [수정] 유동적 가감속 및 채터링(떨림) 방지를 위한 히스테리시스 적용
 		if (remaining <= brake_dist) {
-			// 감속 구간 돌입
+			// 남은 거리가 제동 거리 이하가 되면 안전하게 감속
 			g_target_base_mps = driveData.base_mps;
 			state->braking_started = 1;
-		} else if (traveled >= ACCEL_START_MARGIN_M) {
-			// 누적 거리가 여유 거리(마커를 완전히 빠져나온 시점)를 초과하면 본격적으로 가속
-			g_target_base_mps = driveData.max_mps;
+		} else {
+			// 이미 감속 중이었을 경우, 노이즈로 인한 급가속을 막기 위해 5cm(0.05m)의 히스테리시스 부여
+			float_t hysteresis = state->braking_started ? 0.05f : 0.0f;
+
+			// 남은 거리가 제동 거리(+여유분)보다 확연히 크다면 다시 가속
+			if (remaining > (brake_dist + hysteresis)) {
+				// 누적 거리가 여유 거리(마커를 완전히 빠져나온 시점)를 초과하면 본격적으로 가속
+				if (traveled >= ACCEL_START_MARGIN_M) {
+					g_target_base_mps = driveData.max_mps;
+					state->braking_started = 0; // 래치 해제, 이후 남은 거리에 따라 다시 제동 가능
+				}
+			}
 		}
 	}
 }
