@@ -26,7 +26,7 @@ DriveParam_t driveData = {
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
 
-    // 3, 4회차용 추가 파라미터 초기화
+    // 3, 4íì°¨ì© ì¶ê° íë¼ë¯¸í° ì´ê¸°í
     .turn45_len_s_m = 0.2f,
     .turn45_len_c_m = 0.3f,
     .turn90_len_s_m = 0.4f,
@@ -47,7 +47,7 @@ uint8_t g_total_STOP = 0;
 
 
 // ============================================================================
-// 타이머 및 가감속(Ramp) 변수
+// íì´ë¨¸ ë° ê°ê°ì(Ramp) ë³ì
 // ============================================================================
 
 float_t accel;
@@ -81,7 +81,7 @@ void Ramp_Stop(void) {
 }
 
 // ============================================================================
-// 주행 제어 공통 함수
+// ì£¼í ì ì´ ê³µíµ í¨ì
 // ============================================================================
 void Drive_Stop_At_Distance(float target_distance_m) {
 	if (g_current_base_mps <= 0.0f || target_distance_m <= 0.0f) {
@@ -101,7 +101,7 @@ void Drive_Stop_At_Distance(float target_distance_m) {
 }
 
 // ============================================================================
-// 1회차 주행 함수 모음
+// 1íì°¨ ì£¼í í¨ì ëª¨ì
 // ============================================================================
 __STATIC_INLINE uint8_t Drive_Init_Sequence(void) {
 	LCD7789_Invert(0);
@@ -226,7 +226,7 @@ void Drive_First(void) {
 }
 
 // ============================================================================
-// 2회차 주행 함수 모음
+// 2íì°¨ ì£¼í í¨ì ëª¨ì
 // ============================================================================
 typedef struct {
 	uint8_t accel_ok;
@@ -366,6 +366,20 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 			g_total_C++;
 	}
 
+	// [추가된 크로스 복구 알고리즘]
+	// 에러(mismatch) 상태일 때 크로스 마커를 만나면 로그를 재탐색하여 인덱스를 동기화하고 복구
+	if (state->mismatch && cross == CROSS_CROSS) {
+		// 현재 인덱스 이후부터 가장 가까운 다음 크로스 마커를 찾음
+		for (uint16_t i = state->idx; i < ref_log_count; i++) {
+			if (ref_log[i].type == CROSS_CROSS) {
+				state->idx = i;      // 인덱스 재동기화
+				state->mismatch = 0; // 에러 상태 해제 (복구 완료)
+				break;
+			}
+		}
+	}
+
+	// 기존 로그 비교 로직
 	if (!state->mismatch) {
 		if (state->idx >= ref_log_count || ref_log[state->idx].type != cross) {
 			state->mismatch = 1;
@@ -405,24 +419,36 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 }
 
 __STATIC_INLINE void Check_Distance_And_Brake(DriveSecondState_t *state) {
-	if (state->accel_active && !state->braking_started) {
+	// [수정 1] !state->braking_started 조건을 제거하여 지속적으로 거리를 평가하게 함
+	if (state->accel_active) {
 		float_t traveled = g_odom_distance_m - state->marker_start_dist;
 		float_t remaining = state->seg_len_predicted - traveled;
 
 		float_t v1 = g_current_base_mps;
 		float_t v2 = driveData.base_mps;
-		float_t brake_dist = 0.0f;
 
+		// [수정 2] v1 <= v2 인 상황에서도 최소한의 마진(BRAKE_MARGIN_M)은 보장되도록 수정
+		float_t brake_dist = BRAKE_MARGIN_M;
 		if (v1 > v2) {
-			brake_dist = (v1 * v1 - v2 * v2)
-					/ (2.0f * driveData.decel)+ BRAKE_MARGIN_M;
+			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 		}
 
+		// [수정 3] 유동적 가감속 및 채터링(떨림) 방지 히스테리시스 적용
 		if (remaining <= brake_dist) {
+			// 남은 거리가 제동 거리 이하가 되면 안전하게 감속
 			g_target_base_mps = driveData.base_mps;
 			state->braking_started = 1;
-		} else if (traveled >= ACCEL_START_MARGIN_M) {
-			g_target_base_mps = driveData.max_mps;
+		} else {
+			// 이미 감속 중이었을 경우, 노이즈로 인한 급가속을 막기 위해 5cm(0.05m)의 히스테리시스 부여
+			float_t hysteresis = state->braking_started ? 0.05f : 0.0f;
+
+			// 남은 거리가 제동 거리(+여유분)보다 확연히 크다면 다시 가속
+			if (remaining > (brake_dist + hysteresis)) {
+				if (traveled >= ACCEL_START_MARGIN_M) {
+					g_target_base_mps = driveData.max_mps;
+					state->braking_started = 0; // 래치 해제, 크로스 마커 복구 시 다시 가속 가능
+				}
+			}
 		}
 	}
 }
@@ -473,7 +499,7 @@ void Drive_Second(void) {
 }
 
 // ============================================================================
-// 진동 분석을 위한 테스트 주행 모드
+// ì§ë ë¶ìì ìí íì¤í¸ ì£¼í ëª¨ë
 // ============================================================================
 
 static float vib_data_buf[VIB_SAMPLE_MAX];
@@ -554,7 +580,7 @@ void Drive_Vibration_Test(void) {
 }
 
 // ============================================================================
-// 3 / 4회차 주행 공용 : 구간 계획
+// 3 / 4íì°¨ ì£¼í ê³µì© : êµ¬ê° ê³í
 // ============================================================================
 
 typedef enum {
@@ -704,7 +730,7 @@ __STATIC_INLINE void Build_Segment_ZeroShift(uint16_t count, uint8_t enable) {
 	}
 }
 
-// 3회차 상태 추적용 구조체
+// 3íì°¨ ìí ì¶ì ì© êµ¬ì¡°ì²´
 typedef struct {
 	uint16_t idx;
 	uint8_t mismatch;
@@ -714,7 +740,7 @@ typedef struct {
 	float target_shifted_pos;
 } DriveThirdState_t;
 
-// 3회차 초기화 시퀀스
+// 3íì°¨ ì´ê¸°í ìíì¤
 __STATIC_INLINE uint8_t Drive_Third_Init_Sequence(void) {
 	LCD7789_Invert(0);
 
@@ -781,7 +807,7 @@ __STATIC_INLINE uint8_t Drive_Third_Init_Sequence(void) {
 	return 1;
 }
 
-// 3회차 마커 이벤트 처리기
+// 3íì°¨ ë§ì»¤ ì´ë²¤í¸ ì²ë¦¬ê¸°
 __STATIC_INLINE uint8_t Process_Marker_Event_Third(CrossEvent_t cross, DriveThirdState_t *state) {
 	if (cross == CROSS_STOP) {
 		LSM6DS3_Reset_Yaw();
@@ -811,7 +837,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Third(CrossEvent_t cross, DriveThir
 	return 0;
 }
 
-// 영점 이동 및 거리 제어 로직
+// ìì  ì´ë ë° ê±°ë¦¬ ì ì´ ë¡ì§
 __STATIC_INLINE void Check_Distance_And_Control_Third(DriveThirdState_t *state) {
 	if (state->mismatch || state->idx >= ref_log_count) {
 		g_target_base_mps = driveData.base_mps;
@@ -868,7 +894,7 @@ __STATIC_INLINE void Check_Distance_And_Control_Third(DriveThirdState_t *state) 
 	IR_Sensor.data->target_pos = state->current_shifted_pos;
 }
 
-// 실제 Drive_Third 메인 루프
+// ì¤ì  Drive_Third ë©ì¸ ë£¨í
 void Drive_Third(void) {
 	if (!Drive_Third_Init_Sequence())
 		return;
