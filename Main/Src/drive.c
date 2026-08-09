@@ -16,12 +16,12 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 2.2f,
+    .base_mps = 1.5f,
     .max_mps = 10.f,
     .accel = 4.f,
     .decel = 4.f,
-    .steer_gain_p = 20.4f,
-    .steer_gain_d = 1.1f,
+    .steer_gain_p = 16.4f,
+    .steer_gain_d = 0.1f,
     .pos_atten_gain = 0.0f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,

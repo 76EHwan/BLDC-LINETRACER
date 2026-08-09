@@ -235,9 +235,18 @@ float32_t Sensor_Get_Position(void) {
 				cross_state = 1;
 			}
 		} else {
-			current_peak_idx = LINE_N_SENSORS / 2;
+			// target_pos(-1.0 ~ 1.0) 값을 센서 인덱스(0 ~ LINE_N_SENSORS-1)로 변환
+			float32_t center_offset = (LINE_N_SENSORS - 1) / 2.0f;
+			int8_t target_idx = (int8_t)(IR_Sensor.data->target_pos * center_offset + center_offset + 0.5f);
+
+			// 인덱스 범위 클램핑 (안전장치)
+			if (target_idx < 0) target_idx = 0;
+			if (target_idx >= LINE_N_SENSORS) target_idx = LINE_N_SENSORS - 1;
+
+			current_peak_idx = target_idx;
 			max_val = IR_Sensor.data->normalized[current_peak_idx];
 			is_cross_line = 1;
+
 			if (!active_out_window && active_in_window < 3) {
 				cross_state = 0;
 			}
@@ -271,11 +280,9 @@ float32_t Sensor_Get_Position(void) {
 	IR_Sensor.data->mark_left = mark_left;
 	IR_Sensor.data->mark_right = mark_right;
 
-	// 1. 증폭(scale_factor) 로직 완전 제거
 	float32_t weighted_sum = 0.0f;
 	uint32_t total_weight = 0;
 
-	// 2. 순수한 센서 원본 값만 누적
 	for (int8_t i = calc_start; i <= calc_end; i++) {
 		uint16_t val = IR_Sensor.data->normalized[i];
 
@@ -283,7 +290,6 @@ float32_t Sensor_Get_Position(void) {
 		total_weight += val;
 	}
 
-	// 3. 증폭 뻥튀기가 사라졌으므로, 튜닝 변수인 line_lost_sum_min 하나로 완벽히 제어 가능
 	if (total_weight > IR_Sensor.data->line_lost_sum_min) {
 		IR_Sensor.is_lost_position = 0;
 		lost_counter = 0;
@@ -306,6 +312,7 @@ float32_t Sensor_Get_Position(void) {
 		return prev_position;
 	}
 }
+
 // ==============================================
 // 마커 인식 알고리즘
 // ==============================================
