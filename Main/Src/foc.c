@@ -26,8 +26,8 @@ typedef struct {
 
 // regular(배터리) DMA 버퍼. 상전류는 injected(JDR)로 읽으므로 여기 안 들어감.
 // 배터리만 쓰면 FOC_ADC_DMA_LENGTH는 1로 줄여도 됨.
-__attribute__((section(".ram_d2_nocache"), aligned(32)))                       uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
-__attribute__((section(".ram_d2_nocache"), aligned(32)))                       uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
+__attribute__((section(".ram_d2_nocache"), aligned(32)))                        uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
+__attribute__((section(".ram_d2_nocache"), aligned(32)))                        uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
 // 엔코더 방향 보정: 반전 시 (RES - raw)로 미러링한 카운트 반환
 static inline float32_t FOC_Enc_Cnt(FOC_Handle_t *hfoc) {
@@ -43,16 +43,19 @@ volatile float32_t g_vbus_filt = MOTOR_RATED_VOLTAGE;
 __STATIC_INLINE void FOC_Update_VBus(void) {
 	// adc1_dma_buf, adc2_dma_buf 둘 다 배터리를 보고 있다면 평균, 아니면 하나만 사용
 	uint32_t raw = (adc1_dma_buf[0] + adc2_dma_buf[0]) / 2; // 실제로 배터리를 읽는 채널로 교체
-	float32_t vbus_raw = (float32_t) raw * VBUS_ADC_SCALE;
+	float32_t vbus_raw = (float32_t) raw * VBUS_ADC_SCALE + VBUS_ADC_OFFSET;
+//	float32_t vbus_raw = (float32_t) raw * VBUS_ADC_SCALE;
 
-	const float32_t alpha = 0.05f; // 필터 계수 (2kHz 기준 튜닝)
+	const float32_t alpha = 0.001f; // 필터 계수 (2kHz 기준 튜닝)
 	g_vbus_filt += alpha * (vbus_raw - g_vbus_filt);
+//	g_vbus_filt = vbus_raw;
 
 	// 안전 클램프: 너무 낮으면 0으로 나누기 방지, 너무 높으면 이상값 방지
 	if (g_vbus_filt < 3.0f)
 		g_vbus_filt = 3.0f;
 	if (g_vbus_filt > 30.0f)
 		g_vbus_filt = 30.0f;
+
 }
 
 float32_t FOC_Get_VBus(void) {
@@ -77,8 +80,8 @@ void FOC_ADC_Start() {
 
 	HAL_Delay(50);
 
-	g_vbus_filt = (float32_t) (adc1_dma_buf[0] + adc2_dma_buf[0])
-			/ 2.f* VBUS_ADC_SCALE;
+	uint32_t raw = (adc1_dma_buf[0] + adc2_dma_buf[0]) / 2;
+	g_vbus_filt = (float32_t) raw * VBUS_ADC_SCALE + VBUS_ADC_OFFSET;
 }
 
 void FOC_ADC_Stop() {

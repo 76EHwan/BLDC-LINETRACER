@@ -84,6 +84,7 @@ MenuItem_t motor_menu_items[] = {
     { .name = "Tune Spd PID",	.pfnActionCallback = MTR_Speed_FOC 			},
 	{ .name = "Fan Test",		.pfnActionCallback = Fan_Test 				},
 	{ .name = "Mag Enc Test",	.pfnActionCallback = Magnet_Encoder_Test	},
+	{ .name = "Battery Volt",	.pfnActionCallback = Battery_Check_Safe		},
 	{ .name = "Load From SD",	.pfnActionCallback = FOC_Menu_LoadFromSD	},
 	{ .name = "Save To SD",		.pfnActionCallback = FOC_Menu_SaveToSD		},
 };
@@ -223,7 +224,7 @@ static void LastUsed_Save(MenuContext_t *pCtx, uint8_t index) {
 	if (last != NULL && last->func == func)
 		return; /* 직전과 동일하면 기록 안 함 */
 
-	__attribute__((aligned(32)))                            LU_Record_t rec;
+	__attribute__((aligned(32)))                             LU_Record_t rec;
 	rec.magic = LU_MAGIC;
 	rec.func = func;
 	for (int k = 0; k < 6; k++)
@@ -500,9 +501,9 @@ void Update_Pit_In_Distance_M() {
 			"Pit In Dis M");
 }
 
-
 void Update_Fan_Enable() {
-	Update_Param_Menu(DATA_UINT8, (uint32_t*) &(driveData.fan_en), NULL, "Fan Enable");
+	Update_Param_Menu(DATA_UINT8, (uint32_t*) &(driveData.fan_en), NULL,
+			"Fan Enable");
 }
 
 void Menu_ProcessLoop() {

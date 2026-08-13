@@ -746,3 +746,41 @@ void Magnet_Encoder_Test() {
 		LCD_Printf(0, 1, "R: %6.3f", encDataR.motor_elec_angle);
 	}
 }
+
+
+void Battery_Check_Safe(void) {
+	// 1. ★ 가장 중요: 모터 드라이버 하드웨어 출력 완전 차단 (소음/진동 원천 차단)
+	MTR_FOC_PWM_DIS();
+
+	// 2. 모터 상태 초기화 (제어 루프 차단)
+	FOC_Reset_State(&foc_L);
+	FOC_Reset_State(&foc_R);
+	foc_L.speed_loop_en = 0;
+	foc_R.speed_loop_en = 0;
+
+	// 3. ★ 핵심: 모터는 꺼져있지만, ADC를 깨우기 위해 MCU 내부 PWM 타이머 가동
+	MTR_TIM_Start(&foc_L);
+	MTR_TIM_Start(&foc_R);
+
+	// 4. 전압 측정을 위한 ADC 가동
+	FOC_ADC_Start();
+
+	// 5. Vbus 필터링 루프를 돌리기 위해 2kHz 속도 제어 타이머 가동
+	HAL_TIM_Base_Start_IT(TIM_SPEED_LOOP);
+
+	LCD_Clear();
+	LCD_Printf(0, 0, "=== Battery ===");
+
+	// K 버튼(Hold)을 길게 누를 때까지 실시간 전압 갱신
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
+		LCD_Printf(0, 3, "V: %8.6f V", FOC_Get_VBus());
+		HAL_Delay(50);
+	}
+
+	// 6. 끄고 나갈 때 사용했던 타이머와 ADC 안전하게 원상복구
+	HAL_TIM_Base_Stop_IT(TIM_SPEED_LOOP);
+	FOC_ADC_Stop();
+	MTR_TIM_Stop(&foc_L);
+	MTR_TIM_Stop(&foc_R);
+	LCD_Clear();
+}

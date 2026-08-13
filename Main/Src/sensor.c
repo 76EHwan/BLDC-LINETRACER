@@ -235,11 +235,9 @@ float32_t Sensor_Get_Position(void) {
 				cross_state = 1;
 			}
 		} else {
-			// target_pos(-1.0 ~ 1.0) 값을 센서 인덱스(0 ~ LINE_N_SENSORS-1)로 변환
 			float32_t center_offset = (LINE_N_SENSORS - 1) / 2.0f;
 			int8_t target_idx = (int8_t)(IR_Sensor.data->target_pos * center_offset + center_offset + 0.5f);
 
-			// 인덱스 범위 클램핑 (안전장치)
 			if (target_idx < 0) target_idx = 0;
 			if (target_idx >= LINE_N_SENSORS) target_idx = LINE_N_SENSORS - 1;
 
@@ -314,7 +312,7 @@ float32_t Sensor_Get_Position(void) {
 }
 
 // ==============================================
-// 마커 인식 알고리즘
+// 마커 인식 알고리즘 (동적 오프셋 & 래핑 보정 적용)
 // ==============================================
 
 CrossMarkerLog_t g_cross_log[CROSS_LOG_MAX];
@@ -323,14 +321,64 @@ uint16_t g_cross_log_count = 0;
 uint16_t g_last_stop_state = 0;
 uint8_t g_last_stop_count = 0;
 
+// ★ 연속 각도 추적 및 동적 오프셋 보정을 위한 전역 변수
+static float32_t g_prev_imu_yaw = 0.0f;
+static float32_t g_continuous_yaw = 0.0f;
+static float32_t g_segment_start_yaw = 0.0f;
+static float32_t g_max_yaw_change = 0.0f;
+static int16_t g_pending_log_idx = -1;
+static float32_t g_pending_target_dist = 0.10f; // ★ 추가: 동적으로 변할 목표 오프셋 거리
+
 void Cross_Detect_Reset(void) {
 	g_marker_state = MARKER_STATE_IDLE;
 	g_accum_left = 0;
 	g_accum_right = 0;
 	g_accum_center_state = 0;
+
+	// 주행 시작 시 각도 추적 변수 초기화
+	g_prev_imu_yaw = imu_data.Yaw_Angle;
+	g_continuous_yaw = 0.0f;
+	g_segment_start_yaw = 0.0f;
+	g_max_yaw_change = 0.0f;
+	g_pending_log_idx = -1;
+	g_pending_target_dist = 0.10f;
 }
 
 CrossEvent_t Cross_Detect_Update(void) {
+	// =========================================================
+	// 1. IMU 180도 래핑(Wrapping) 해제 -> 무한대 연속 각도 생성
+	// =========================================================
+	float32_t dyaw = imu_data.Yaw_Angle - g_prev_imu_yaw;
+	if (dyaw > 180.0f) dyaw -= 360.0f;
+	if (dyaw < -180.0f) dyaw += 360.0f;
+	g_continuous_yaw += dyaw;
+	g_prev_imu_yaw = imu_data.Yaw_Angle;
+
+	// =========================================================
+	// 2. 센서 오프셋 지연 보정 (동적 거리 적용)
+	// =========================================================
+	if (g_pending_log_idx >= 0) {
+		float32_t current_yaw_change = g_continuous_yaw - g_segment_start_yaw;
+
+		if (fabsf(current_yaw_change) > fabsf(g_max_yaw_change)) {
+			g_max_yaw_change = current_yaw_change;
+			g_cross_log[g_pending_log_idx].yaw_angle = g_max_yaw_change;
+		}
+
+		// ★ 동적 오프셋 거리(g_pending_target_dist) 도달 시 확정
+		if (g_odom_distance_m >= g_pending_target_dist) {
+			g_pending_log_idx = -1;
+			g_segment_start_yaw = g_continuous_yaw; // 다음 구간 측정 시작점 갱신
+			g_max_yaw_change = 0.0f;
+		}
+	} else {
+		float32_t current_yaw_change = g_continuous_yaw - g_segment_start_yaw;
+		if (fabsf(current_yaw_change) > fabsf(g_max_yaw_change)) {
+			g_max_yaw_change = current_yaw_change;
+		}
+	}
+	// =========================================================
+
 	uint8_t left_marker = IR_Sensor.data->mark_left;
 	uint8_t right_marker = IR_Sensor.data->mark_right;
 	uint16_t current_center_state = (uint16_t) (IR_Sensor.data->state & 0xFFFF);
@@ -364,7 +412,6 @@ CrossEvent_t Cross_Detect_Update(void) {
 					event = CROSS_CROSS;
 				} else {
 					event = CROSS_STOP;
-
 					g_last_stop_state = g_accum_center_state;
 					g_last_stop_count = center_on_count;
 				}
@@ -373,7 +420,12 @@ CrossEvent_t Cross_Detect_Update(void) {
 			} else if (g_accum_right) {
 				event = CROSS_RIGHT;
 			}
-			Cross_Detect_Reset();
+
+			// 마커 판정 변수만 초기화 (각도 보존)
+			g_marker_state = MARKER_STATE_IDLE;
+			g_accum_left = 0;
+			g_accum_right = 0;
+			g_accum_center_state = 0;
 			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
 		}
 		break;
@@ -381,6 +433,31 @@ CrossEvent_t Cross_Detect_Update(void) {
 
 	if (event != CROSS_NONE) {
 		Cross_Log_Push(event);
+
+		if (g_cross_log_count > 0) {
+			g_pending_log_idx = (g_cross_log_count - 1) % CROSS_LOG_MAX;
+		}
+
+		// =========================================================
+		// ★ 핵심 추가: 다음 구간으로 넘어갈 때의 상황을 분석하여 오프셋 거리 가변 적용
+		// =========================================================
+		if (event == CROSS_CROSS || event == CROSS_STOP) {
+			g_pending_target_dist = 0.10f; // 십자/정지 마커는 기본 10cm
+		} else {
+			if (g_is_curve_state == 0) {
+				// 1. 직선 -> 곡선 진입
+				g_pending_target_dist = 0.05f;
+			} else if ((g_is_curve_state == 1 && event == CROSS_LEFT) ||
+					   (g_is_curve_state == 2 && event == CROSS_RIGHT)) {
+				// 2. 곡선 -> 직선 탈출 (같은 방향 마커를 한 번 더 밟음)
+				g_pending_target_dist = 0.12f; // 바퀴가 일자가 될 때까지 넉넉히 대기
+			} else {
+				// 3. 곡선 -> 반대쪽 곡선 진입 (S자)
+				g_pending_target_dist = 0.08f; // 변곡점에 다다를 때까지만 짧게 대기
+			}
+		}
+		// =========================================================
+
 		Buzzer_Start();
 		buzzer_timer_count = (uint16_t) (g_buzzer_duration / LPTIM_TICK_DT);
 
@@ -412,7 +489,10 @@ void Cross_Log_Push(CrossEvent_t type) {
 	CrossMarkerLog_t *log = &g_cross_log[g_cross_log_count % CROSS_LOG_MAX];
 	log->type = type;
 	log->dist_from_prev_m = g_odom_distance_m;
-	log->yaw_angle = imu_data.Yaw_Angle;
+
+	// 일단 현재 캡처된 최대 변화량을 저장 (이후 오프셋 대기 동안 업데이트)
+	log->yaw_angle = g_max_yaw_change;
+
 	g_cross_log_count++;
 	Odom_Reset();
 }
@@ -555,13 +635,11 @@ void Sensor_Position_Printf() {
 	LCD_Printf(0, 0, "Position");
 
 	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		// ★ float -> float32_t 로 통일
 		float32_t weighted_sum = 0.0f;
 		uint32_t total_weight = 0;
 
 		for (uint8_t i = 0; i < LINE_N_SENSORS; i++) {
 			uint16_t weight = IR_Sensor.data->normalized[i];
-			// ★ 캐스팅도 정확하게 지정
 			weighted_sum += (float32_t) weight * line_sensor_pos[i];
 			total_weight += weight;
 		}
