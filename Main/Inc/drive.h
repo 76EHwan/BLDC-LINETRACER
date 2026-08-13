@@ -36,11 +36,13 @@ extern volatile uint8_t g_is_braking;
 extern volatile float g_target_base_mps;
 extern volatile float g_current_base_mps;
 
-
 // ì£¼í ìíì¤ í¨ì
 void Drive_Stop_At_Distance(float_t target_distance_m);
 void Drive_First(void);
 void Drive_Second(void); // 2íì°¨ ì£¼í í¨ì ì¶ê°
+void Drive_Third(void);
+void Drive_Fourth(void);
+
 void Drive_Vibration_Test(void);
 
 // ê°ê°ì ì ì´ í¨ì
