@@ -89,8 +89,8 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 
 	foc_L.enc_dir = -1;
 	foc_R.enc_dir = -1;
-	foc_L.omega_ramp_rate = 3000;
-	foc_R.omega_ramp_rate = 3000;
+	foc_L.omega_ramp_rate = 1500;
+	foc_R.omega_ramp_rate = 1500;
 
 	foc_L.is_running = 1;
 	foc_R.is_running = 1;
