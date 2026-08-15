@@ -25,6 +25,7 @@ typedef struct {
 	float_t pos_atten_gain;
 	float_t pit_in_distance_m;
 	uint8_t fan_en;
+	int8_t  target_shift_val;
 } DriveParam_t;
 
 extern DriveParam_t driveData;

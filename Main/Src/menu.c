@@ -98,6 +98,9 @@ MenuItem_t drive_menu_items[] = {
     { .name = "Update Param", .pfnActionCallback = NULL, 				.child_menu = &drive_param_menu },
 };
 
+// ★ 추가: Update_Target_Shift_Val 선언
+void Update_Target_Shift_Val(void);
+
 MenuItem_t drive_param_items[] = {
 	{ .name = "Threshold", 		.pfnActionCallback = Update_Threshold 			},
 	{ .name = "Lost Pos Min", 	.pfnActionCallback = Update_Line_Lost_Sum_Min	},
@@ -110,6 +113,7 @@ MenuItem_t drive_param_items[] = {
 	{ .name = "Pos Abs Gain", 	.pfnActionCallback = Update_Position_Abs_Gain	},
 	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
+	{ .name = "Target Shift", 	.pfnActionCallback = Update_Target_Shift_Val	}, // ★ 새로 추가된 메뉴 아이템
 };
 
 // =========================================================
@@ -504,6 +508,12 @@ void Update_Pit_In_Distance_M() {
 void Update_Fan_Enable() {
 	Update_Param_Menu(DATA_UINT8, (uint32_t*) &(driveData.fan_en), NULL,
 			"Fan Enable");
+}
+
+// ★ 추가: Target Shift 값을 제어하는 콜백 함수 (INT8형)
+void Update_Target_Shift_Val() {
+	Update_Param_Menu(DATA_INT8, (uint32_t*) &(driveData.target_shift_val), NULL,
+			"Target Shift");
 }
 
 void Menu_ProcessLoop() {
