@@ -41,6 +41,7 @@ extern volatile float g_current_base_mps;
 void Drive_Stop_At_Distance(float_t target_distance_m);
 void Drive_First(void);
 void Drive_Second(void); // 2íì°¨ ì£¼í í¨ì ì¶ê°
+void Drive_Third(void);
 void Drive_Vibration_Test(void);
 
 // ê°ê°ì ì ì´ í¨ì
