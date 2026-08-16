@@ -40,6 +40,7 @@ void Fan_Mtr_Set_Duty(uint8_t duty);
 void Fan_Mtr_Stop(void);
 void Fan_Test(void);
 void Magnet_Encoder_Test(void);
+void Battery_Check_Safe(void);
 
 void Steer_Motor(void);
 

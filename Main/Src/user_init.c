@@ -55,7 +55,7 @@ void Delete_All_Marker_Logs(void) {
 void User_Init() {
 	Button_init();
 	Buzzer_Init();
-//	Buzzer_Start();
+	Buzzer_Start();
 	LCD_Test();
 	LSM6DS3_Init();
 	Buzzer_Stop();

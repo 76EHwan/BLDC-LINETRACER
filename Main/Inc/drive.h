@@ -25,6 +25,7 @@ typedef struct {
 	float_t pos_atten_gain;
 	float_t pit_in_distance_m;
 	uint8_t fan_en;
+	float_t target_shift_val;
 } DriveParam_t;
 
 extern DriveParam_t driveData;
@@ -41,6 +42,9 @@ extern volatile float g_current_base_mps;
 void Drive_Stop_At_Distance(float_t target_distance_m);
 void Drive_First(void);
 void Drive_Second(void); // 2íì°¨ ì£¼í í¨ì ì¶ê°
+void Drive_Third(void);
+void Drive_Fourth(void);
+
 void Drive_Vibration_Test(void);
 
 // ê°ê°ì ì ì´ í¨ì

@@ -93,9 +93,10 @@
 // Kd = 엔코더 노이즈 증폭 방지를 위해 기본 0 설정
 #define DEFAULT_SPD_KD                  0.0f
 
-#define VBUS_DIVIDER_RATIO   19.0f
-#define VBUS_ADC_VREF        3.3f
-#define VBUS_ADC_SCALE       (VBUS_ADC_VREF / 65536.0f * VBUS_DIVIDER_RATIO)
+#define VBUS_DIVIDER_RATIO  	19.0f
+#define VBUS_ADC_OFFSET			0.15f
+#define VBUS_ADC_VREF       	3.3f
+#define VBUS_ADC_SCALE      	(VBUS_ADC_VREF / 65536.0f * VBUS_DIVIDER_RATIO)
 
 // =========================================================
 // [FOC 제어 핸들 구조체]
