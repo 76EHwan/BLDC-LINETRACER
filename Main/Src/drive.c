@@ -16,7 +16,7 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 2.0f,
+    .base_mps = 1.8f,
     .max_mps = 8.0f,
     .accel = 5.5f,
     .decel = 5.5f,
@@ -514,8 +514,6 @@ void Drive_Second(void) {
 // 3회차 주행 함수 모음 (Target Pos 동적 예지 이동 포함 / 가속 끔)
 // ============================================================================
 
-#define TARGET_SHIFT_VAL   0.3f   // 코너 파고들기를 위한 라인 쉬프트 양 (필요시 조절)
-
 typedef struct {
 	uint8_t accel_ok;
 	uint8_t curve_dir; // 0: 직선, 1: 좌(L) 곡선, 2: 우(R) 곡선
@@ -697,6 +695,7 @@ __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 		return;
 	}
 
+	// 1. 이전(Previous) 마커 중 CROSS가 아닌 실제 곡선/직선 마커 찾기
 	int prev_idx = -1;
 	for (int i = state->idx - 1; i >= 0; i--) {
 		if (ref_log[i].type != CROSS_CROSS) {
@@ -705,6 +704,7 @@ __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 		}
 	}
 
+	// 2. 다가올(Next) 마커 중 CROSS가 아닌 실제 곡선/직선 마커 찾기
 	int next_idx = state->idx;
 	for (int i = state->idx; i < ref_log_count; i++) {
 		if (ref_log[i].type != CROSS_CROSS) {
@@ -713,34 +713,38 @@ __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 		}
 	}
 
+	// 3. 이전 상태의 곡선 방향에 따른 시작 타겟점 계산
 	uint8_t prev_curve = (prev_idx >= 0) ? seg_plan_3[prev_idx].curve_dir : 0;
 	float current_target = 0.0f;
-
 	// ★ 매크로 대신 driveData.target_shift_val 사용
 	if (prev_curve == 1) current_target = driveData.target_shift_val;
 	else if (prev_curve == 2) current_target = -driveData.target_shift_val;
 
+	// 4. 다음 상태의 곡선 방향에 따른 도달 타겟점 계산
 	uint8_t next_curve = (next_idx < ref_log_count) ? seg_plan_3[next_idx].curve_dir : 0;
 	float next_target = 0.0f;
-
 	// ★ 매크로 대신 driveData.target_shift_val 사용
 	if (next_curve == 1) next_target = driveData.target_shift_val;
 	else if (next_curve == 2) next_target = -driveData.target_shift_val;
 
+	// 5. 이전 마커부터 다음 마커까지의 총 거리 계산 (중간에 낀 CROSS 거리까지 전부 포함)
 	float total_dist = 0.0f;
 	for (int i = prev_idx + 1; i <= next_idx; i++) {
 		total_dist += ref_log[i].dist_from_prev_m;
 	}
 
-	float traveled = g_odom_distance_m - state->marker_start_dist;
+	// 6. 이전 마커로부터 현재까지 실제 주행한 거리 계산
+	float traveled = g_odom_distance_m - state->marker_start_dist; // 현재 구간 주행 거리
 	for (int i = state->idx - 1; i > prev_idx; i--) {
-		traveled += ref_log[i].dist_from_prev_m;
+		traveled += ref_log[i].dist_from_prev_m; // 지나쳐온 CROSS 마커들의 거리 합산
 	}
 
+	// 7. 총 거리에 비례하여 선형 보간(Linear Interpolation) 적용
 	if (total_dist > 0.001f) {
 		float ratio = traveled / total_dist;
 		if (ratio > 1.0f) ratio = 1.0f;
 		if (ratio < 0.0f) ratio = 0.0f;
+		// 이전 타겟에서 다음 타겟으로 이동 거리에 비례하여 서서히 변경
 		IR_Sensor.data->target_pos = current_target + (next_target - current_target) * ratio;
 	} else {
 		IR_Sensor.data->target_pos = current_target;
@@ -798,6 +802,344 @@ void Drive_Third(void) {
 		;
 	LCD_Clear();
 }
+
+#define SLALOM_SPEED_RATIO 0.85f // 45도 연속 곡선에서의 가속 비율 (max_mps의 85%)
+
+typedef struct {
+	uint8_t accel_type; // 0: 감속(깊은 커브), 1: 직선 가속, 2: 45도(슬라롬) 가속
+	uint8_t curve_dir;  // 0: 직선, 1: 좌(L), 2: 우(R)
+} SegmentPlanFourth_t;
+
+static SegmentPlanFourth_t seg_plan_4[CROSS_LOG_MAX];
+
+typedef struct {
+	uint16_t idx;
+	uint8_t mismatch;
+	uint8_t accel_active;
+	uint8_t braking_started;
+	float marker_start_dist;
+	float seg_len_predicted;
+	float target_mps; // ★ 추가: 현재 가속 구간의 목표 최대 속도
+} DriveFourthState_t;
+
+// 4차 주행용 구간 계획 빌드 (45도 곡선 가속 판별 추가)
+__STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
+	uint8_t curve_state = 0;
+
+	for (uint16_t i = 0; i < ref_log_count; i++) {
+		CrossEvent_t cur = ref_log[i].type;
+
+		// 1. 방향 판별 (CROSS는 투명인간 취급)
+		if (cur == CROSS_LEFT) curve_state = 1;
+		else if (cur == CROSS_RIGHT) curve_state = 2;
+		else if (cur == CROSS_STOP) curve_state = 0;
+
+		seg_plan_4[i].curve_dir = curve_state;
+
+		// 2. 다음 마커까지의 가속 속성 판별
+		uint8_t a_type = 0;
+		if (cur == CROSS_STOP) {
+			a_type = 0;
+		} else if (i + 1 < ref_log_count) {
+			// 다음 마커에서 기록된 꺾임각을 확인하여 다가올 커브의 깊이를 예측
+			float next_yaw_mag = fabsf(ref_log[i + 1].yaw_angle);
+
+			if (cur == CROSS_CROSS) {
+				a_type = 1; // 직선 가속
+			} else if (cur == CROSS_LEFT || cur == CROSS_RIGHT) {
+				// 15도 ~ 65도 사이의 얕은 꺾임이면 45도(슬라롬) 커브로 간주하고 가속 허용!
+				if (next_yaw_mag > 15.0f && next_yaw_mag < 65.0f) {
+					a_type = 2;
+				} else {
+					a_type = 0; // 90도/180도 등 깊은 커브는 안전하게 감속
+				}
+			}
+		}
+		seg_plan_4[i].accel_type = a_type;
+	}
+}
+
+// 4차 주행 초기화
+__STATIC_INLINE uint8_t Drive_Fourth_Init_Sequence(void) {
+	LCD7789_Invert(0);
+
+	if (!IR_Sensor.is_calibration) {
+		if (Sensor_Load_Calibration() != FR_OK) {
+			LCD_Printf(0, 0, "Fail");
+			HAL_Delay(1000);
+			return 0;
+		}
+	}
+
+	if (!is_ref_log_copied) {
+		ref_log_count = g_cross_log_count;
+		if (ref_log_count == 0) return 0;
+		for (uint16_t i = 0; i < ref_log_count; i++) ref_log[i] = g_cross_log[i];
+		Build_Segment_Plan_Fourth();
+		is_ref_log_copied = 1;
+	} else {
+		if (ref_log_count == 0) return 0;
+		Build_Segment_Plan_Fourth();
+	}
+
+	if (driveData.fan_en) {
+		Fan_Mtr_Start();
+		Fan_Mtr_Set_Duty(driveData.fan_en * 100);
+		HAL_Delay(1000);
+	}
+
+	accel = driveData.accel;
+	decel = driveData.decel;
+	Odom_Reset();
+	g_cross_log_count = 0;
+	Cross_Detect_Reset();
+
+	IR_Sensor.is_lost_position = 0;
+	IR_Sensor.data->mark_left = 0;
+	IR_Sensor.data->mark_right = 0;
+	IR_Sensor.data->target_pos = 0.0f;
+
+	g_total_L = 0;
+	g_total_R = 0;
+	g_total_C = 0;
+	g_total_STOP = 0;
+
+	steer_pid.Kp = driveData.steer_gain_p;
+	steer_pid.Ki = 0.0f;
+	steer_pid.Kd = driveData.steer_gain_d;
+
+	arm_pid_init_f32(&steer_pid, 1);
+	arm_pid_init_f32(&steer_pid, 0);
+
+	Buzzer_Discount_Start();
+	Sensor_Start();
+	HAL_Delay(10);
+	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
+	Ramp_Start();
+	LSM6DS3_Reset_Yaw();
+	g_target_base_mps = driveData.base_mps;
+	return 1;
+}
+
+// 4차 주행 마커 이벤트 및 가속 구간 계산
+__STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFourthState_t *state) {
+	if (cross == CROSS_STOP) {
+		LSM6DS3_Reset_Yaw();
+		g_total_STOP++;
+		if (g_total_STOP >= 2) return 1;
+	} else {
+		if (cross == CROSS_LEFT) g_total_L++;
+		else if (cross == CROSS_RIGHT) g_total_R++;
+		else if (cross == CROSS_CROSS) g_total_C++;
+	}
+
+	if (state->mismatch) {
+		if (cross == CROSS_CROSS) {
+			for (uint16_t i = state->idx; i < ref_log_count; i++) {
+				if (ref_log[i].type == CROSS_CROSS) {
+					state->idx = i;
+					state->mismatch = 0;
+					break;
+				}
+			}
+		}
+	}
+
+	if (!state->mismatch) {
+		if (state->idx >= ref_log_count || ref_log[state->idx].type != cross) {
+			state->mismatch = 1;
+		}
+	}
+
+	// ★ 가속 구간 계산 (직선 + 45도 슬라롬을 묶어서 한 번에 가속)
+	if (!state->mismatch && state->idx < ref_log_count && seg_plan_4[state->idx].accel_type > 0) {
+		state->accel_active = 1;
+		float total_dist = 0.0f;
+		uint8_t has_straight = 0;
+
+		// 현재 마커부터 가속이 불가능한 마커(깊은 커브)가 나올 때까지의 거리를 모두 합산
+		for (uint16_t i = state->idx; i < ref_log_count; i++) {
+			if (seg_plan_4[i].accel_type == 0) break;
+
+			if (seg_plan_4[i].accel_type == 1) has_straight = 1; // 하나라도 직선이 포함되어 있는지 확인
+
+			if (i + 1 < ref_log_count) {
+				total_dist += ref_log[i + 1].dist_from_prev_m;
+			} else {
+				break;
+			}
+		}
+		state->seg_len_predicted = total_dist;
+
+		// 가속 목표 속도 설정
+		if (has_straight) {
+			state->target_mps = driveData.max_mps; // 직선이 섞여있으면 풀 가속
+		} else {
+			state->target_mps = driveData.max_mps * SLALOM_SPEED_RATIO; // 45도 연속 커브면 85% 속도로 부드럽게 가속
+		}
+		g_target_base_mps = state->target_mps;
+
+	} else {
+		state->accel_active = 0;
+		state->target_mps = driveData.base_mps;
+		g_target_base_mps = driveData.base_mps;
+	}
+
+	state->marker_start_dist = g_odom_distance_m;
+	state->braking_started = 0;
+
+	if (!state->mismatch) state->idx++;
+
+	return 0;
+}
+
+// 4차 주행 감속 및 가속 실행 제어
+__STATIC_INLINE void Check_Distance_And_Brake_Fourth(DriveFourthState_t *state) {
+	if (state->accel_active) {
+		float_t traveled = g_odom_distance_m - state->marker_start_dist;
+		float_t remaining = state->seg_len_predicted - traveled;
+
+		float_t v1 = g_current_base_mps;
+		float_t v2 = driveData.base_mps;
+
+		// 감속에 필요한 브레이킹 거리 계산
+		float_t brake_dist = BRAKE_MARGIN_M;
+		if (v1 > v2) {
+			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
+		}
+
+		if (remaining <= brake_dist) {
+			g_target_base_mps = driveData.base_mps;
+			state->braking_started = 1;
+		} else {
+			float_t hysteresis = state->braking_started ? 0.05f : 0.0f;
+			if (remaining > (brake_dist + hysteresis)) {
+				// 출발 직후 가속 시작 마진
+				if (traveled >= ACCEL_START_MARGIN_M) {
+					g_target_base_mps = state->target_mps; // 미리 계산된 최대속도(100% or 85%) 적용
+					state->braking_started = 0;
+				}
+			}
+		}
+	}
+}
+
+// 4차 주행 전용 Target Position 예지 이동 로직 (3차와 완전히 동일)
+__STATIC_INLINE void Update_Target_Pos_Fourth(DriveFourthState_t *state) {
+	if (state->mismatch || state->idx >= ref_log_count) {
+		IR_Sensor.data->target_pos = 0.0f;
+		return;
+	}
+
+	int prev_idx = -1;
+	for (int i = state->idx - 1; i >= 0; i--) {
+		if (ref_log[i].type != CROSS_CROSS) {
+			prev_idx = i;
+			break;
+		}
+	}
+
+	int next_idx = state->idx;
+	for (int i = state->idx; i < ref_log_count; i++) {
+		if (ref_log[i].type != CROSS_CROSS) {
+			next_idx = i;
+			break;
+		}
+	}
+
+	uint8_t prev_curve = (prev_idx >= 0) ? seg_plan_4[prev_idx].curve_dir : 0;
+	float current_target = 0.0f;
+	if (prev_curve == 1) current_target = driveData.target_shift_val;
+	else if (prev_curve == 2) current_target = -driveData.target_shift_val;
+
+	uint8_t next_curve = (next_idx < ref_log_count) ? seg_plan_4[next_idx].curve_dir : 0;
+	float next_target = 0.0f;
+	if (next_curve == 1) next_target = driveData.target_shift_val;
+	else if (next_curve == 2) next_target = -driveData.target_shift_val;
+
+	float total_dist = 0.0f;
+	for (int i = prev_idx + 1; i <= next_idx; i++) {
+		total_dist += ref_log[i].dist_from_prev_m;
+	}
+
+	float traveled = g_odom_distance_m - state->marker_start_dist;
+	for (int i = state->idx - 1; i > prev_idx; i--) {
+		traveled += ref_log[i].dist_from_prev_m;
+	}
+
+	if (total_dist > 0.001f) {
+		float ratio = traveled / total_dist;
+		if (ratio > 1.0f) ratio = 1.0f;
+		if (ratio < 0.0f) ratio = 0.0f;
+		IR_Sensor.data->target_pos = current_target + (next_target - current_target) * ratio;
+	} else {
+		IR_Sensor.data->target_pos = current_target;
+	}
+}
+
+void Drive_Fourth(void) {
+	if (!Drive_Fourth_Init_Sequence())
+		return;
+
+	uint32_t start_tick = HAL_GetTick();
+	DriveFourthState_t state = { 0 };
+	state.marker_start_dist = g_odom_distance_m;
+
+	// 첫 번째 직선 구간 출발 가속 처리
+	if (ref_log_count > 0) {
+		state.accel_active = 1;
+		state.seg_len_predicted = ref_log[0].dist_from_prev_m;
+		if (state.seg_len_predicted > 0.3f) {
+			state.target_mps = driveData.max_mps;
+			g_target_base_mps = state.target_mps;
+		} else {
+			state.target_mps = driveData.base_mps;
+			g_target_base_mps = state.target_mps;
+		}
+	}
+
+	while (!IR_Sensor.is_lost_position) {
+		CrossEvent_t cross = Cross_Detect_Update();
+		if (cross != CROSS_NONE) {
+			if (Process_Marker_Event_Fourth(cross, &state))
+				break;
+		}
+
+		Check_Distance_And_Brake_Fourth(&state); // 가속 및 감속 실행
+		Update_Target_Pos_Fourth(&state);        // 다가오는 코너에 맞춰 센서 목표점 동적 이동
+	}
+
+	LCD7789_Invert(0);
+	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
+
+	uint32_t end_tick = HAL_GetTick();
+
+	HAL_Delay(500);
+	Ramp_Stop();
+	Buzzer_Discount_Stop();
+	MTR_Safe_Stop();
+	Sensor_Stop();
+	Fan_Mtr_Stop();
+
+	IR_Sensor.data->target_pos = 0.0f;
+
+	float lap_time = (end_tick - start_tick) / 1000.0f;
+	if (IR_Sensor.is_lost_position) {
+		LCD_Printf(0, 0, "Line Lost");
+	} else {
+		LCD_Printf(0, 0, "End(4th)");
+		LCD_Printf(0, 1, "L:%d", g_total_L);
+		LCD_Printf(0, 2, "R:%d", g_total_R);
+		LCD_Printf(0, 3, "C:%d", g_total_C);
+		LCD_Printf(0, 4, "T:%.2fs", lap_time);
+	}
+
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
+		;
+	LCD_Clear();
+}
+
+
 // ============================================================================
 // 진동 분석을 위한 테스트 주행 모드
 // ============================================================================
