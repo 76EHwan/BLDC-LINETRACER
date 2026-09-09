@@ -84,15 +84,17 @@ MenuItem_t motor_menu_items[] = {
     { .name = "Tune Spd PID",	.pfnActionCallback = MTR_Speed_FOC 			},
 	{ .name = "Fan Test",		.pfnActionCallback = Fan_Test 				},
 	{ .name = "Mag Enc Test",	.pfnActionCallback = Magnet_Encoder_Test	},
+	{ .name = "Battery Volt",	.pfnActionCallback = Battery_Check_Safe		},
 	{ .name = "Load From SD",	.pfnActionCallback = FOC_Menu_LoadFromSD	},
 	{ .name = "Save To SD",		.pfnActionCallback = FOC_Menu_SaveToSD		},
 };
 
 MenuItem_t drive_menu_items[] = {
-    { .name = "1st Drive",    .pfnActionCallback = Drive_First },
-    { .name = "2nd Drive",    .pfnActionCallback = Drive_Second },
-    { .name = "3rd Drive",    .pfnActionCallback = NULL },
-    { .name = "4th Drive",    .pfnActionCallback = NULL },
+    { .name = "1st Drive",    .pfnActionCallback = Drive_First 				},
+    { .name = "2nd Drive",    .pfnActionCallback = Drive_Second 			},
+    { .name = "3rd Drive",    .pfnActionCallback = Drive_Third				},
+    { .name = "4th Drive",    .pfnActionCallback = Drive_Fourth				},
+	{ .name = "Vibe Test",    .pfnActionCallback = Drive_Vibration_Test		},
     { .name = "Update Param", .pfnActionCallback = NULL, 				.child_menu = &drive_param_menu },
 };
 
@@ -107,6 +109,7 @@ MenuItem_t drive_param_items[] = {
 	{ .name = "Steer KD", 		.pfnActionCallback = Update_Steer_KD			},
 	{ .name = "Pos Abs Gain", 	.pfnActionCallback = Update_Position_Abs_Gain	},
 	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
+	{ .name = "Target Shift", 	.pfnActionCallback = Update_Target_Shift_Val	}, // ★ 새로 추가
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
 };
 
@@ -222,7 +225,7 @@ static void LastUsed_Save(MenuContext_t *pCtx, uint8_t index) {
 	if (last != NULL && last->func == func)
 		return; /* 직전과 동일하면 기록 안 함 */
 
-	__attribute__((aligned(32)))                            LU_Record_t rec;
+	__attribute__((aligned(32)))                             LU_Record_t rec;
 	rec.magic = LU_MAGIC;
 	rec.func = func;
 	for (int k = 0; k < 6; k++)
@@ -390,6 +393,7 @@ __STATIC_INLINE void Update_Param_Float(Data_TypeDef param_Data_Type,
 		float_t *floatData) {
 	UserInput_t btn = INPUT_CMD_NONE;
 	uint8_t index = 0;
+
 	while ((btn = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
 		float_t step = 1.f;
 		for (uint8_t i = 0; i < index; i++) {
@@ -432,6 +436,11 @@ __STATIC_INLINE void Update_Param_Float(Data_TypeDef param_Data_Type,
 __STATIC_INLINE void Update_Param_Menu(Data_TypeDef param_Data_Type,
 		uint32_t *intergalData, float_t *floatData, char *dataName) {
 	LCD_Printf(0, 0, "%-16s", dataName);
+	LCD_Printf(0, 6, "single LR: -1 +1");
+	LCD_Printf(0, 7, "hold   LR: -1 +1");
+	LCD_Printf(0, 8, "double LR: -5 +5");
+	LCD_Printf(0, 9, "single UD: Scale");
+	LCD_Printf(0, 10, "hold   K : Exit");
 	switch (param_Data_Type) {
 	case DATA_UINT8:
 	case DATA_UINT16:
@@ -493,9 +502,14 @@ void Update_Pit_In_Distance_M() {
 			"Pit In Dis M");
 }
 
+void Update_Target_Shift_Val() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.target_shift_val),
+			"Target Shift");
+}
 
 void Update_Fan_Enable() {
-	Update_Param_Menu(DATA_UINT8, (uint32_t*) &(driveData.fan_en), NULL, "Fan Enable");
+	Update_Param_Menu(DATA_UINT8, (uint32_t*) &(driveData.fan_en), NULL,
+			"Fan Enable");
 }
 
 void Menu_ProcessLoop() {

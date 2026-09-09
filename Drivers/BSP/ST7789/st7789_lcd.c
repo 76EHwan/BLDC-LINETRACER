@@ -612,3 +612,13 @@ void LCD7789_Sleep(uint8_t enable) {
 		delay_ms(120); // Sleep Out 이후 안정화를 위한 필수 대기 시간
 	}
 }
+
+void LCD7789_Invert(uint8_t enable) {
+    if (enable) {
+        // 화면 색상 반전 켬 (Command: 0x21) -> 검은색이 흰색으로 바뀜
+        lcd7789_writereg(0x20, NULL, 0);
+    } else {
+        // 화면 색상 반전 끔 (Command: 0x20) -> 다시 검은색으로 복구
+        lcd7789_writereg(0x21, NULL, 0);
+    }
+}

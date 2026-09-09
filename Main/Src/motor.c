@@ -84,17 +84,27 @@ void Encoder_Stop() {
 }
 
 void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
-	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
-	FOC_Init_Motor(&foc_R, &htim4, &hadc1, &hlptim1);
+	FOC_Reset_State(&foc_L);
+	FOC_Reset_State(&foc_R);
 
 	foc_L.enc_dir = -1;
 	foc_R.enc_dir = -1;
-	foc_L.omega_ramp_rate = 3000;
-	foc_R.omega_ramp_rate = 3000;
+	foc_L.omega_ramp_rate = 1500;
+	foc_R.omega_ramp_rate = 1500;
+
+	foc_L.is_running = 1;
+	foc_R.is_running = 1;
+
+	foc_L.target_Id = 0.0f;
+	foc_R.target_Id = 0.0f;
+	foc_L.target_Iq = 0.0f;
+	foc_R.target_Iq = 0.0f;
+	foc_L.target_omega = 0.0f;
+	foc_R.target_omega = 0.0f;
+	foc_L.spd_integ = 0.0f;
+	foc_R.spd_integ = 0.0f;
 
 	Encoder_Start();
-	FOC_ADC_Start();
-	HAL_Delay(50);
 
 	if (mode != FOC_MODE_SVPWM_NO_SPIN) {
 		MTR_Start();
@@ -103,7 +113,18 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 		FOC_Calibrate_Encoder_Offset_Both(&foc_L, &foc_R);
 		LCD_Clear();
 	}
-	MTR_Stop();
+
+	FOC_ADC_Start();
+	HAL_Delay(50);
+
+	if (mode == FOC_MODE_SPEED_LOOP) {
+		foc_L.speed_loop_en = 1;
+		foc_R.speed_loop_en = 1;
+		HAL_TIM_Base_Start_IT(TIM_SPEED_LOOP);
+	} else {
+		foc_L.speed_loop_en = 0;
+		foc_R.speed_loop_en = 0;
+	}
 
 	if (mode == FOC_MODE_NO_SVPWM_SPIN) {
 		foc_L.foc_svpwm_en = 0;
@@ -113,55 +134,14 @@ void MTR_Setup_And_Start(FOC_DriveMode_t mode) {
 		foc_R.foc_svpwm_en = 1;
 	}
 
-	foc_L.is_running = 1;
-	foc_R.is_running = 1;
-
-	if (mode == FOC_MODE_SPEED_LOOP) {
-		foc_L.speed_loop_en = 1;
-		foc_R.speed_loop_en = 1;
-	} else {
-		foc_L.speed_loop_en = 0;
-		foc_R.speed_loop_en = 0;
-	}
-
-	foc_L.target_Id = 0.0f;
-	foc_R.target_Id = 0.0f;
-	foc_L.target_Iq = 0.0f;
-	foc_R.target_Iq = 0.0f;
-	foc_L.target_omega = 0.0f;
-	foc_R.target_omega = 0.0f;
-	foc_L.spd_integ = 0.0f;
-	foc_R.spd_integ = 0.0f;
-
-	foc_L.enc_prev_cnt = (uint16_t) foc_L.LPTIMx->Instance->CNT;
-	foc_R.enc_prev_cnt = (uint16_t) foc_R.LPTIMx->Instance->CNT;
-
-	if (mode != FOC_MODE_SVPWM_NO_SPIN)
-		MTR_Start();
-	if (mode == FOC_MODE_SPEED_LOOP)
-		HAL_TIM_Base_Start_IT(TIM_SPEED_LOOP);
 }
 
 void MTR_Safe_Stop(void) {
+	FOC_Reset_State(&foc_L);
+	FOC_Reset_State(&foc_R);
 	HAL_TIM_Base_Stop_IT(TIM_SPEED_LOOP);
-
-	foc_L.is_running = 0;
-	foc_R.is_running = 0;
-	foc_L.foc_svpwm_en = 0;
-	foc_R.foc_svpwm_en = 0;
-	foc_L.speed_loop_en = 0;
-	foc_R.speed_loop_en = 0;
-
-	foc_L.target_Id = 0.0f;
-	foc_R.target_Id = 0.0f;
-	foc_L.target_Iq = 0.0f;
-	foc_R.target_Iq = 0.0f;
-	foc_L.target_omega = 0.0f;
-	foc_R.target_omega = 0.0f;
-	foc_L.spd_integ = 0.0f;
-	foc_R.spd_integ = 0.0f;
-
 	MTR_Stop();
+	FOC_ADC_Stop();
 	Encoder_Stop();
 	LCD_Clear();
 }
@@ -184,14 +164,18 @@ void Fan_Mtr_Stop() {
 // ============================================================================
 
 arm_pid_instance_f32 steer_pid;
-static volatile float_t g_current_steer = 0.0f;
-static volatile float_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
-
+static volatile float32_t g_current_steer = 0.0f;
+static volatile float32_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
 void Steer_Motor() {
-	float_t line_pos = Sensor_Get_Position();
-	g_current_steer = arm_pid_f32(&steer_pid, line_pos);
+	// 1. float32_t 자료형 사용으로 단정밀도(Single-Precision) 강제
+	float32_t line_pos = Sensor_Get_Position();
+	float32_t error = line_pos - IR_Sensor.data->target_pos;
 
-	float_t raw_atten = 1.0f - (fabsf(line_pos) * driveData.pos_atten_gain);
+	// 2. arm_pid_f32 입출력에 완벽히 매칭됨
+	g_current_steer = arm_pid_f32(&steer_pid, error);
+
+	// 3. fabsf()와 1.0f 등 단정밀도 전용 수학 함수/리터럴 사용
+	float32_t raw_atten = 1.0f - (fabsf(error) * driveData.pos_atten_gain);
 
 	if (raw_atten < 0.4f) {
 		raw_atten = 0.4f;
@@ -206,14 +190,15 @@ void Steer_Motor() {
 	}
 
 	// 필터가 적용된 실제 주행 속도
-	float_t active_mps = g_current_base_mps * filtered_atten;
+	float32_t active_mps = g_current_base_mps * filtered_atten;
 
-	// 양쪽 모터 목표 속도 산출
-	float mps_L = active_mps * (1.f + g_current_steer * THREAD_DIV2);
-	float mps_R = active_mps * (1.f - g_current_steer * THREAD_DIV2);
+	// 양쪽 모터 목표 속도 산출 (상수를 1.0f 형태로 명시)
+	float32_t mps_L = active_mps * (1.0f + g_current_steer * THREAD_DIV2);
+	float32_t mps_R = active_mps * (1.0f - g_current_steer * THREAD_DIV2);
 
 	foc_L.target_omega = mps_L * MPS_TO_OMEGA;
 	foc_R.target_omega = -mps_R * MPS_TO_OMEGA;
+
 	foc_L.omega_setpoint = foc_L.target_omega;
 	foc_R.omega_setpoint = foc_R.target_omega;
 }
@@ -708,8 +693,10 @@ void MTR_Speed_FOC() {
 		foc_L.target_omega = omega;
 		foc_R.target_omega = omega;
 
-		LCD_Printf(0, 0, "%cIqKp:%6.3f", sel == 0 ? '>' : ' ', foc_L.pid_iq.Kp);
-		LCD_Printf(0, 1, "%cIqKi:%6.3f", sel == 1 ? '>' : ' ', foc_L.pid_iq.Ki);
+		LCD_Printf(0, 0, "%cIqKp:%6.3f", sel == 0 ? '>' : ' ',
+				foc_L.pid_iq.Kp);
+		LCD_Printf(0, 1, "%cIqKi:%6.3f", sel == 1 ? '>' : ' ',
+				foc_L.pid_iq.Ki);
 		LCD_Printf(0, 2, "%cSpKp:%6.3f", sel == 2 ? '>' : ' ',
 				foc_L.spd_Kp * 1000);
 		LCD_Printf(0, 3, "%cSpKi:%6.3f", sel == 3 ? '>' : ' ',
@@ -758,4 +745,42 @@ void Magnet_Encoder_Test() {
 		LCD_Printf(0, 0, "L: %6.3f", encDataL.motor_elec_angle);
 		LCD_Printf(0, 1, "R: %6.3f", encDataR.motor_elec_angle);
 	}
+}
+
+
+void Battery_Check_Safe(void) {
+	// 1. ★ 가장 중요: 모터 드라이버 하드웨어 출력 완전 차단 (소음/진동 원천 차단)
+	MTR_FOC_PWM_DIS();
+
+	// 2. 모터 상태 초기화 (제어 루프 차단)
+	FOC_Reset_State(&foc_L);
+	FOC_Reset_State(&foc_R);
+	foc_L.speed_loop_en = 0;
+	foc_R.speed_loop_en = 0;
+
+	// 3. ★ 핵심: 모터는 꺼져있지만, ADC를 깨우기 위해 MCU 내부 PWM 타이머 가동
+	MTR_TIM_Start(&foc_L);
+	MTR_TIM_Start(&foc_R);
+
+	// 4. 전압 측정을 위한 ADC 가동
+	FOC_ADC_Start();
+
+	// 5. Vbus 필터링 루프를 돌리기 위해 2kHz 속도 제어 타이머 가동
+	HAL_TIM_Base_Start_IT(TIM_SPEED_LOOP);
+
+	LCD_Clear();
+	LCD_Printf(0, 0, "=== Battery ===");
+
+	// K 버튼(Hold)을 길게 누를 때까지 실시간 전압 갱신
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
+		LCD_Printf(0, 3, "V: %8.6f V", FOC_Get_VBus());
+		HAL_Delay(50);
+	}
+
+	// 6. 끄고 나갈 때 사용했던 타이머와 ADC 안전하게 원상복구
+	HAL_TIM_Base_Stop_IT(TIM_SPEED_LOOP);
+	FOC_ADC_Stop();
+	MTR_TIM_Stop(&foc_L);
+	MTR_TIM_Stop(&foc_R);
+	LCD_Clear();
 }

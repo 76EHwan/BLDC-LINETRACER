@@ -21,13 +21,15 @@
 // 전류 센싱 스케일 팩터 (ADC Raw 값 -> 실제 전류 A 로 변환)
 // 공식: VREF / ADC_MAX / CSA_GAIN (또는 Shunt값에 따른 통합 계수)
 #define CURRENT_CSA_GAIN_MA		300
-#define CURRENT_SCALE           (3.3f / 65536.0f / CURRENT_CSA_GAIN_MA / 1000.f)
+#define CURRENT_SCALE           (3.3f / 65536.0f / (CURRENT_CSA_GAIN_MA / 1000.f))
 #define FOC_ADC_DMA_LENGTH      1           // DMA 버퍼 길이
 
-#define SPD_DT         	0.0005f
-#define SPD_D_TAU       0.001f       // D항 LPF 시정수 (2kHz 대비 4샘플 정도)
+#define SPD_MA_WINDOW 4  // 4~8 정도의 작은 값 추천 (지연과 노이즈의 타협점)
 
-#define SPD_IQ_LIMIT     5.f        // Iq 지령 상한 (A)
+#define SPD_DT         	0.0005f
+#define SPD_D_TAU       (SPD_DT * SPD_MA_WINDOW)       // D항 LPF 시정수 (2kHz 대비 4샘플 정도)
+
+#define SPD_IQ_LIMIT     3.0f        // Iq 지령 상한 (A)
 
 // =========================================================
 // [모터 전기적 파라미터 - maxon ECX SPEED 16 M, 36V 권선 기준]
@@ -52,14 +54,49 @@
 #define CURRENT_CONTROL_BANDWIDTH		(((FOC_CONTROL_FREQUENCY) / (FOC_CURRENT_BW_RATIO)) * 2.0f * PI)
 #define DEFAULT_ID_KP					((CURRENT_CONTROL_BANDWIDTH) * (MOTOR_PARAM_PHASE_INDUCTANCE) / 1000.0f)
 #define DEFAULT_ID_KI					((CURRENT_CONTROL_BANDWIDTH) * (MOTOR_PARAM_PHASE_RESISTOR) * (FOC_CONTROL_DT))
+#define DEFAULT_ID_KD					(0.0f)
 #define DEFAULT_IQ_KP					DEFAULT_ID_KP
 #define DEFAULT_IQ_KI					DEFAULT_ID_KI
+#define DEFAULT_IQ_KD					DEFAULT_ID_KD
 
-#define VBUS_DIVIDER_RATIO   19.0f
-#define VBUS_ADC_VREF        3.3f
-#define VBUS_ADC_SCALE       (VBUS_ADC_VREF / 65536.0f * VBUS_DIVIDER_RATIO)
+// =========================================================
+// [기계적 파라미터 - maxon ECX SPEED 16 M, 36V 기준]
+// =========================================================
+#define MOTOR_PARAM_ROTOR_INERTIA       (0.812f * 0.0000001f) // [kg*m^2]
+#define MOTOR_PARAM_MECH_TIME_CONST     0.00374f              // [s]
 
-#define SPD_MA_WINDOW 2  // 4~8 정도의 작은 값 추천 (지연과 노이즈의 타협점)
+// =========================================================
+// [속도 제어기 대역폭 설정]
+// =========================================================
+#define FOC_SPEED_FREQUENCY             (1.0f / (SPD_DT))     // 2000.0f (2kHz)
+
+// 속도 제어기 대역폭은 보통 속도 루프 주파수의 1/10 ~ 1/20 수준으로 설정
+// 100Hz (약 628 rad/s)로 설정하기 위해 20으로 나눔
+#define FOC_SPEED_BW_RATIO              20.0f
+#define SPEED_CONTROL_BANDWIDTH         (((FOC_SPEED_FREQUENCY) / (FOC_SPEED_BW_RATIO)) * 2.0f * PI) // [rad/s]
+
+// 부하 관성 비율 (Load Inertia Ratio)
+// 모터 단품이 아닌 기어박스+바퀴가 결합된 상태라면 관성이 훨씬 커집니다.
+// 이론값 튜닝 후 반응이 너무 느리다면 이 값을 2.0 ~ 10.0 수준으로 올려서 사용하세요.
+#define LOAD_INERTIA_RATIO              1.0f
+
+// =========================================================
+// [속도 제어기 P, I, D 게인 자동 계산 (극점 배치법)]
+// =========================================================
+// Kp = (J * w_s) / Kt * 부하비율
+#define DEFAULT_SPD_KP                  (((MOTOR_PARAM_ROTOR_INERTIA) * (SPEED_CONTROL_BANDWIDTH) / (MOTOR_TORQUE_CONSTANT)) * (LOAD_INERTIA_RATIO))
+
+// Ki = Kp / tau_m
+// (foc.c의 적분 수식에 이미 SPD_DT가 곱해져 있으므로, 연속시간 Ki 값을 그대로 사용)
+#define DEFAULT_SPD_KI                  ((DEFAULT_SPD_KP) / (MOTOR_PARAM_MECH_TIME_CONST))
+
+// Kd = 엔코더 노이즈 증폭 방지를 위해 기본 0 설정
+#define DEFAULT_SPD_KD                  0.0f
+
+#define VBUS_DIVIDER_RATIO  	19.0f
+#define VBUS_ADC_OFFSET			0.15f
+#define VBUS_ADC_VREF       	3.3f
+#define VBUS_ADC_SCALE      	(VBUS_ADC_VREF / 65536.0f * VBUS_DIVIDER_RATIO)
 
 // =========================================================
 // [FOC 제어 핸들 구조체]
@@ -140,6 +177,9 @@ extern uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
 extern uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
 extern float_t g_odom_distance_m;
+
+extern volatile float32_t g_vbus_filt;
+
 
 float32_t FOC_Get_VBus(void);
 
