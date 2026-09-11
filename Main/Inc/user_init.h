@@ -20,8 +20,9 @@ void User_Init(void);
 #define LCD_Set_Color 	LCD7789_Set_Color
 #define LCD_Sleep_Mode	LCD7789_Sleep
 #define LCD_Invert		LCD7789_Invert
-#define FOC_CONTROL
-//#define SENSOR_TRAP_CONTROL
+
+//#define FOC_CONTROL
+#define SENSOR_TRAP_CONTROL
 
 #if defined(FOC_CONTROL) & defined(SENSOR_TRAP_CONTROL)
 error "FOC & SENSOT TRAP Both Crashed."

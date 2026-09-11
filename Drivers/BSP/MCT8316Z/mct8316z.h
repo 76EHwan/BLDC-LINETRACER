@@ -115,11 +115,21 @@
 /*=======================================================================*/
 /* Control Register 3 (Offset = 5h)                                      */
 /*=======================================================================*/
-#define MCT_CTRL3_PWM_100_DUTY_40KHZ    (1U << 4)
-#define MCT_CTRL3_OVP_SEL_22V           (1U << 3)
-#define MCT_CTRL3_OVP_EN                (1U << 2)
-#define MCT_CTRL3_SPI_FLT_REP           (1U << 1)
-#define MCT_CTRL3_OTW_REP               (1U << 0)
+#define MCT_CTRL3_PWM_100_DUTY_BASE     (4)
+#define MCT_CTRL3_PWM_100_DUTY_20KHZ    (0U << MCT_CTRL3_PWM_100_DUTY_BASE)
+#define MCT_CTRL3_PWM_100_DUTY_40KHZ    (1U << MCT_CTRL3_PWM_100_DUTY_BASE)
+#define MCT_CTRL3_OVP_SEL_BASE          (3)
+#define MCT_CTRL3_OVP_SEL_34V           (0U << MCT_CTRL3_OVP_SEL_BASE)
+#define MCT_CTRL3_OVP_SEL_22V           (1U << MCT_CTRL3_OVP_SEL_BASE)
+#define MCT_CTRL3_OVP_EN_BASE           (2)
+#define MCT_CTRL3_OVP_DIS               (0U << MCT_CTRL3_OVP_EN_BASE)
+#define MCT_CTRL3_OVP_EN                (1U << MCT_CTRL3_OVP_EN_BASE)
+#define MCT_CTRL3_SPI_FLT_REP_BASE      (1)
+#define MCT_CTRL3_SPI_FLT_REP_EN        (0U << MCT_CTRL3_SPI_FLT_REP_BASE)
+#define MCT_CTRL3_SPI_FLT_REP_DIS       (1U << MCT_CTRL3_SPI_FLT_REP_BASE)
+#define MCT_CTRL3_OTW_REP_BASE          (0)
+#define MCT_CTRL3_OTW_REP_DIS           (0U << MCT_CTRL3_OTW_REP_BASE)
+#define MCT_CTRL3_OTW_REP_EN            (1U << MCT_CTRL3_OTW_REP_BASE)
 
 /*=======================================================================*/
 /* Control Register 4 (Offset = 6h)                                      */
