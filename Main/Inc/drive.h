@@ -26,7 +26,13 @@ typedef struct {
 	float_t pit_in_distance_m;
 	uint8_t fan_en;
 	float_t target_shift_val;
+	// Cascade steering (Steer_Motor): the line PD gives a yaw-rate reference (speed x steer),
+	// an inner gyro loop tracks it. yaw_gain_p = yaw_gain_i = 0: the plain line PD as before.
+	float_t yaw_gain_p;     // [-]     inner loop P on the yaw-rate error
+	float_t yaw_gain_i;     // [1/s]   inner loop I on the yaw-rate error
+	float_t lat_acc_max;    // [m/s^2] grip limit: slow down while speed x gyro yaw rate exceeds it (0 = off)
 } DriveParam_t;
+#define DRIVE_HAS_CASCADE_STEER 1
 
 extern DriveParam_t driveData;
 

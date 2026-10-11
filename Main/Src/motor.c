@@ -5,6 +5,7 @@
 #include "mt6701.h"
 
 #include "drive.h" // 조향 제어 시 목표 속도(g_current_base_mps) 참조용
+#include "lsm6ds3tr-c.h" // 캐스케이드 조향: imu_data.Gyro_Z
 #include "motor.h"
 #include "sensor.h"
 #include "user_init.h"
@@ -166,6 +167,9 @@ void Fan_Mtr_Stop() {
 arm_pid_instance_f32 steer_pid;
 static volatile float32_t g_current_steer = 0.0f;
 static volatile float32_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
+static volatile float32_t g_yaw_integ = 0.0f;    // 캐스케이드 안쪽 루프 적분 [rad/s]
+static volatile float32_t g_grip_atten = 1.0f;   // 접지 한계 감속 비율 (lat_acc_max)
+#define YAW_INTEG_MAX 5.0f                        // 적분 한계 [rad/s]
 void Steer_Motor() {
 	// 1. float32_t 자료형 사용으로 단정밀도(Single-Precision) 강제
 	float32_t line_pos = Sensor_Get_Position();
@@ -192,9 +196,43 @@ void Steer_Motor() {
 	// 필터가 적용된 실제 주행 속도
 	float32_t active_mps = g_current_base_mps * filtered_atten;
 
-	// 양쪽 모터 목표 속도 산출 (상수를 1.0f 형태로 명시)
-	float32_t mps_L = active_mps * (1.0f + g_current_steer * THREAD_DIV2);
-	float32_t mps_R = active_mps * (1.0f - g_current_steer * THREAD_DIV2);
+	// Gyro_Z [dps]는 좌회전(CCW)이 + 이므로 부호를 뒤집는다: yaw_meas [rad/s], + = 우회전
+	float32_t yaw_meas = -(imu_data.Gyro_Z - imu_data.Gyro_Z_Offset) * (PI / 180.0f);
+
+	// 4. 접지 한계 감속: 속도 x 요레이트(= 횡가속도)가 lat_acc_max를 넘으면 그만큼 속도를 낮춘다.
+	//    곡선에서 미끄러지지 않게(엔코더 거리, 마커 인식이 깨끗하게). 빨리 내리고 천천히(약 0.1 s) 올린다.
+	if (driveData.lat_acc_max > 0.0f) {
+		float32_t a_lat = active_mps * fabsf(yaw_meas);
+		float32_t raw = (a_lat > driveData.lat_acc_max) ? driveData.lat_acc_max / a_lat : 1.0f;
+		if (raw < g_grip_atten)
+			g_grip_atten = raw;
+		else
+			g_grip_atten = 0.995f * g_grip_atten + 0.005f * raw;
+		active_mps *= g_grip_atten;
+	} else {
+		g_grip_atten = 1.0f;
+	}
+
+	// 5. 캐스케이드 조향: 라인 PD 출력(steer, 곡률)을 목표 요레이트로 바꾸고 자이로로 추종
+	//    yaw_ref [rad/s], + = 우회전(왼쪽 바퀴가 빠름). yaw_gain_p = yaw_gain_i = 0이면 기존 PD와 동일.
+	float32_t yaw_ref = active_mps * g_current_steer;
+	float32_t yaw_cmd = yaw_ref;
+	if (driveData.yaw_gain_p > 0.0f || driveData.yaw_gain_i > 0.0f) {
+		float32_t yaw_err = yaw_ref - yaw_meas;
+		if (active_mps > 0.05f) {
+			g_yaw_integ += driveData.yaw_gain_i * yaw_err * RAMP_DT;
+			g_yaw_integ = fminf(fmaxf(g_yaw_integ, -YAW_INTEG_MAX), YAW_INTEG_MAX);
+		} else {
+			g_yaw_integ = 0.0f;
+		}
+		yaw_cmd = yaw_ref + driveData.yaw_gain_p * yaw_err + g_yaw_integ;
+	} else {
+		g_yaw_integ = 0.0f;
+	}
+
+	// 양쪽 모터 목표 속도 산출: 바퀴 속도차 = 요레이트 x 바퀴 간격
+	float32_t mps_L = active_mps + yaw_cmd * THREAD_DIV2;
+	float32_t mps_R = active_mps - yaw_cmd * THREAD_DIV2;
 
 	foc_L.target_omega = mps_L * MPS_TO_OMEGA;
 	foc_R.target_omega = -mps_R * MPS_TO_OMEGA;

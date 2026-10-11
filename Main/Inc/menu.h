@@ -44,5 +44,8 @@ void Update_Position_Abs_Gain(void);
 void Update_Pit_In_Distance_M(void);
 void Update_Target_Shift_Val(void);
 void Update_Fan_Enable(void);
+void Update_Yaw_KP(void);
+void Update_Yaw_KI(void);
+void Update_Lat_Acc_Max(void);
 
 #endif /* MENU_H_ */

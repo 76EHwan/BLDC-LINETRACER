@@ -26,6 +26,9 @@ DriveParam_t driveData = {
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
 	.target_shift_val = 0.3f, // ★ 초기값 설정
+	.yaw_gain_p = 0.0f,       // cascade off by default (plain line PD)
+	.yaw_gain_i = 0.0f,
+	.lat_acc_max = 0.0f,
 };
 // @formatter:on
 

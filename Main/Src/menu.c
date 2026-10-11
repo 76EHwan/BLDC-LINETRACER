@@ -111,6 +111,9 @@ MenuItem_t drive_param_items[] = {
 	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
 	{ .name = "Target Shift", 	.pfnActionCallback = Update_Target_Shift_Val	}, // ★ 새로 추가
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
+	{ .name = "Yaw KP", 		.pfnActionCallback = Update_Yaw_KP				}, // 캐스케이드 조향 (0 = 끔)
+	{ .name = "Yaw KI", 		.pfnActionCallback = Update_Yaw_KI				},
+	{ .name = "Lat Acc Max", 	.pfnActionCallback = Update_Lat_Acc_Max			},
 };
 
 // =========================================================
@@ -510,6 +513,18 @@ void Update_Target_Shift_Val() {
 void Update_Fan_Enable() {
 	Update_Param_Menu(DATA_UINT8, (uint32_t*) &(driveData.fan_en), NULL,
 			"Fan Enable");
+}
+
+void Update_Yaw_KP() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.yaw_gain_p), "Yaw KP");
+}
+
+void Update_Yaw_KI() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.yaw_gain_i), "Yaw KI");
+}
+
+void Update_Lat_Acc_Max() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.lat_acc_max), "Lat Acc Max");
 }
 
 void Menu_ProcessLoop() {

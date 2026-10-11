@@ -31,6 +31,12 @@
 // Configuration Values
 #define WHO_AM_I_ID         0x6A // Expected ID
 
+// Gyro: CTRL2_G = ODR_G | FS_G. 0x8C = 1.66 kHz, +-2000 dps (was 0x4C = 104 Hz).
+// The steering inner loop (cascade, Steer_Motor) needs a fresh yaw rate every millisecond.
+#define GYRO_CTRL2_G_VAL    0x8C
+// SysTick (1 kHz) ticks between Gyro Z DMA reads: 1 = every 1 ms (was 10). One read ~115 us at 400 kHz.
+#define IMU_READ_DIV        1
+
 // Sensitivity
 #define ACCEL_SENSITIVITY   0.061f // mg/LSB (FS = +-2g)
 #define GYRO_SENSITIVITY    70.0f  // mdps/LSB (FS = +-2000dps)
