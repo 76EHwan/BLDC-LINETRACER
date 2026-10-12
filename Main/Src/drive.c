@@ -16,21 +16,21 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 1.8f,
-    .max_mps = 8.0f,
-    .accel = 5.5f,
-    .decel = 5.5f,
-    .steer_gain_p = 22.4f,
-    .steer_gain_d = 600.0f,
+    .base_mps = 1.8f,         // autotune4 (drive 4, practice board)
+    .max_mps = 4.5f,
+    .accel = 10.0f,
+    .decel = 10.0f,
+    .steer_gain_p = 25.0f,
+    .steer_gain_d = 425.0f,    // 0.2125 s / 0.0005 s (CMSIS Kd per 2 kHz call)
     .pos_atten_gain = 0.0f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
-	.target_shift_val = 0.3f, // ★ 초기값 설정
+	.target_shift_val = 0.35f, // ★ 초기값 설정 (autotune4)
 	.yaw_gain_p = 0.0f,       // cascade off by default (plain line PD)
 	.yaw_gain_i = 0.0f,
-	.lat_acc_max = 0.0f,
-	.target_curve_gain = 1.0f, // 곡선 구간 target_pos 배율 (1 = 기존과 동일)
-	.slalom_ratio = 0.15f,     // 4차 45도 구간: base + (max - base) x 0.15 (시뮬레이션: 45도 R25에서 약 2.0-2.3 m/s가 한계)
+	.lat_acc_max = 14.6f,     // autotune4: grip limit on
+	.target_curve_gain = 1.3f, // 곡선 구간 target_pos 배율 (autotune4)
+	.slalom_ratio = 0.05f,     // 4차 45도 구간: base + (max - base) x 0.05 (autotune4; 0.1 이상은 45도 R25에서 넘침)
 };
 // @formatter:on
 
@@ -824,7 +824,7 @@ void Drive_Third(void) {
 	LCD_Clear();
 }
 
-// 45도(슬라롬) 구간 속도: base + (max - base) x driveData.slalom_ratio (기본 0.15)
+// 45도(슬라롬) 구간 속도: base + (max - base) x driveData.slalom_ratio (기본 0.05)
 __STATIC_INLINE float Slalom_Mps(void) {
 	return driveData.base_mps + (driveData.max_mps - driveData.base_mps) * driveData.slalom_ratio;
 }
