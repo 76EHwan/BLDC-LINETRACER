@@ -211,6 +211,8 @@ void Save_MarkerLog_To_SD(uint8_t slot_number) {
 	len += sprintf(log_buf + len, "yaw kp = %.3f\n", driveData.yaw_gain_p);
 	len += sprintf(log_buf + len, "yaw ki = %.3f\n", driveData.yaw_gain_i);
 	len += sprintf(log_buf + len, "lat acc max = %.2f\n", driveData.lat_acc_max);
+	len += sprintf(log_buf + len, "target shift = %.2f\n", driveData.target_shift_val);
+	len += sprintf(log_buf + len, "target curve gain = %.2f\n", driveData.target_curve_gain);
 
 	// 구분선 및 마커 헤더 기록
 	len += sprintf(log_buf + len, "===================\n");

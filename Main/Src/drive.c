@@ -29,6 +29,7 @@ DriveParam_t driveData = {
 	.yaw_gain_p = 0.0f,       // cascade off by default (plain line PD)
 	.yaw_gain_i = 0.0f,
 	.lat_acc_max = 0.0f,
+	.target_curve_gain = 1.0f, // 곡선 구간 target_pos 배율 (1 = 기존과 동일)
 };
 // @formatter:on
 
@@ -691,6 +692,21 @@ __STATIC_INLINE void Check_Distance_And_Brake_Third(DriveThirdState_t *state) {
 }
 
 // ★ 3차 주행 전용 Target Position 예지 이동 로직 (CROSS 무시 & 구간 전체 보간 적용)
+// 곡선 구간에서 target_pos 가중치(target_curve_gain) 적용 (3·4차 공통)
+// 지금 구간(마커 idx-1 -> idx)의 꺾임각은 다음 마커 idx에 기록된 yaw 변화로 판단한다.
+#define TARGET_CURVE_YAW_MIN_DEG 20.0f   // 이보다 많이 꺾이면 곡선 구간
+#define TARGET_POS_LIMIT         0.9f    // 센서 범위 안에 머물도록 제한
+__STATIC_INLINE void Apply_Target_Curve_Gain(uint16_t idx) {
+	if (idx >= ref_log_count || driveData.target_curve_gain <= 0.0f)
+		return;
+	if (fabsf(ref_log[idx].yaw_angle) > TARGET_CURVE_YAW_MIN_DEG) {
+		float t = IR_Sensor.data->target_pos * driveData.target_curve_gain;
+		if (t > TARGET_POS_LIMIT) t = TARGET_POS_LIMIT;
+		if (t < -TARGET_POS_LIMIT) t = -TARGET_POS_LIMIT;
+		IR_Sensor.data->target_pos = t;
+	}
+}
+
 __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 	// 에러 났거나 이미 끝났다면 정중앙 유지
 	if (state->mismatch || state->idx >= ref_log_count) {
@@ -752,6 +768,7 @@ __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 	} else {
 		IR_Sensor.data->target_pos = current_target;
 	}
+	Apply_Target_Curve_Gain(state->idx);
 }
 
 void Drive_Third(void) {
@@ -1078,6 +1095,7 @@ __STATIC_INLINE void Update_Target_Pos_Fourth(DriveFourthState_t *state) {
 	} else {
 		IR_Sensor.data->target_pos = current_target;
 	}
+	Apply_Target_Curve_Gain(state->idx);
 }
 
 void Drive_Fourth(void) {

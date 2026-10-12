@@ -114,6 +114,7 @@ MenuItem_t drive_param_items[] = {
 	{ .name = "Yaw KP", 		.pfnActionCallback = Update_Yaw_KP				}, // 캐스케이드 조향 (0 = 끔)
 	{ .name = "Yaw KI", 		.pfnActionCallback = Update_Yaw_KI				},
 	{ .name = "Lat Acc Max", 	.pfnActionCallback = Update_Lat_Acc_Max			},
+	{ .name = "Tgt Crv Gain", 	.pfnActionCallback = Update_Target_Curve_Gain	}, // 3·4차 곡선 target_pos 배율
 };
 
 // =========================================================
@@ -525,6 +526,10 @@ void Update_Yaw_KI() {
 
 void Update_Lat_Acc_Max() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.lat_acc_max), "Lat Acc Max");
+}
+
+void Update_Target_Curve_Gain() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.target_curve_gain), "Tgt Crv Gain");
 }
 
 void Menu_ProcessLoop() {

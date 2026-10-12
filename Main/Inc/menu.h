@@ -47,5 +47,6 @@ void Update_Fan_Enable(void);
 void Update_Yaw_KP(void);
 void Update_Yaw_KI(void);
 void Update_Lat_Acc_Max(void);
+void Update_Target_Curve_Gain(void);
 
 #endif /* MENU_H_ */
