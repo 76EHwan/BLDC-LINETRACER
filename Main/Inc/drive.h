@@ -32,7 +32,9 @@ typedef struct {
 	float_t yaw_gain_i;     // [1/s]   inner loop I on the yaw-rate error
 	float_t lat_acc_max;    // [m/s^2] grip limit: slow down while speed x gyro yaw rate exceeds it (0 = off)
 	float_t target_curve_gain; // [-] drive 3/4: target_pos x this inside curve segments (1 = unchanged)
+	float_t slalom_ratio;      // [-] drive 4: 45 deg segments at base + (max - base) x this
 } DriveParam_t;
+#define DRIVE_HAS_SLALOM_RATIO 1
 #define DRIVE_HAS_CASCADE_STEER 1
 #define DRIVE_HAS_TARGET_CURVE_GAIN 1
 

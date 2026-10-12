@@ -115,6 +115,7 @@ MenuItem_t drive_param_items[] = {
 	{ .name = "Yaw KI", 		.pfnActionCallback = Update_Yaw_KI				},
 	{ .name = "Lat Acc Max", 	.pfnActionCallback = Update_Lat_Acc_Max			},
 	{ .name = "Tgt Crv Gain", 	.pfnActionCallback = Update_Target_Curve_Gain	}, // 3·4차 곡선 target_pos 배율
+	{ .name = "Slalom Ratio", 	.pfnActionCallback = Update_Slalom_Ratio		}, // 4차 45도 구간 속도 비율
 };
 
 // =========================================================
@@ -530,6 +531,10 @@ void Update_Lat_Acc_Max() {
 
 void Update_Target_Curve_Gain() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.target_curve_gain), "Tgt Crv Gain");
+}
+
+void Update_Slalom_Ratio() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.slalom_ratio), "Slalom Ratio");
 }
 
 void Menu_ProcessLoop() {

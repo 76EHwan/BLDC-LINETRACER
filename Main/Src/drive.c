@@ -30,6 +30,7 @@ DriveParam_t driveData = {
 	.yaw_gain_i = 0.0f,
 	.lat_acc_max = 0.0f,
 	.target_curve_gain = 1.0f, // 곡선 구간 target_pos 배율 (1 = 기존과 동일)
+	.slalom_ratio = 0.15f,     // 4차 45도 구간: base + (max - base) x 0.15 (시뮬레이션: 45도 R25에서 약 2.0-2.3 m/s가 한계)
 };
 // @formatter:on
 
@@ -823,7 +824,17 @@ void Drive_Third(void) {
 	LCD_Clear();
 }
 
-#define SLALOM_SPEED_RATIO 0.85f // 45도 연속 곡선에서의 가속 비율 (max_mps의 85%)
+// 45도(슬라롬) 구간 속도: base + (max - base) x driveData.slalom_ratio (기본 0.15)
+__STATIC_INLINE float Slalom_Mps(void) {
+	return driveData.base_mps + (driveData.max_mps - driveData.base_mps) * driveData.slalom_ratio;
+}
+
+// 구간 종류별 목표 속도: 0 깊은 커브 = base, 1 직선 = max, 2 45도 = 슬라롬 속도
+__STATIC_INLINE float Segment_Mps(uint8_t accel_type) {
+	if (accel_type == 1) return driveData.max_mps;
+	if (accel_type == 2) return Slalom_Mps();
+	return driveData.base_mps;
+}
 
 typedef struct {
 	uint8_t accel_type; // 0: 감속(깊은 커브), 1: 직선 가속, 2: 45도(슬라롬) 가속
@@ -840,6 +851,7 @@ typedef struct {
 	float marker_start_dist;
 	float seg_len_predicted;
 	float target_mps; // ★ 추가: 현재 가속 구간의 목표 최대 속도
+	float end_mps;    // 구간 끝(다음 구간 진입)에서 맞춰야 할 속도: 다음이 45도면 슬라롬 속도, 깊은 커브면 base
 } DriveFourthState_t;
 
 // 4차 주행용 구간 계획 빌드 (45도 곡선 가속 판별 추가)
@@ -867,8 +879,10 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 			if (cur == CROSS_CROSS) {
 				a_type = 1; // 직선 가속
 			} else if (cur == CROSS_LEFT || cur == CROSS_RIGHT) {
-				// 15도 ~ 65도 사이의 얕은 꺾임이면 45도(슬라롬) 커브로 간주하고 가속 허용!
-				if (next_yaw_mag > 15.0f && next_yaw_mag < 65.0f) {
+				if (next_yaw_mag <= 15.0f) {
+					a_type = 1; // 곡선 끝 마커 뒤의 직선: 풀 가속 (기존에는 0이라 가속하지 않았음)
+				} else if (next_yaw_mag < 65.0f) {
+					// 15도 ~ 65도 사이의 얕은 꺾임이면 45도(슬라롬) 커브로 간주하고 가속 허용!
 					a_type = 2;
 				} else {
 					a_type = 0; // 90도/180도 등 깊은 커브는 안전하게 감속
@@ -971,18 +985,20 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 		}
 	}
 
-	// ★ 가속 구간 계산 (직선 + 45도 슬라롬을 묶어서 한 번에 가속)
+	// ★ 가속 구간 계산: 같은 종류(직선끼리 / 45도끼리)만 묶는다.
+	//    직선-45도-직선이면 직선(max) -> 45도(슬라롬 속도) -> 직선(max)으로 나눠 각 구간 끝에서 다음 구간 속도로 감속.
 	if (!state->mismatch && state->idx < ref_log_count && seg_plan_4[state->idx].accel_type > 0) {
 		state->accel_active = 1;
+		const uint8_t type = seg_plan_4[state->idx].accel_type;
 		float total_dist = 0.0f;
-		uint8_t has_straight = 0;
+		uint8_t next_type = 0;
 
-		// 현재 마커부터 가속이 불가능한 마커(깊은 커브)가 나올 때까지의 거리를 모두 합산
+		// 현재 마커부터 종류가 바뀌는 마커(다른 가속 종류 또는 깊은 커브)가 나올 때까지의 거리를 합산
 		for (uint16_t i = state->idx; i < ref_log_count; i++) {
-			if (seg_plan_4[i].accel_type == 0) break;
-
-			if (seg_plan_4[i].accel_type == 1) has_straight = 1; // 하나라도 직선이 포함되어 있는지 확인
-
+			if (seg_plan_4[i].accel_type != type) {
+				next_type = seg_plan_4[i].accel_type;
+				break;
+			}
 			if (i + 1 < ref_log_count) {
 				total_dist += ref_log[i + 1].dist_from_prev_m;
 			} else {
@@ -991,17 +1007,17 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 		}
 		state->seg_len_predicted = total_dist;
 
-		// 가속 목표 속도 설정
-		if (has_straight) {
-			state->target_mps = driveData.max_mps; // 직선이 섞여있으면 풀 가속
-		} else {
-			state->target_mps = driveData.max_mps * SLALOM_SPEED_RATIO; // 45도 연속 커브면 85% 속도로 부드럽게 가속
-		}
+		// 가속 목표 속도와, 구간 끝에서 맞출 속도(다음 구간의 속도)
+		state->target_mps = Segment_Mps(type);
+		state->end_mps = Segment_Mps(next_type);
+		if (state->end_mps > state->target_mps)
+			state->end_mps = state->target_mps;
 		g_target_base_mps = state->target_mps;
 
 	} else {
 		state->accel_active = 0;
 		state->target_mps = driveData.base_mps;
+		state->end_mps = driveData.base_mps;
 		g_target_base_mps = driveData.base_mps;
 	}
 
@@ -1020,7 +1036,7 @@ __STATIC_INLINE void Check_Distance_And_Brake_Fourth(DriveFourthState_t *state) 
 		float_t remaining = state->seg_len_predicted - traveled;
 
 		float_t v1 = g_current_base_mps;
-		float_t v2 = driveData.base_mps;
+		float_t v2 = state->end_mps;   // 다음 구간 속도 (45도면 슬라롬 속도, 깊은 커브면 base)
 
 		// 감속에 필요한 브레이킹 거리 계산
 		float_t brake_dist = BRAKE_MARGIN_M;
@@ -1029,7 +1045,7 @@ __STATIC_INLINE void Check_Distance_And_Brake_Fourth(DriveFourthState_t *state) 
 		}
 
 		if (remaining <= brake_dist) {
-			g_target_base_mps = driveData.base_mps;
+			g_target_base_mps = state->end_mps;
 			state->braking_started = 1;
 		} else {
 			float_t hysteresis = state->braking_started ? 0.05f : 0.0f;
@@ -1105,6 +1121,7 @@ void Drive_Fourth(void) {
 	uint32_t start_tick = HAL_GetTick();
 	DriveFourthState_t state = { 0 };
 	state.marker_start_dist = g_odom_distance_m;
+	state.end_mps = driveData.base_mps;   // 첫 구간 끝: 첫 마커(턴 마크)에서 base
 
 	// 첫 번째 직선 구간 출발 가속 처리
 	if (ref_log_count > 0) {

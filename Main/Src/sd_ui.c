@@ -213,6 +213,7 @@ void Save_MarkerLog_To_SD(uint8_t slot_number) {
 	len += sprintf(log_buf + len, "lat acc max = %.2f\n", driveData.lat_acc_max);
 	len += sprintf(log_buf + len, "target shift = %.2f\n", driveData.target_shift_val);
 	len += sprintf(log_buf + len, "target curve gain = %.2f\n", driveData.target_curve_gain);
+	len += sprintf(log_buf + len, "slalom ratio = %.2f\n", driveData.slalom_ratio);
 
 	// 구분선 및 마커 헤더 기록
 	len += sprintf(log_buf + len, "===================\n");
