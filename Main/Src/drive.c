@@ -16,21 +16,21 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 1.8f,         // autotune4 (drive 4, practice board)
-    .max_mps = 4.5f,
-    .accel = 10.0f,
-    .decel = 10.0f,
-    .steer_gain_p = 25.0f,
-    .steer_gain_d = 425.0f,    // 0.2125 s / 0.0005 s (CMSIS Kd per 2 kHz call)
+    .base_mps = 2.137f,         // autotune4 (drive 4, practice board)
+    .max_mps = 10.0f,
+    .accel = 6.0f,
+    .decel = 6.0f,
+    .steer_gain_p = 20.0f,
+    .steer_gain_d = 166.0f,    // 0.083 s / 0.0005 s (CMSIS Kd per 2 kHz call)
     .pos_atten_gain = 0.0f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
 	.target_shift_val = 0.35f, // ★ 초기값 설정 (autotune4)
 	.yaw_gain_p = 0.0f,       // cascade off by default (plain line PD)
 	.yaw_gain_i = 0.0f,
-	.lat_acc_max = 14.6f,     // autotune4: grip limit on
+	.lat_acc_max = 13.4f,     // autotune4: grip limit on
 	.target_curve_gain = 1.3f, // 곡선 구간 target_pos 배율 (autotune4)
-	.slalom_ratio = 0.05f,     // 4차 45도 구간: base + (max - base) x 0.05 (autotune4; 0.1 이상은 45도 R25에서 넘침)
+	.slalom_ratio = 0.01f,     // 4차 45도 구간: base + (max - base) x 0.01 (0.1 이상은 45도 R25에서 넘침)
 };
 // @formatter:on
 
