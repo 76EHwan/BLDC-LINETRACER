@@ -16,21 +16,22 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 2.137f,         // autotune4 (drive 4, practice board)
-    .max_mps = 10.0f,
+    .base_mps = 2.04f,
+    .max_mps = 10.00f,
     .accel = 6.0f,
     .decel = 6.0f,
-    .steer_gain_p = 20.0f,
-    .steer_gain_d = 166.0f,    // 0.083 s / 0.0005 s (CMSIS Kd per 2 kHz call)
-    .pos_atten_gain = 0.0f,
+    .steer_gain_p = 16.64f,
+    .steer_gain_d = 202.f,
+    .pos_atten_gain = 0.00f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
-	.target_shift_val = 0.35f, // ★ 초기값 설정 (autotune4)
-	.yaw_gain_p = 0.0f,       // cascade off by default (plain line PD)
-	.yaw_gain_i = 0.0f,
-	.lat_acc_max = 13.4f,     // autotune4: grip limit on
-	.target_curve_gain = 1.3f, // 곡선 구간 target_pos 배율 (autotune4)
-	.slalom_ratio = 0.01f,     // 4차 45도 구간: base + (max - base) x 0.01 (0.1 이상은 45도 R25에서 넘침)
+	.target_shift_val = 0.40f,
+	.yaw_gain_p = 0.33f,
+	.yaw_gain_i = 0.9f,
+	.lat_acc_max = 14.77f,
+	.target_curve_gain = 1.5f,
+	.slalom_ratio = 0.1f,
+	.brake_margin_m = 0.10f,
 };
 // @formatter:on
 
@@ -124,6 +125,7 @@ __STATIC_INLINE uint8_t Drive_Init_Sequence(void) {
 	accel = driveData.accel;
 	decel = driveData.decel;
 	Odom_Reset();
+	Steer_Reset_State();
 	g_cross_log_count = 0;
 	Cross_Detect_Reset();
 
@@ -239,7 +241,7 @@ static CrossMarkerLog_t ref_log[CROSS_LOG_MAX];
 static uint16_t ref_log_count = 0;
 static SegmentPlan_t seg_plan[CROSS_LOG_MAX];
 
-#define BRAKE_MARGIN_M 0.03f
+#define BRAKE_MARGIN_M 0.06f
 #define ACCEL_START_MARGIN_M 0.08f
 
 typedef struct {
@@ -330,6 +332,7 @@ __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
 	accel = driveData.accel;
 	decel = driveData.decel;
 	Odom_Reset();
+	Steer_Reset_State();
 
 	g_cross_log_count = 0;
 	Cross_Detect_Reset();
@@ -439,7 +442,7 @@ __STATIC_INLINE void Check_Distance_And_Brake(DriveSecondState_t *state) {
 		float_t v1 = g_current_base_mps;
 		float_t v2 = driveData.base_mps;
 
-		float_t brake_dist = BRAKE_MARGIN_M;
+		float_t brake_dist = (driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M;
 		if (v1 > v2) {
 			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 		}
@@ -616,6 +619,7 @@ __STATIC_INLINE uint8_t Drive_Third_Init_Sequence(void) {
 	accel = driveData.accel;
 	decel = driveData.decel;
 	Odom_Reset();
+	Steer_Reset_State();
 	g_cross_log_count = 0;
 	Cross_Detect_Reset();
 
@@ -925,6 +929,7 @@ __STATIC_INLINE uint8_t Drive_Fourth_Init_Sequence(void) {
 	accel = driveData.accel;
 	decel = driveData.decel;
 	Odom_Reset();
+	Steer_Reset_State();
 	g_cross_log_count = 0;
 	Cross_Detect_Reset();
 
@@ -1039,7 +1044,7 @@ __STATIC_INLINE void Check_Distance_And_Brake_Fourth(DriveFourthState_t *state) 
 		float_t v2 = state->end_mps;   // 다음 구간 속도 (45도면 슬라롬 속도, 깊은 커브면 base)
 
 		// 감속에 필요한 브레이킹 거리 계산
-		float_t brake_dist = BRAKE_MARGIN_M;
+		float_t brake_dist = (driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M;
 		if (v1 > v2) {
 			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 		}

@@ -116,6 +116,7 @@ MenuItem_t drive_param_items[] = {
 	{ .name = "Lat Acc Max", 	.pfnActionCallback = Update_Lat_Acc_Max			},
 	{ .name = "Tgt Crv Gain", 	.pfnActionCallback = Update_Target_Curve_Gain	}, // 3·4차 곡선 target_pos 배율
 	{ .name = "Slalom Ratio", 	.pfnActionCallback = Update_Slalom_Ratio		}, // 4차 45도 구간 속도 비율
+	{ .name = "Brake Margin", 	.pfnActionCallback = Update_Brake_Margin		}, // 직선 감속 여유 거리 [m]
 };
 
 // =========================================================
@@ -535,6 +536,10 @@ void Update_Target_Curve_Gain() {
 
 void Update_Slalom_Ratio() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.slalom_ratio), "Slalom Ratio");
+}
+
+void Update_Brake_Margin() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.brake_margin_m), "Brake Margin");
 }
 
 void Menu_ProcessLoop() {

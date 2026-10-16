@@ -49,5 +49,6 @@ void Update_Yaw_KI(void);
 void Update_Lat_Acc_Max(void);
 void Update_Target_Curve_Gain(void);
 void Update_Slalom_Ratio(void);
+void Update_Brake_Margin(void);
 
 #endif /* MENU_H_ */

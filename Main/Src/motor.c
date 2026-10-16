@@ -169,14 +169,30 @@ static volatile float32_t g_current_steer = 0.0f;
 static volatile float32_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
 static volatile float32_t g_yaw_integ = 0.0f;    // 캐스케이드 안쪽 루프 적분 [rad/s]
 static volatile float32_t g_grip_atten = 1.0f;   // 접지 한계 감속 비율 (lat_acc_max)
+static volatile float32_t g_prev_steer_error = 0.0f;
+static volatile float32_t g_filtered_deriv = 0.0f;
 #define YAW_INTEG_MAX 5.0f                        // 적분 한계 [rad/s]
+
+void Steer_Reset_State(void) {
+	g_yaw_integ = 0.0f;
+	g_grip_atten = 1.0f;
+	filtered_atten = 1.0f;
+	g_prev_steer_error = 0.0f;
+	g_filtered_deriv = 0.0f;
+}
+
 void Steer_Motor() {
 	// 1. float32_t 자료형 사용으로 단정밀도(Single-Precision) 강제
 	float32_t line_pos = Sensor_Get_Position();
 	float32_t error = line_pos - IR_Sensor.data->target_pos;
 
-	// 2. arm_pid_f32 입출력에 완벽히 매칭됨
-	g_current_steer = arm_pid_f32(&steer_pid, error);
+	// 2. 미분항(Kd)에 1차 저역통과 필터(LPF) 적용 (2kHz 샘플링 고주파 노이즈 증폭 차단)
+	float32_t raw_deriv = error - g_prev_steer_error;
+	g_prev_steer_error = error;
+
+	// LPF 차단주파수 약 80Hz (dt = 0.0005s, alpha = 0.80f)
+	const float32_t lpf_alpha = 0.80f;
+	g_filtered_deriv = (lpf_alpha * g_filtered_deriv) + ((1.0f - lpf_alpha) * raw_deriv);
 
 	// 3. fabsf()와 1.0f 등 단정밀도 전용 수학 함수/리터럴 사용
 	float32_t raw_atten = 1.0f - (fabsf(error) * driveData.pos_atten_gain);
@@ -213,7 +229,21 @@ void Steer_Motor() {
 		g_grip_atten = 1.0f;
 	}
 
-	// 5. 캐스케이드 조향: 라인 PD 출력(steer, 곡률)을 목표 요레이트로 바꾸고 자이로로 추종
+	// 5. 속도 스케일링: 고속 가속 구간(max_mps)에서 루프 이득이 과도해져 발진하지 않도록 보정
+	//    (이동거리 미분 de/ds 및 Pure Pursuit 곡률 기반 보정)
+	float32_t p_term = steer_pid.Kp * error;
+	float32_t d_term = steer_pid.Kd * g_filtered_deriv;
+
+	float32_t v_base = driveData.base_mps > 0.5f ? driveData.base_mps : 1.0f;
+	if (active_mps > v_base) {
+		float32_t speed_ratio = v_base / active_mps;
+		p_term *= speed_ratio;
+		d_term *= (speed_ratio * speed_ratio);
+	}
+
+	g_current_steer = p_term + d_term;
+
+	// 6. 캐스케이드 조향: 라인 PD 출력(steer, 곡률)을 목표 요레이트로 바꾸고 자이로로 추종
 	//    yaw_ref [rad/s], + = 우회전(왼쪽 바퀴가 빠름). yaw_gain_p = yaw_gain_i = 0이면 기존 PD와 동일.
 	float32_t yaw_ref = active_mps * g_current_steer;
 	float32_t yaw_cmd = yaw_ref;

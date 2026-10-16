@@ -30,22 +30,22 @@ static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1, 
 static const uint8_t scan_group2[SCAN_GROUP_LEN] = { 9, 6, 4, 11, 13, 2, 0, 15, 16, 17 };
 
 const float32_t line_sensor_pos[LINE_N_SENSORS] = {
-		 -1.0f,
-		 -13.0f / 15.0f,
-		 -11.0f / 15.0f,
-		 -9.0f / 15.0f,
-		 -7.0f / 15.0f,
-		 -5.0f / 15.0f,
-		 -3.0f / 15.0f,
-		 -1.0f / 15.0f,
-		 1.0f / 15.0f,
-		 3.0f / 15.0f,
-		 5.0f / 15.0f,
-		 7.0f / 15.0f,
-		 9.0f / 15.0f,
-		 11.0f / 15.0f,
-		 13.0f / 15.0f,
-		 1.0f
+		-1.00000f,
+		-0.88282f,
+		-0.75897f,
+		-0.62929f,
+		-0.49450f,
+		-0.35592f,
+		-0.21465f,
+		-0.07175f,
+		 0.07175f,
+		 0.21465f,
+		 0.35592f,
+		 0.49450f,
+		 0.62929f,
+		 0.75897f,
+		 0.88282f,
+		 1.00000f
 };
 
 volatile SensorData_TypeDef sensorData = {
@@ -278,27 +278,39 @@ float32_t Sensor_Get_Position(void) {
 	IR_Sensor.data->mark_left = mark_left;
 	IR_Sensor.data->mark_right = mark_right;
 
-	float32_t weighted_sum = 0.0f;
-	uint32_t total_weight = 0;
-
-	for (int8_t i = calc_start; i <= calc_end; i++) {
-		uint16_t val = IR_Sensor.data->normalized[i];
-
-		weighted_sum += (float32_t) val * line_sensor_pos[i];
-		total_weight += val;
+	// 바닥 잔류 노이즈 플로어: 윈도우 내 최소 센서 값 탐색
+	uint16_t min_noise = IR_Sensor.data->normalized[calc_start];
+	uint32_t raw_sum = IR_Sensor.data->normalized[calc_start];
+	for (int8_t i = calc_start + 1; i <= calc_end; i++) {
+		uint16_t v = IR_Sensor.data->normalized[i];
+		raw_sum += v;
+		if (v < min_noise) {
+			min_noise = v;
+		}
 	}
 
-	if (total_weight > IR_Sensor.data->line_lost_sum_min) {
+	float32_t weighted_sum = 0.0f;
+	float32_t total_weight = 0.0f;
+
+	for (int8_t i = calc_start; i <= calc_end; i++) {
+		int32_t net_val = (int32_t) IR_Sensor.data->normalized[i] - (int32_t) min_noise;
+		if (net_val > 0) {
+			// 노이즈 플로어 차감 및 제곱 가중으로 계단형 점프(윈도우 경계 불연속) 제거
+			float32_t w = (float32_t) (net_val * net_val);
+			weighted_sum += w * line_sensor_pos[i];
+			total_weight += w;
+		}
+	}
+
+	if (raw_sum > IR_Sensor.data->line_lost_sum_min) {
 		IR_Sensor.is_lost_position = 0;
 		lost_counter = 0;
 
 		if (is_cross_line) {
-			// ★ 수정: 오차 강제 추종(frozen_error) 제거, 크로스 진입 직전의 실제 라인 위치 반환
-			// target_pos가 이동함에 따라 에러(오차)가 자연스럽게 커지며 조향을 부드럽게 유지합니다.
 			return prev_position;
 		}
 
-		float32_t current_position = weighted_sum / (float32_t) total_weight;
+		float32_t current_position = (total_weight > 0.0f) ? (weighted_sum / total_weight) : line_sensor_pos[current_peak_idx];
 		prev_position = current_position; // 정상 라인일 때 절대 위치 갱신
 
 		return current_position;
