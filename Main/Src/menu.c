@@ -94,6 +94,7 @@ MenuItem_t drive_menu_items[] = {
     { .name = "2nd Drive",    .pfnActionCallback = Drive_Second 			},
     { .name = "3rd Drive",    .pfnActionCallback = Drive_Third				},
     { .name = "4th Drive",    .pfnActionCallback = Drive_Fourth				},
+	{ .name = "AI Auto-Heal", .pfnActionCallback = Drive_AutoHeal_Menu		},
 	{ .name = "Vibe Test",    .pfnActionCallback = Drive_Vibration_Test		},
     { .name = "Update Param", .pfnActionCallback = NULL, 				.child_menu = &drive_param_menu },
 };

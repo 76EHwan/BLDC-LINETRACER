@@ -269,6 +269,10 @@ void Steer_Motor() {
 
 	foc_L.omega_setpoint = foc_L.target_omega;
 	foc_R.omega_setpoint = foc_R.target_omega;
+
+	// 7. 실기(Sim2Real) 텔레메트리 실시간 수집 (추정 슬립각 beta, 자이로 진동 에너지 weave, 이탈 직전 속도)
+	Drive_Diag_Update_ISR(line_pos, active_mps, yaw_meas, yaw_ref,
+			imu_data.Gyro_Z - imu_data.Gyro_Z_Offset);
 }
 
 // ====================================================================

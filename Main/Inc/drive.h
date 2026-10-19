@@ -63,4 +63,27 @@ void Drive_Vibration_Test(void);
 void Ramp_Start(void);
 void Ramp_Stop(void);
 
+// 실기(Sim2Real) 주행 텔레메트리 진단 및 온보드 AI Auto-Heal
+typedef struct {
+	uint8_t drive_mode;        // 최근 실행된 주행 모드 (1~4)
+	uint8_t line_lost;         // 라인 이탈 여부 (1 = Line Lost, 0 = 완주)
+	uint8_t was_oversteer;     // 오버스티어/스핀 감지 여부 (1 = Oversteer, 0 = Understeer)
+	float_t max_beta_deg;      // 추정 최대 슬립각 [deg]
+	float_t max_lat_mm;        // 센서바 기준 최대 횡방향 오차 [mm]
+	float_t weave_dps;         // 주행 중 자이로 고주파 진동 에너지 (RMS) [deg/s]
+	float_t fail_v;            // 이탈 직전 주행 속도 [m/s]
+	uint32_t heal_count;       // 누적 Auto-Heal 적용 횟수
+	char last_role[16];        // 마지막 적용된 힐링 처방 이름
+} DriveDiag_t;
+
+extern DriveDiag_t g_drive_diag;
+
+void Drive_Diag_Reset(uint8_t drive_mode);
+void Drive_Diag_Update_ISR(float_t line_pos_norm, float_t active_mps,
+		float_t yaw_meas_rads, float_t yaw_ref_rads, float_t gyro_z_dps);
+void Drive_Diag_Finalize(uint8_t line_lost);
+void Drive_AutoHeal_Apply(void);
+void Drive_AutoHeal_Reset_Anchor(void);
+void Drive_AutoHeal_Menu(void);
+
 #endif /* INC_DRIVE_H_ */

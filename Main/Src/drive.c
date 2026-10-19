@@ -16,22 +16,22 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 2.04f,
+    .base_mps = 2.27f,
     .max_mps = 10.00f,
     .accel = 6.0f,
     .decel = 6.0f,
-    .steer_gain_p = 16.64f,
-    .steer_gain_d = 202.f,
+    .steer_gain_p = 17.117f,
+    .steer_gain_d = 365.0f,
     .pos_atten_gain = 0.00f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
-	.target_shift_val = 0.40f,
-	.yaw_gain_p = 0.33f,
-	.yaw_gain_i = 0.9f,
-	.lat_acc_max = 14.77f,
-	.target_curve_gain = 1.5f,
-	.slalom_ratio = 0.1f,
-	.brake_margin_m = 0.10f,
+	.target_shift_val = 0.42f,
+	.yaw_gain_p = 0.34f,
+	.yaw_gain_i = 0.2f,
+	.lat_acc_max = 11.47f,
+	.target_curve_gain = 1.44f,
+	.slalom_ratio = 0.03f,
+	.brake_margin_m = 0.20f,
 };
 // @formatter:on
 
@@ -95,6 +95,274 @@ void Drive_Stop_At_Distance(float target_distance_m) {
 }
 
 // ============================================================================
+// 실기(Sim2Real) 주행 텔레메트리 실시간 진단 및 온보드 AI Auto-Heal
+// ============================================================================
+DriveDiag_t g_drive_diag = { 0 };
+static DriveParam_t g_heal_anchor;
+static uint8_t g_heal_anchor_init = 0;
+
+// ISR 실시간 누적용 내부 상태 변수
+static volatile float_t s_beta_rad = 0.0f;
+static volatile float_t s_gyro_lpf_dps = 0.0f;
+static volatile float_t s_weave_sq_sum = 0.0f;
+static volatile uint32_t s_weave_cnt = 0;
+static volatile float_t s_recent_v = 0.0f;
+
+__STATIC_INLINE float_t Clamp_F32(float_t x, float_t lo, float_t hi) {
+	if (x < lo) return lo;
+	if (x > hi) return hi;
+	return x;
+}
+
+void Drive_AutoHeal_Reset_Anchor(void) {
+	if (g_heal_anchor_init) {
+		driveData.steer_gain_p = g_heal_anchor.steer_gain_p;
+		driveData.steer_gain_d = g_heal_anchor.steer_gain_d;
+		driveData.lat_acc_max = g_heal_anchor.lat_acc_max;
+		driveData.brake_margin_m = g_heal_anchor.brake_margin_m;
+		driveData.target_shift_val = g_heal_anchor.target_shift_val;
+		driveData.target_curve_gain = g_heal_anchor.target_curve_gain;
+		driveData.slalom_ratio = g_heal_anchor.slalom_ratio;
+		driveData.yaw_gain_p = g_heal_anchor.yaw_gain_p;
+		steer_pid.Kp = driveData.steer_gain_p;
+		steer_pid.Kd = driveData.steer_gain_d;
+	}
+}
+
+void Drive_Diag_Reset(uint8_t drive_mode) {
+	if (!g_heal_anchor_init) {
+		g_heal_anchor = driveData;
+		// 포화 상태 방지용 안전 범위 클램핑 후 초기 기준점(Anchor) 저장
+		g_heal_anchor.steer_gain_p = Clamp_F32(g_heal_anchor.steer_gain_p, 11.5f, 24.0f);
+		g_heal_anchor.steer_gain_d = Clamp_F32(g_heal_anchor.steer_gain_d, 160.0f, 460.0f);
+		g_heal_anchor.lat_acc_max = Clamp_F32(g_heal_anchor.lat_acc_max, 11.0f, 15.0f);
+		g_heal_anchor.brake_margin_m = Clamp_F32(g_heal_anchor.brake_margin_m, 0.06f, 0.24f);
+		g_heal_anchor_init = 1;
+	}
+
+	g_drive_diag.drive_mode = drive_mode;
+	g_drive_diag.line_lost = 0;
+	g_drive_diag.was_oversteer = 0;
+	g_drive_diag.max_beta_deg = 0.0f;
+	g_drive_diag.max_lat_mm = 0.0f;
+	g_drive_diag.weave_dps = 0.0f;
+	g_drive_diag.fail_v = driveData.base_mps;
+
+	s_beta_rad = 0.0f;
+	s_gyro_lpf_dps = 0.0f;
+	s_weave_sq_sum = 0.0f;
+	s_weave_cnt = 0;
+	s_recent_v = driveData.base_mps;
+}
+
+void Drive_Diag_Update_ISR(float_t line_pos_norm, float_t active_mps,
+		float_t yaw_meas_rads, float_t yaw_ref_rads, float_t gyro_z_dps) {
+	if (IR_Sensor.is_lost_position || g_target_base_mps <= 0.05f) {
+		return;
+	}
+
+	// 1. 센서바 기준 횡방향 오차 [mm] (정규화 1.0 = SENSOR_HALF_WIDTH = 80mm)
+	float_t lat_mm = fabsf(line_pos_norm) * (SENSOR_HALF_WIDTH * 1000.0f);
+	if (lat_mm > g_drive_diag.max_lat_mm) {
+		g_drive_diag.max_lat_mm = lat_mm;
+	}
+
+	// 2. 이탈 직전(최근 ~0.25s) 주행 속도 엔벨로프 추적
+	if (g_current_base_mps > s_recent_v) {
+		s_recent_v = g_current_base_mps;
+	} else {
+		s_recent_v = 0.9985f * s_recent_v + 0.0015f * g_current_base_mps;
+	}
+
+	if (active_mps < 0.35f) {
+		s_beta_rad *= 0.98f;
+		return;
+	}
+
+	// 3. 추정 슬립각(Beta): 실제 자이로 요레이트와 조향 목표 요레이트의 편차를 누수 적분 (tau ~= 0.18s)
+	float_t yaw_diff = yaw_meas_rads - yaw_ref_rads;
+	s_beta_rad = 0.9972f * s_beta_rad + yaw_diff * RAMP_DT;
+	float_t beta_deg = fabsf(s_beta_rad) * (180.0f / PI);
+	if (beta_deg > g_drive_diag.max_beta_deg) {
+		g_drive_diag.max_beta_deg = beta_deg;
+	}
+
+	// 4. 자이로 고주파 진동 에너지(Weave): 60ms LPF 대비 고역통과 성분 제곱 누적
+	s_gyro_lpf_dps = 0.983f * s_gyro_lpf_dps + 0.017f * gyro_z_dps;
+	float_t hp_dps = gyro_z_dps - s_gyro_lpf_dps;
+	s_weave_sq_sum += hp_dps * hp_dps;
+	s_weave_cnt++;
+}
+
+void Drive_Diag_Finalize(uint8_t line_lost) {
+	g_drive_diag.line_lost = line_lost;
+	g_drive_diag.fail_v = s_recent_v;
+	if (s_weave_cnt > 100) {
+		g_drive_diag.weave_dps = sqrtf(s_weave_sq_sum / (float_t) s_weave_cnt);
+	} else {
+		g_drive_diag.weave_dps = 0.0f;
+	}
+	g_drive_diag.was_oversteer = (g_drive_diag.max_beta_deg >= 25.0f) ? 1 : 0;
+}
+
+// 실패/주행 텔레메트리 비례 게인 보정 + 누적 포화(Ratchet) 방지 소프트 블렌딩
+void Drive_AutoHeal_Apply(void) {
+	if (!g_heal_anchor_init) {
+		Drive_Diag_Reset(g_drive_diag.drive_mode);
+	}
+
+	// 1. 한쪽 쏠림(누적 포화) 방지: 현재 게인을 초기 기준점(Anchor) 쪽으로 15% 복원한 base 계산
+	DriveParam_t base = driveData;
+	base.steer_gain_p = 0.85f * driveData.steer_gain_p + 0.15f * g_heal_anchor.steer_gain_p;
+	base.steer_gain_d = 0.85f * driveData.steer_gain_d + 0.15f * g_heal_anchor.steer_gain_d;
+	base.lat_acc_max = 0.85f * driveData.lat_acc_max + 0.15f * g_heal_anchor.lat_acc_max;
+	base.brake_margin_m = 0.85f * driveData.brake_margin_m + 0.15f * g_heal_anchor.brake_margin_m;
+	base.target_shift_val = 0.85f * driveData.target_shift_val + 0.15f * g_heal_anchor.target_shift_val;
+	base.target_curve_gain = 0.85f * driveData.target_curve_gain + 0.15f * g_heal_anchor.target_curve_gain;
+
+	// D게인 과포화(> 390) 및 P게인 과소(< 12.2) 감지 및 해소
+	uint8_t kd_oversaturated = (driveData.steer_gain_d > 390.0f) ? 1 : 0;
+	if (kd_oversaturated) {
+		float_t anchor_kd = (g_heal_anchor.steer_gain_d < 330.0f) ? g_heal_anchor.steer_gain_d : 330.0f;
+		base.steer_gain_d = Clamp_F32(0.65f * driveData.steer_gain_d + 0.35f * anchor_kd, 240.0f, 420.0f);
+	}
+	if (driveData.steer_gain_p < 12.2f) {
+		float_t anchor_kp = (g_heal_anchor.steer_gain_p > 14.2f) ? g_heal_anchor.steer_gain_p : 14.2f;
+		base.steer_gain_p = Clamp_F32(0.65f * driveData.steer_gain_p + 0.35f * anchor_kp, 12.8f, 24.0f);
+	}
+
+	// 2. 주행 텔레메트리 기반 정규화 심각도(0.0 ~ 1.5) 비례 계산
+	float_t slip_sev = Clamp_F32((g_drive_diag.max_beta_deg - 22.0f) / 38.0f, 0.0f, 1.5f);
+	float_t under_sev = g_drive_diag.was_oversteer ? 0.0f
+			: Clamp_F32((26.0f - g_drive_diag.max_beta_deg) / 16.0f
+					+ (g_drive_diag.max_lat_mm - 55.0f) / 40.0f, 0.25f, 1.5f);
+	float_t osc_sev = Clamp_F32((g_drive_diag.weave_dps - 165.0f) / 135.0f, 0.0f, 1.5f);
+	float_t speed_sev = (g_drive_diag.drive_mode <= 1) ? 0.0f
+			: Clamp_F32((g_drive_diag.fail_v - driveData.base_mps) / 0.75f, 0.0f, 1.5f);
+
+	DriveParam_t healed = base;
+	const char *role = "PropPD";
+
+	// 3. 실패 원인별 비례 처방 계산
+	if (kd_oversaturated && osc_sev > 0.30f) {
+		// [DeSat] D게인 과포화로 인한 고주파 노이즈 발진 -> KD 하향 및 기준점 복원
+		role = "DeSat";
+		float_t nom_kd = Clamp_F32(g_heal_anchor.steer_gain_d, 270.0f, 350.0f);
+		healed.steer_gain_p = Clamp_F32(roundf((0.55f * driveData.steer_gain_p + 0.45f * g_heal_anchor.steer_gain_p + 0.35f * under_sev) * 1000.0f) / 1000.0f, 12.2f, 23.5f);
+		healed.steer_gain_d = Clamp_F32(0.50f * driveData.steer_gain_d + 0.50f * nom_kd - 16.0f, 200.0f, 400.0f);
+	} else if (speed_sev > 0.45f && g_drive_diag.drive_mode >= 2) {
+		// [Entry] 직선 고속 가속 후 코너 진입 감속 부족 -> 진입 초과 속도에 비례해 브레이크 마진 증가 & 횡가속도 하향
+		role = "Entry";
+		float_t entry_sev = (speed_sev > slip_sev) ? speed_sev : slip_sev;
+		healed.steer_gain_p = Clamp_F32(roundf((base.steer_gain_p + (g_drive_diag.was_oversteer ? -0.25f * slip_sev : +0.40f * under_sev)) * 1000.0f) / 1000.0f, 11.8f, 23.5f);
+		float_t ideal_kd = Clamp_F32(healed.steer_gain_p * 22.4f, 220.0f, 440.0f);
+		healed.steer_gain_d = Clamp_F32(0.60f * base.steer_gain_d + 0.40f * ideal_kd, 200.0f, 440.0f);
+		healed.brake_margin_m = Clamp_F32(base.brake_margin_m + (0.015f + 0.030f * entry_sev), 0.07f, 0.24f);
+		healed.lat_acc_max = Clamp_F32(base.lat_acc_max - (0.30f + 0.55f * entry_sev), 11.0f, 14.8f);
+	} else if (g_drive_diag.was_oversteer) {
+		// [PropOVS] 오버스티어/드리프트 과다 -> 슬립각 및 진동량에 비례해 KP 감쇠 & KD 보강
+		role = "PropOVS";
+		float_t dkp = -(0.35f * slip_sev + 0.45f * osc_sev);
+		healed.steer_gain_p = Clamp_F32(roundf((base.steer_gain_p + dkp) * 1000.0f) / 1000.0f, 11.5f, 24.0f);
+		if (kd_oversaturated) {
+			healed.steer_gain_d = Clamp_F32(driveData.steer_gain_d - (24.0f + 36.0f * osc_sev), 240.0f, 420.0f);
+		} else {
+			float_t dkd = 14.0f * slip_sev + 20.0f * osc_sev;
+			healed.steer_gain_d = Clamp_F32(base.steer_gain_d + dkd, 180.0f, 460.0f);
+		}
+		healed.yaw_gain_p = Clamp_F32(base.yaw_gain_p + 0.03f * slip_sev, 0.15f, 0.60f);
+		if (g_drive_diag.drive_mode >= 2) {
+			healed.lat_acc_max = Clamp_F32(base.lat_acc_max - (0.25f * slip_sev + 0.35f * speed_sev), 11.2f, 15.0f);
+			healed.brake_margin_m = Clamp_F32(base.brake_margin_m + (0.012f * slip_sev + 0.022f * speed_sev), 0.06f, 0.24f);
+		}
+	} else {
+		// [PropUND] 언더스티어/조향 부족 이탈 -> 이탈 심각도에 비례해 KP 상향 & KD는 최적 댐핑비(22.4*KP)로 정렬
+		role = "PropUND";
+		float_t dkp = 0.65f * under_sev - 0.25f * osc_sev;
+		healed.steer_gain_p = Clamp_F32(roundf((base.steer_gain_p + dkp) * 1000.0f) / 1000.0f, 12.0f, 24.0f);
+		float_t ideal_kd = Clamp_F32(healed.steer_gain_p * 22.4f, 220.0f, 440.0f);
+		healed.steer_gain_d = Clamp_F32(0.65f * base.steer_gain_d + 0.35f * ideal_kd + 10.0f * osc_sev, 180.0f, 440.0f);
+		if (g_drive_diag.drive_mode >= 3) {
+			healed.target_shift_val = Clamp_F32(base.target_shift_val + 0.030f * under_sev, 0.26f, 0.56f);
+			healed.target_curve_gain = Clamp_F32(base.target_curve_gain + 0.050f * under_sev, 1.25f, 2.00f);
+		}
+	}
+
+	// 4. 소프트 블렌딩 (65% Healed + 35% Current) 및 비포화 상하한 클램핑
+	const float_t a = 0.15f;
+	driveData.steer_gain_p = Clamp_F32(roundf((a * healed.steer_gain_p + (1.0f - a) * driveData.steer_gain_p) * 1000.0f) / 1000.0f, 11.5f, 24.0f);
+	driveData.steer_gain_d = Clamp_F32(a * healed.steer_gain_d + (1.0f - a) * driveData.steer_gain_d, 160.0f, 460.0f);
+	driveData.lat_acc_max = Clamp_F32(a * healed.lat_acc_max + (1.0f - a) * driveData.lat_acc_max, 11.0f, 15.0f);
+	driveData.brake_margin_m = Clamp_F32(a * healed.brake_margin_m + (1.0f - a) * driveData.brake_margin_m, 0.06f, 0.24f);
+	driveData.target_shift_val = Clamp_F32(a * healed.target_shift_val + (1.0f - a) * driveData.target_shift_val, 0.24f, 0.58f);
+	driveData.target_curve_gain = Clamp_F32(a * healed.target_curve_gain + (1.0f - a) * driveData.target_curve_gain, 1.20f, 2.05f);
+	driveData.yaw_gain_p = Clamp_F32(a * healed.yaw_gain_p + (1.0f - a) * driveData.yaw_gain_p, 0.15f, 0.65f);
+	driveData.pos_atten_gain = 0.0f;
+
+	steer_pid.Kp = driveData.steer_gain_p;
+	steer_pid.Kd = driveData.steer_gain_d;
+
+	g_drive_diag.heal_count++;
+	snprintf(g_drive_diag.last_role, sizeof(g_drive_diag.last_role), "%s", role);
+}
+
+// 주행 종료 화면에서 K_HOLD(종료) 외에 R_HOLD(온보드 AI Auto-Heal 즉시 적용), L_HOLD(초기 게인 복원) 지원
+static void Drive_Wait_Exit_Or_Heal(uint8_t show_diag_lines) {
+	if (show_diag_lines) {
+		LCD_Printf(0, 6, "B:%.1fd W:%.0f", g_drive_diag.max_beta_deg, g_drive_diag.weave_dps);
+		LCD_Printf(0, 7, "Vf:%.2f [R:Heal]", g_drive_diag.fail_v);
+	}
+	while (1) {
+		UserInput_t btn = Button_Get_Input();
+		if (btn == INPUT_CMD_K_HOLD) {
+			break;
+		} else if (btn == INPUT_CMD_R_HOLD) {
+			Drive_AutoHeal_Apply();
+			LCD_Printf(0, 8, "H:%s", g_drive_diag.last_role);
+			LCD_Printf(0, 9, "P:%.3f D:%.0f", driveData.steer_gain_p, driveData.steer_gain_d);
+			LCD_Printf(0, 10, "L:%.1f B:%.2f", driveData.lat_acc_max, driveData.brake_margin_m);
+		} else if (btn == INPUT_CMD_L_HOLD) {
+			Drive_AutoHeal_Reset_Anchor();
+			LCD_Printf(0, 8, "Reset Anchor!");
+			LCD_Printf(0, 9, "P:%.3f D:%.0f", driveData.steer_gain_p, driveData.steer_gain_d);
+			LCD_Printf(0, 10, "L:%.1f B:%.2f", driveData.lat_acc_max, driveData.brake_margin_m);
+		}
+	}
+}
+
+// Drive Menu에서 진입 가능한 온보드 AI Auto-Heal 진단/적용 화면
+void Drive_AutoHeal_Menu(void) {
+	LCD_Clear();
+	while (1) {
+		LCD_Printf(0, 0, "AI Auto-Heal #%lu", (unsigned long) g_drive_diag.heal_count);
+		LCD_Printf(0, 1, "Last: D%d %s", g_drive_diag.drive_mode,
+				g_drive_diag.line_lost ? (g_drive_diag.was_oversteer ? "OVS" : "UND") : "OK");
+		LCD_Printf(0, 2, "Beta:%.1fd Lat:%.0f", g_drive_diag.max_beta_deg, g_drive_diag.max_lat_mm);
+		LCD_Printf(0, 3, "Weav:%.0f Vf:%.2f", g_drive_diag.weave_dps, g_drive_diag.fail_v);
+		LCD_Printf(0, 4, "KP:%.3f KD:%.0f", driveData.steer_gain_p, driveData.steer_gain_d);
+		LCD_Printf(0, 5, "LAT:%.2f BRK:%.2f", driveData.lat_acc_max, driveData.brake_margin_m);
+		LCD_Printf(0, 6, "SHF:%.2f CRV:%.2f", driveData.target_shift_val, driveData.target_curve_gain);
+		LCD_Printf(0, 8, "[R Hold] Heal Now");
+		LCD_Printf(0, 9, "[L Hold] Anchor");
+		LCD_Printf(0, 10, "[K Hold] Exit");
+
+		UserInput_t btn = Button_Get_Input();
+		if (btn == INPUT_CMD_K_HOLD) {
+			break;
+		} else if (btn == INPUT_CMD_R_HOLD) {
+			Drive_AutoHeal_Apply();
+			LCD_Clear();
+			LCD_Printf(0, 7, "-> %s Applied!", g_drive_diag.last_role);
+		} else if (btn == INPUT_CMD_L_HOLD) {
+			Drive_AutoHeal_Reset_Anchor();
+			LCD_Clear();
+			LCD_Printf(0, 7, "-> Anchor Restored");
+		}
+	}
+	LCD_Clear();
+}
+
+// ============================================================================
 // 1회차 주행 함수 모음
 // ============================================================================
 static uint8_t is_ref_log_copied = 0;
@@ -126,6 +394,7 @@ __STATIC_INLINE uint8_t Drive_Init_Sequence(void) {
 	decel = driveData.decel;
 	Odom_Reset();
 	Steer_Reset_State();
+	Drive_Diag_Reset(1);
 	g_cross_log_count = 0;
 	Cross_Detect_Reset();
 
@@ -197,6 +466,7 @@ void Drive_First(void) {
 	if (IR_Sensor.is_lost_position) {
 		exit_reason_lost = 1;
 	}
+	Drive_Diag_Finalize(exit_reason_lost);
 	LCD7789_Invert(0);
 	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
 
@@ -213,6 +483,7 @@ void Drive_First(void) {
 
 	if (exit_reason_lost) {
 		LCD_Printf(0, 0, "Line Lost");
+		Drive_Wait_Exit_Or_Heal(1);
 	} else {
 		LCD_Printf(0, 0, "End");
 		LCD_Printf(0, 1, "L:%d", g_total_L);
@@ -223,10 +494,9 @@ void Drive_First(void) {
 		LCD_Printf(0, 6, "U_Cnt:%d (<12)", g_last_stop_count);
 		uint8_t slot = Select_Save_Slot();
 		Save_MarkerLog_To_SD(slot);
+		Drive_Wait_Exit_Or_Heal(0);
 	}
 
-	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
-		;
 	LCD_Clear();
 }
 
@@ -282,7 +552,7 @@ __STATIC_INLINE void Build_Segment_Plan(void) {
 		}
 
 		if (cur == CROSS_STOP) {
-			is_straight = 0;
+			is_straight = (i == 0) ? 1 : 0;
 		}
 
 		seg_plan[i].accel_ok = is_straight;
@@ -333,6 +603,7 @@ __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
 	decel = driveData.decel;
 	Odom_Reset();
 	Steer_Reset_State();
+	Drive_Diag_Reset(2);
 
 	g_cross_log_count = 0;
 	Cross_Detect_Reset();
@@ -413,7 +684,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 		}
 		state->seg_len_predicted = total_straight_dist;
 
-		if (state->idx > 0 && seg_plan[state->idx - 1].accel_ok) {
+		if (state->idx == 0 || seg_plan[state->idx - 1].accel_ok) {
 			g_target_base_mps = driveData.max_mps;
 		} else {
 			g_target_base_mps = driveData.base_mps;
@@ -471,7 +742,9 @@ void Drive_Second(void) {
 
 	if (ref_log_count > 0) {
 		state.accel_active = 1;
-		state.seg_len_predicted = ref_log[0].dist_from_prev_m;
+		state.seg_len_predicted = (ref_log[0].type == CROSS_STOP && ref_log_count > 1)
+				? (ref_log[0].dist_from_prev_m + ref_log[1].dist_from_prev_m)
+				: ref_log[0].dist_from_prev_m;
 
 		if (state.seg_len_predicted > 0.3f) {
 			g_target_base_mps = driveData.max_mps;
@@ -489,6 +762,7 @@ void Drive_Second(void) {
 		Check_Distance_And_Brake(&state);
 	}
 
+	Drive_Diag_Finalize(IR_Sensor.is_lost_position);
 	LCD7789_Invert(0);
 
 	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
@@ -513,8 +787,7 @@ void Drive_Second(void) {
 		LCD_Printf(0, 4, "T:%.2fs", lap_time);
 	}
 
-	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
-		;
+	Drive_Wait_Exit_Or_Heal(1);
 	LCD_Clear();
 }
 
@@ -568,7 +841,7 @@ __STATIC_INLINE void Build_Segment_Plan_Third(void) {
 		}
 
 		if (cur == CROSS_STOP) {
-			is_straight = 0;
+			is_straight = (i == 0) ? 1 : 0;
 			curve_state = 0;
 		}
 
@@ -620,6 +893,7 @@ __STATIC_INLINE uint8_t Drive_Third_Init_Sequence(void) {
 	decel = driveData.decel;
 	Odom_Reset();
 	Steer_Reset_State();
+	Drive_Diag_Reset(3);
 	g_cross_log_count = 0;
 	Cross_Detect_Reset();
 
@@ -798,6 +1072,7 @@ void Drive_Third(void) {
 		Update_Target_Pos_Third(&state); // ★ 다가오는 코너에 맞춰 센서 목표점 동적 이동
 	}
 
+	Drive_Diag_Finalize(IR_Sensor.is_lost_position);
 	LCD7789_Invert(0);
 	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
 
@@ -823,8 +1098,7 @@ void Drive_Third(void) {
 		LCD_Printf(0, 4, "T:%.2fs", lap_time);
 	}
 
-	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
-		;
+	Drive_Wait_Exit_Or_Heal(1);
 	LCD_Clear();
 }
 
@@ -875,7 +1149,7 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 		// 2. 다음 마커까지의 가속 속성 판별
 		uint8_t a_type = 0;
 		if (cur == CROSS_STOP) {
-			a_type = 0;
+			a_type = (i == 0) ? 1 : 0; // 첫 출발 마커(i==0) 직후는 시작 직선이므로 풀 가속(1), 도착 마커는 감속(0)
 		} else if (i + 1 < ref_log_count) {
 			// 다음 마커에서 기록된 꺾임각을 확인하여 다가올 커브의 깊이를 예측
 			float next_yaw_mag = fabsf(ref_log[i + 1].yaw_angle);
@@ -930,6 +1204,7 @@ __STATIC_INLINE uint8_t Drive_Fourth_Init_Sequence(void) {
 	decel = driveData.decel;
 	Odom_Reset();
 	Steer_Reset_State();
+	Drive_Diag_Reset(4);
 	g_cross_log_count = 0;
 	Cross_Detect_Reset();
 
@@ -1131,7 +1406,9 @@ void Drive_Fourth(void) {
 	// 첫 번째 직선 구간 출발 가속 처리
 	if (ref_log_count > 0) {
 		state.accel_active = 1;
-		state.seg_len_predicted = ref_log[0].dist_from_prev_m;
+		state.seg_len_predicted = (ref_log[0].type == CROSS_STOP && ref_log_count > 1)
+				? (ref_log[0].dist_from_prev_m + ref_log[1].dist_from_prev_m)
+				: ref_log[0].dist_from_prev_m;
 		if (state.seg_len_predicted > 0.3f) {
 			state.target_mps = driveData.max_mps;
 			g_target_base_mps = state.target_mps;
@@ -1152,6 +1429,7 @@ void Drive_Fourth(void) {
 		Update_Target_Pos_Fourth(&state);        // 다가오는 코너에 맞춰 센서 목표점 동적 이동
 	}
 
+	Drive_Diag_Finalize(IR_Sensor.is_lost_position);
 	LCD7789_Invert(0);
 	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
 
@@ -1177,8 +1455,7 @@ void Drive_Fourth(void) {
 		LCD_Printf(0, 4, "T:%.2fs", lap_time);
 	}
 
-	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
-		;
+	Drive_Wait_Exit_Or_Heal(1);
 	LCD_Clear();
 }
 
