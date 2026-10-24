@@ -93,6 +93,7 @@ void Sensor_Raw_Printf();
 void Sensor_Normalize_Printf();
 void Sensor_State_Printf();
 void Sensor_Position_Printf();
+void Sensor_SysID_Log(void);
 
 void TIM7_IRQ_Handler(void);
 void ADC3_IRQ_Half_Handler(void);

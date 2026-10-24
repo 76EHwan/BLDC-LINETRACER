@@ -6,9 +6,11 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 
 #include "button.h"
 #include "SDcard.h"
+#include "fatfs.h"
 
 #include "drive.h"
 #include "foc.h"
@@ -147,6 +149,68 @@ FRESULT Load_FOC_Parameters(void) {
 	arm_pid_init_f32(&foc_R.pid_iq, 1);
 
 	return FR_OK;
+}
+
+// ============================================================================
+// SysID 대용량 CSV 고속 버퍼 쓰기 헬퍼 (2KB 청크 단위로 SDFile_NC에 기록)
+// ============================================================================
+
+static char s_sysid_io_buf[2048];
+static UINT s_sysid_io_len = 0;
+
+static FRESULT SD_SysID_Flush(void) {
+	if (s_sysid_io_len == 0)
+		return FR_OK;
+	UINT bw = 0;
+	FRESULT res = f_write(&SDFile_NC, s_sysid_io_buf, s_sysid_io_len, &bw);
+	s_sysid_io_len = 0;
+	if (res != FR_OK)
+		return res;
+	if (bw == 0)
+		return FR_DISK_ERR;
+	return FR_OK;
+}
+
+FRESULT SD_SysID_Open(const char *path) {
+	s_sysid_io_len = 0;
+	FRESULT res = SDCard_Mount();
+	if (res != FR_OK)
+		return res;
+
+	SDCard_Mkdir(SYSID_DIR_PATH);
+	SDCard_Mkdir("/Drive_Data");
+	SDCard_Mkdir("/Sensor_Data");
+	SDCard_Mkdir("/Foc_Data");
+
+	res = f_open(&SDFile_NC, path, FA_CREATE_ALWAYS | FA_WRITE);
+	if (res != FR_OK) {
+		SDCard_Unmount();
+	}
+	return res;
+}
+
+FRESULT SD_SysID_WriteChunk(const char *data, UINT len) {
+	if (len == 0)
+		return FR_OK;
+	if (s_sysid_io_len + len >= sizeof(s_sysid_io_buf)) {
+		FRESULT res = SD_SysID_Flush();
+		if (res != FR_OK)
+			return res;
+	}
+	if (len >= sizeof(s_sysid_io_buf)) {
+		UINT bw = 0;
+		return f_write(&SDFile_NC, data, len, &bw);
+	}
+	memcpy(s_sysid_io_buf + s_sysid_io_len, data, len);
+	s_sysid_io_len += len;
+	return FR_OK;
+}
+
+FRESULT SD_SysID_Close(void) {
+	FRESULT res1 = SD_SysID_Flush();
+	FRESULT res2 = f_close(&SDFile_NC);
+	SDCard_Unmount();
+	return (res1 != FR_OK) ? res1 : res2;
 }
 
 // ============================================================================

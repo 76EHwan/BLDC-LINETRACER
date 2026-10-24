@@ -71,7 +71,8 @@ MenuItem_t sensor_menu_items[] = {
     { .name = "State",        .pfnActionCallback = Sensor_State_Printf },
 	{ .name = "Position",     .pfnActionCallback = Sensor_Position_Printf },
     { .name = "Update Thres", .pfnActionCallback = NULL },
-    { .name = "IMU Test",     .pfnActionCallback = IMU_Test }
+    { .name = "IMU Test",     .pfnActionCallback = IMU_Test },
+    { .name = "SysID Log",    .pfnActionCallback = Sensor_SysID_Log }
 };
 
 MenuItem_t motor_menu_items[] = {
@@ -87,6 +88,7 @@ MenuItem_t motor_menu_items[] = {
 	{ .name = "Battery Volt",	.pfnActionCallback = Battery_Check_Safe		},
 	{ .name = "Load From SD",	.pfnActionCallback = FOC_Menu_LoadFromSD	},
 	{ .name = "Save To SD",		.pfnActionCallback = FOC_Menu_SaveToSD		},
+	{ .name = "SysID Test",		.pfnActionCallback = MTR_SysID_Test			},
 };
 
 MenuItem_t drive_menu_items[] = {
@@ -96,6 +98,7 @@ MenuItem_t drive_menu_items[] = {
     { .name = "4th Drive",    .pfnActionCallback = Drive_Fourth				},
 	{ .name = "AI Auto-Heal", .pfnActionCallback = Drive_AutoHeal_Menu		},
 	{ .name = "Vibe Test",    .pfnActionCallback = Drive_Vibration_Test		},
+	{ .name = "SysID Drive",  .pfnActionCallback = Drive_SysID_Test			},
     { .name = "Update Param", .pfnActionCallback = NULL, 				.child_menu = &drive_param_menu },
 };
 

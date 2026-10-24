@@ -856,3 +856,192 @@ void Battery_Check_Safe(void) {
 	MTR_TIM_Stop(&foc_R);
 	LCD_Clear();
 }
+
+
+#include "sd_ui.h"
+
+void MTR_SysID_Test(void) {
+	LCD_Clear();
+	LCD_Printf(0, 0, "Motor SysID");
+	LCD_Printf(0, 1, "Lift Wheels!");
+	HAL_Delay(500);
+
+	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
+	foc_L.omega_ramp_rate = 100000.0f;
+	foc_R.omega_ramp_rate = 100000.0f;
+
+	uint32_t n = 0;
+	uint32_t t0 = HAL_GetTick();
+	uint8_t aborted = 0;
+
+	// Phase 0: 전류 루프 스텝 응답 (80 샘플, 1ms 간격)
+	foc_L.speed_loop_en = 0;
+	foc_R.speed_loop_en = 0;
+	foc_L.target_Iq = 0.0f;
+	foc_R.target_Iq = 0.0f;
+	for (int k = 0; k < 80 && n < SYSID_DRIVE_SAMPLE_MAX; k++) {
+		float id_cmd = (k < 40) ? 1.5f : 0.0f;
+		foc_L.target_Id = id_cmd;
+		foc_R.target_Id = id_cmd;
+
+		SysID_DriveSample_t *sp = &g_sysid_drive_buf[n++];
+		sp->t_ms = (uint16_t) (HAL_GetTick() - t0);
+		sp->line_pos_x10k = 0;
+		sp->tgt_mps_mmps = 0;
+		sp->mps_L_mmps = (int16_t) foc_L.omega_e_meas;
+		sp->mps_R_mmps = (int16_t) (-foc_R.omega_e_meas);
+		sp->tgt_iq_L_mA = (int16_t) (foc_L.target_Id * 1000.0f);
+		sp->tgt_iq_R_mA = (int16_t) (foc_R.target_Id * 1000.0f);
+		sp->iq_L_mA = (int16_t) (foc_L.I_d * 1000.0f);
+		sp->iq_R_mA = (int16_t) (foc_R.I_d * 1000.0f);
+		sp->gyro_z_ddps = (int16_t) (foc_L.V_d * 100.0f);
+		sp->odom_mm = (uint16_t) (int16_t) (foc_R.V_d * 100.0f);
+		sp->marker_cnt = 0;
+		sp->vbus_dV = (uint8_t) (FOC_Get_VBus() * 10.0f);
+		HAL_Delay(1);
+	}
+	foc_L.target_Id = 0.0f;
+	foc_R.target_Id = 0.0f;
+
+	// Phase 1..7: 무부하 속도 계단 스윕 (쿨롱 마찰 + 점성 마찰 + 속도 스텝 응답)
+	static const float test_omegas[7] = {
+		200.0f, 400.0f, 600.0f, 800.0f, 1000.0f, 1200.0f, 1500.0f
+	};
+	float step_w[7] = { 0 };
+	float step_iq[7] = { 0 };
+	int valid_steps = 0;
+
+	foc_L.speed_loop_en = 1;
+	foc_R.speed_loop_en = 1;
+
+	for (int s = 0; s < 7 && !aborted; s++) {
+		float w = test_omegas[s];
+		foc_L.target_omega = w;
+		foc_R.target_omega = -w;
+		foc_L.omega_setpoint = w;
+		foc_R.omega_setpoint = -w;
+
+		LCD_Printf(0, 2, "Step %d/7:%4.0f", s + 1, w);
+
+		float sum_w = 0.0f;
+		float sum_iq = 0.0f;
+		int steady_cnt = 0;
+
+		for (int k = 0; k < 120 && n < SYSID_DRIVE_SAMPLE_MAX; k++) {
+			if (Button_Get_Input() == INPUT_CMD_K_HOLD) {
+				aborted = 1;
+				break;
+			}
+			float iq_l_meas = (fabsf(foc_L.I_q) > 1e-4f) ? foc_L.I_q : foc_L.target_Iq;
+			float iq_r_meas = (fabsf(foc_R.I_q) > 1e-4f) ? (-foc_R.I_q) : (-foc_R.target_Iq);
+
+			SysID_DriveSample_t *sp = &g_sysid_drive_buf[n++];
+			sp->t_ms = (uint16_t) (HAL_GetTick() - t0);
+			sp->line_pos_x10k = (int16_t) (s + 1);
+			sp->tgt_mps_mmps = (int16_t) w;
+			sp->mps_L_mmps = (int16_t) foc_L.omega_e_meas;
+			sp->mps_R_mmps = (int16_t) (-foc_R.omega_e_meas);
+			sp->tgt_iq_L_mA = (int16_t) (foc_L.target_Iq * 1000.0f);
+			sp->tgt_iq_R_mA = (int16_t) (-foc_R.target_Iq * 1000.0f);
+			sp->iq_L_mA = (int16_t) (iq_l_meas * 1000.0f);
+			sp->iq_R_mA = (int16_t) (iq_r_meas * 1000.0f);
+			sp->gyro_z_ddps = (int16_t) (foc_L.V_q * 100.0f);
+			sp->odom_mm = (uint16_t) (int16_t) (-foc_R.V_q * 100.0f);
+			sp->marker_cnt = (uint8_t) (s + 1);
+			sp->vbus_dV = (uint8_t) (FOC_Get_VBus() * 10.0f);
+
+			if (k >= 60) {
+				sum_w += 0.5f * (fabsf(foc_L.omega_e_meas) + fabsf(foc_R.omega_e_meas));
+				sum_iq += 0.5f * (fabsf(iq_l_meas) + fabsf(iq_r_meas));
+				steady_cnt++;
+			}
+			HAL_Delay(5);
+		}
+		if (!aborted && steady_cnt > 0) {
+			step_w[valid_steps] = sum_w / (float) steady_cnt;
+			step_iq[valid_steps] = sum_iq / (float) steady_cnt;
+			valid_steps++;
+		}
+	}
+
+	float vbus_now = FOC_Get_VBus();
+	MTR_Safe_Stop();
+
+	// 선형 회귀: tau = Kt * Iq = friction + viscous * omega
+	float friction_Nm = 0.00025f;
+	float viscous_Nms = 2.0e-8f;
+	if (valid_steps >= 2) {
+		float sw = 0.0f, st = 0.0f, sww = 0.0f, swt = 0.0f;
+		for (int i = 0; i < valid_steps; i++) {
+			float w = step_w[i];
+			float tau = MOTOR_TORQUE_CONSTANT * step_iq[i];
+			sw += w;
+			st += tau;
+			sww += w * w;
+			swt += w * tau;
+		}
+		float denom = (float) valid_steps * sww - sw * sw;
+		if (fabsf(denom) > 1e-6f) {
+			viscous_Nms = ((float) valid_steps * swt - sw * st) / denom;
+			friction_Nm = (st - viscous_Nms * sw) / (float) valid_steps;
+			if (viscous_Nms < 0.0f) viscous_Nms = 0.0f;
+			if (friction_Nm < 0.0f) friction_Nm = 0.0f;
+		}
+	}
+
+	LCD_Clear();
+	LCD_Printf(0, 0, "Saving MotorID..");
+	FRESULT res = SD_SysID_Open(SYSID_MOTOR_PATH);
+	if (res == FR_OK) {
+		char line[256];
+		int len = snprintf(line, sizeof(line),
+				"# kt=%.6f\n# r_phase=%.4f\n# j_rotor=%.4e\n# gear=%.7f\n"
+				"# vbus=%.3f\n# fitted_friction_Nm=%.6e\n# fitted_viscous_Nms=%.6e\n"
+				"step,t_ms,target_omega,meas_omega_L,meas_omega_R,"
+				"target_iq_L,target_iq_R,meas_iq_L,meas_iq_R,vq_L,vq_R,vbus\n",
+				(double) MOTOR_TORQUE_CONSTANT,
+				(double) MOTOR_PARAM_PHASE_RESISTOR,
+				(double) MOTOR_PARAM_ROTOR_INERTIA,
+				(double) GEAR_RATIO,
+				(double) vbus_now,
+				(double) friction_Nm,
+				(double) viscous_Nms);
+		SD_SysID_WriteChunk(line, (UINT) len);
+
+		for (uint32_t i = 0; i < n; i++) {
+			const SysID_DriveSample_t *sp = &g_sysid_drive_buf[i];
+			int16_t vq_r_cV = (int16_t) sp->odom_mm;
+			len = snprintf(line, sizeof(line),
+					"%d,%u,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%.1f\n",
+					(int) sp->line_pos_x10k,
+					(unsigned) sp->t_ms,
+					(int) sp->tgt_mps_mmps,
+					(int) sp->mps_L_mmps,
+					(int) sp->mps_R_mmps,
+					sp->tgt_iq_L_mA * 0.001f,
+					sp->tgt_iq_R_mA * 0.001f,
+					sp->iq_L_mA * 0.001f,
+					sp->iq_R_mA * 0.001f,
+					sp->gyro_z_ddps * 0.01f,
+					vq_r_cV * 0.01f,
+					sp->vbus_dV * 0.1f);
+			SD_SysID_WriteChunk(line, (UINT) len);
+		}
+		res = SD_SysID_Close();
+	}
+
+	LCD_Clear();
+	LCD_Printf(0, 0, "Motor SysID");
+	LCD_Printf(0, 1, (res == FR_OK) ? "Saved SD OK!" : "Save Err:%d", res);
+	LCD_Printf(0, 2, "/SysID_Data/");
+	LCD_Printf(0, 3, "motor_sysid.csv");
+	LCD_Printf(0, 5, "Fric:%.3fmNm", friction_Nm * 1000.0f);
+	LCD_Printf(0, 6, "Visc:%.2e", viscous_Nms);
+	LCD_Printf(0, 7, "Vbus:%.2fV", vbus_now);
+	LCD_Printf(0, 9, "[K Hold] Exit");
+
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
+		;
+	Button_Wait_Release(&btn_k);
+	LCD_Clear();
+}
