@@ -183,6 +183,7 @@ typedef enum {
 static MarkerState_t g_marker_state = MARKER_STATE_IDLE;
 static uint8_t g_accum_left = 0;
 static uint8_t g_accum_right = 0;
+static uint8_t g_both_marker_coincident = 0;
 static uint16_t g_accum_center_state = 0;
 static uint8_t g_is_curve_state = 0;
 static uint16_t g_marker_on_count = 0;
@@ -352,6 +353,7 @@ void Cross_Detect_Reset(void) {
 	g_marker_state = MARKER_STATE_IDLE;
 	g_accum_left = 0;
 	g_accum_right = 0;
+	g_both_marker_coincident = 0;
 	g_accum_center_state = 0;
 	g_marker_on_count = 0;
 	g_marker_off_count = 0;
@@ -406,6 +408,7 @@ CrossEvent_t Cross_Detect_Update(void) {
 			g_marker_state = MARKER_STATE_READING;
 			g_accum_left = left_marker;
 			g_accum_right = right_marker;
+			g_both_marker_coincident = (left_marker && right_marker);
 			g_accum_center_state = current_center_state;
 			g_marker_on_count = 1;
 			g_marker_off_count = 0;
@@ -417,6 +420,8 @@ CrossEvent_t Cross_Detect_Update(void) {
 			g_accum_left = 1;
 		if (right_marker)
 			g_accum_right = 1;
+		if (left_marker && right_marker)
+			g_both_marker_coincident = 1;
 		if (left_marker || right_marker) {
 			g_marker_on_count++;
 			g_marker_off_count = 0;
@@ -428,8 +433,8 @@ CrossEvent_t Cross_Detect_Update(void) {
 			// 순간 노이즈 딥으로 인한 조기 분할 방지: 최소 2사이클 연속 오프 시에만 마커 종료로 판정
 			if (g_marker_off_count >= 4) {
 				// 최소 감지 펄스 폭 검증: 1사이클짜리 순간 노이즈 스파이크는 무시
-				if (g_marker_on_count >= 3) {
-					if (g_accum_left && g_accum_right) {
+				if (g_marker_on_count >= 2) {
+					if (g_accum_left && g_accum_right && g_both_marker_coincident) {
 						uint8_t center_on_count = 0;
 						for (int i = 0; i < 16; i++) {
 							if (g_accum_center_state & (1 << i))
@@ -452,6 +457,7 @@ CrossEvent_t Cross_Detect_Update(void) {
 				g_marker_state = MARKER_STATE_IDLE;
 				g_accum_left = 0;
 				g_accum_right = 0;
+				g_both_marker_coincident = 0;
 				g_accum_center_state = 0;
 				g_marker_on_count = 0;
 				g_marker_off_count = 0;

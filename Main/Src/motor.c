@@ -186,9 +186,10 @@ void Steer_Motor() {
 	float32_t line_pos = Sensor_Get_Position();
 	float32_t error = line_pos - IR_Sensor.data->target_pos;
 
-	// 2. 미분항(Kd)에 1차 저역통과 필터(LPF) 적용 (2kHz 샘플링 고주파 노이즈 증폭 차단)
-	float32_t raw_deriv = error - g_prev_steer_error;
-	g_prev_steer_error = error;
+	// 2. 미분항(Kd): 측정값(line_pos) 미분(Derivative-on-Measurement) 적용
+	//    target_pos가 동적으로 이동할 때 인공적인 Kd 미분 킥(스파이크) 및 자이로 요레이트 폭주 차단
+	float32_t raw_deriv = line_pos - g_prev_steer_error;
+	g_prev_steer_error = line_pos;
 
 	// LPF 차단주파수 약 80Hz (dt = 0.0005s, alpha = 0.80f)
 	const float32_t lpf_alpha = 0.80f;
@@ -238,7 +239,7 @@ void Steer_Motor() {
 	if (active_mps > v_base) {
 		float32_t speed_ratio = v_base / active_mps;
 		p_term *= speed_ratio;
-		d_term *= (speed_ratio * speed_ratio);
+		d_term *= speed_ratio;
 	}
 
 	g_current_steer = p_term + d_term;

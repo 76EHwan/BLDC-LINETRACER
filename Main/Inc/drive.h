@@ -57,6 +57,7 @@ void Drive_First(void);
 void Drive_Second(void); // 2회차 주행 함수 추가
 void Drive_Third(void);
 void Drive_Fourth(void);
+void Drive_Fifth(void);
 
 void Drive_Vibration_Test(void);
 void Drive_SysID_Test(void);
@@ -68,7 +69,7 @@ void Ramp_Stop(void);
 
 // 실기(Sim2Real) 주행 텔레메트리 진단 및 온보드 AI Auto-Heal
 typedef struct {
-	uint8_t drive_mode;        // 최근 실행된 주행 모드 (1~4)
+	uint8_t drive_mode;        // 최근 실행된 주행 모드 (1~5)
 	uint8_t line_lost;         // 라인 이탈 여부 (1 = Line Lost, 0 = 완주)
 	uint8_t was_oversteer;     // 오버스티어/스핀 감지 여부 (1 = Oversteer, 0 = Understeer)
 	float_t max_beta_deg;      // 추정 최대 슬립각 [deg]
