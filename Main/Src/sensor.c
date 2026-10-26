@@ -30,22 +30,22 @@ static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1, 
 static const uint8_t scan_group2[SCAN_GROUP_LEN] = { 9, 6, 4, 11, 13, 2, 0, 15, 16, 17 };
 
 const float32_t line_sensor_pos[LINE_N_SENSORS] = {
-		 -1.0f,
-		 -13.0f / 15.0f,
-		 -11.0f / 15.0f,
-		 -9.0f / 15.0f,
-		 -7.0f / 15.0f,
-		 -5.0f / 15.0f,
-		 -3.0f / 15.0f,
-		 -1.0f / 15.0f,
-		 1.0f / 15.0f,
-		 3.0f / 15.0f,
-		 5.0f / 15.0f,
-		 7.0f / 15.0f,
-		 9.0f / 15.0f,
-		 11.0f / 15.0f,
-		 13.0f / 15.0f,
-		 1.0f
+		-1.00000f,
+		-0.88282f,
+		-0.75897f,
+		-0.62929f,
+		-0.49450f,
+		-0.35592f,
+		-0.21465f,
+		-0.07175f,
+		 0.07175f,
+		 0.21465f,
+		 0.35592f,
+		 0.49450f,
+		 0.62929f,
+		 0.75897f,
+		 0.88282f,
+		 1.00000f
 };
 
 volatile SensorData_TypeDef sensorData = {
@@ -183,8 +183,12 @@ typedef enum {
 static MarkerState_t g_marker_state = MARKER_STATE_IDLE;
 static uint8_t g_accum_left = 0;
 static uint8_t g_accum_right = 0;
+static uint8_t g_both_marker_coincident = 0;
 static uint16_t g_accum_center_state = 0;
 static uint8_t g_is_curve_state = 0;
+static uint16_t g_marker_on_count = 0;
+static uint16_t g_marker_off_count = 0;
+#define MARKER_MIN_BLIND_DIST_M 0.080f  // 최소 마커 두께(20mm): 마커 통과 직후 20mm 이내의 노이즈 재트리거(고스트) 차단
 
 float32_t Sensor_Get_Position(void) {
 	static int8_t prev_peak_idx = LINE_N_SENSORS / 2;
@@ -278,27 +282,39 @@ float32_t Sensor_Get_Position(void) {
 	IR_Sensor.data->mark_left = mark_left;
 	IR_Sensor.data->mark_right = mark_right;
 
-	float32_t weighted_sum = 0.0f;
-	uint32_t total_weight = 0;
-
-	for (int8_t i = calc_start; i <= calc_end; i++) {
-		uint16_t val = IR_Sensor.data->normalized[i];
-
-		weighted_sum += (float32_t) val * line_sensor_pos[i];
-		total_weight += val;
+	// 바닥 잔류 노이즈 플로어: 윈도우 내 최소 센서 값 탐색
+	uint16_t min_noise = IR_Sensor.data->normalized[calc_start];
+	uint32_t raw_sum = IR_Sensor.data->normalized[calc_start];
+	for (int8_t i = calc_start + 1; i <= calc_end; i++) {
+		uint16_t v = IR_Sensor.data->normalized[i];
+		raw_sum += v;
+		if (v < min_noise) {
+			min_noise = v;
+		}
 	}
 
-	if (total_weight > IR_Sensor.data->line_lost_sum_min) {
+	float32_t weighted_sum = 0.0f;
+	float32_t total_weight = 0.0f;
+
+	for (int8_t i = calc_start; i <= calc_end; i++) {
+		int32_t net_val = (int32_t) IR_Sensor.data->normalized[i] - (int32_t) min_noise;
+		if (net_val > 0) {
+			// 노이즈 플로어 차감 및 제곱 가중으로 계단형 점프(윈도우 경계 불연속) 제거
+			float32_t w = (float32_t) (net_val * net_val);
+			weighted_sum += w * line_sensor_pos[i];
+			total_weight += w;
+		}
+	}
+
+	if (raw_sum > IR_Sensor.data->line_lost_sum_min) {
 		IR_Sensor.is_lost_position = 0;
 		lost_counter = 0;
 
 		if (is_cross_line) {
-			// ★ 수정: 오차 강제 추종(frozen_error) 제거, 크로스 진입 직전의 실제 라인 위치 반환
-			// target_pos가 이동함에 따라 에러(오차)가 자연스럽게 커지며 조향을 부드럽게 유지합니다.
 			return prev_position;
 		}
 
-		float32_t current_position = weighted_sum / (float32_t) total_weight;
+		float32_t current_position = (total_weight > 0.0f) ? (weighted_sum / total_weight) : line_sensor_pos[current_peak_idx];
 		prev_position = current_position; // 정상 라인일 때 절대 위치 갱신
 
 		return current_position;
@@ -337,7 +353,10 @@ void Cross_Detect_Reset(void) {
 	g_marker_state = MARKER_STATE_IDLE;
 	g_accum_left = 0;
 	g_accum_right = 0;
+	g_both_marker_coincident = 0;
 	g_accum_center_state = 0;
+	g_marker_on_count = 0;
+	g_marker_off_count = 0;
 
 	g_prev_imu_yaw = imu_data.Yaw_Angle;
 	g_continuous_yaw = 0.0f;
@@ -381,11 +400,18 @@ CrossEvent_t Cross_Detect_Update(void) {
 
 	switch (g_marker_state) {
 	case MARKER_STATE_IDLE:
+		// 불응 거리 보호: 직전 마커 판정 후 최소 마커 두께(20mm) 주행 전에는 노이즈나 테이프 잔류 신호로 인한 재인식 차단
+		if (g_cross_log_count > 0 && g_odom_distance_m < MARKER_MIN_BLIND_DIST_M) {
+			break;
+		}
 		if (left_marker || right_marker) {
 			g_marker_state = MARKER_STATE_READING;
 			g_accum_left = left_marker;
 			g_accum_right = right_marker;
+			g_both_marker_coincident = (left_marker && right_marker);
 			g_accum_center_state = current_center_state;
+			g_marker_on_count = 1;
+			g_marker_off_count = 0;
 			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
 		}
 		break;
@@ -394,33 +420,49 @@ CrossEvent_t Cross_Detect_Update(void) {
 			g_accum_left = 1;
 		if (right_marker)
 			g_accum_right = 1;
+		if (left_marker && right_marker)
+			g_both_marker_coincident = 1;
+		if (left_marker || right_marker) {
+			g_marker_on_count++;
+			g_marker_off_count = 0;
+		}
 		g_accum_center_state |= current_center_state;
 
 		if (!left_marker && !right_marker) {
-			if (g_accum_left && g_accum_right) {
-				uint8_t center_on_count = 0;
-				for (int i = 0; i < 16; i++) {
-					if (g_accum_center_state & (1 << i))
-						center_on_count++;
+			g_marker_off_count++;
+			// 순간 노이즈 딥으로 인한 조기 분할 방지: 최소 2사이클 연속 오프 시에만 마커 종료로 판정
+			if (g_marker_off_count >= 4) {
+				// 최소 감지 펄스 폭 검증: 1사이클짜리 순간 노이즈 스파이크는 무시
+				if (g_marker_on_count >= 2) {
+					if (g_accum_left && g_accum_right && g_both_marker_coincident) {
+						uint8_t center_on_count = 0;
+						for (int i = 0; i < 16; i++) {
+							if (g_accum_center_state & (1 << i))
+								center_on_count++;
+						}
+						if (center_on_count >= 12) {
+							event = CROSS_CROSS;
+						} else {
+							event = CROSS_STOP;
+							g_last_stop_state = g_accum_center_state;
+							g_last_stop_count = center_on_count;
+						}
+					} else if (g_accum_left) {
+						event = CROSS_LEFT;
+					} else if (g_accum_right) {
+						event = CROSS_RIGHT;
+					}
 				}
-				if (center_on_count >= 12) {
-					event = CROSS_CROSS;
-				} else {
-					event = CROSS_STOP;
-					g_last_stop_state = g_accum_center_state;
-					g_last_stop_count = center_on_count;
-				}
-			} else if (g_accum_left) {
-				event = CROSS_LEFT;
-			} else if (g_accum_right) {
-				event = CROSS_RIGHT;
-			}
 
-			g_marker_state = MARKER_STATE_IDLE;
-			g_accum_left = 0;
-			g_accum_right = 0;
-			g_accum_center_state = 0;
-			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+				g_marker_state = MARKER_STATE_IDLE;
+				g_accum_left = 0;
+				g_accum_right = 0;
+				g_both_marker_coincident = 0;
+				g_accum_center_state = 0;
+				g_marker_on_count = 0;
+				g_marker_off_count = 0;
+				HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+			}
 		}
 		break;
 	}
@@ -659,4 +701,110 @@ void IMU_Test(void) {
 
 	LCD_Clear();
 	Button_Wait_Release(&btn_k);
+}
+
+
+void Sensor_SysID_Log(void) {
+	LCD_Clear();
+	LCD_Printf(0, 0, "Sensor SysID");
+	LCD_Printf(0, 1, "Keep Still 1.0s");
+
+	if (!IR_Sensor.is_calibration) {
+		Sensor_Load_Calibration();
+	}
+
+	Sensor_Start();
+	HAL_Delay(20);
+
+	FRESULT res = SD_SysID_Open(SYSID_SENSOR_PATH);
+	if (res != FR_OK) {
+		Sensor_Stop();
+		LCD_Printf(0, 3, "SD Fail: %d", res);
+		while (Button_Get_Input() != INPUT_CMD_K_HOLD)
+			;
+		LCD_Clear();
+		return;
+	}
+
+	char line[320];
+	int len = snprintf(line, sizeof(line), "# whitemax=");
+	for (int ch = 0; ch < NUM_SENSORS; ch++) {
+		len += snprintf(line + len, sizeof(line) - len, "%u%s",
+				(unsigned) IR_Sensor.data->whitemax[ch],
+				(ch + 1 < NUM_SENSORS) ? "," : "\n");
+	}
+	SD_SysID_WriteChunk(line, (UINT) len);
+
+	len = snprintf(line, sizeof(line), "# blackmax=");
+	for (int ch = 0; ch < NUM_SENSORS; ch++) {
+		len += snprintf(line + len, sizeof(line) - len, "%u%s",
+				(unsigned) IR_Sensor.data->blackmax[ch],
+				(ch + 1 < NUM_SENSORS) ? "," : "\n");
+	}
+	SD_SysID_WriteChunk(line, (UINT) len);
+
+	len = snprintf(line, sizeof(line),
+			"# gyro_z_offset=%.4f\n"
+			"sample,t_ms,raw_00,raw_01,raw_02,raw_03,raw_04,raw_05,raw_06,raw_07,"
+			"raw_08,raw_09,raw_10,raw_11,raw_12,raw_13,raw_14,raw_15,raw_16,raw_17,"
+			"gyro_z_dps,gyro_z_offset\n",
+			imu_data.Gyro_Z_Offset);
+	SD_SysID_WriteChunk(line, (UINT) len);
+
+	float ir_mean[LINE_N_SENSORS] = { 0 };
+	float ir_m2[LINE_N_SENSORS] = { 0 };
+	float gz_mean = 0.0f;
+	float gz_m2 = 0.0f;
+
+	const int N_SAMPLES = 200;
+	uint32_t t0 = HAL_GetTick();
+	for (int k = 0; k < N_SAMPLES; k++) {
+		uint32_t dt_ms = HAL_GetTick() - t0;
+		float n_f = (float) (k + 1);
+
+		len = snprintf(line, sizeof(line), "%d,%lu", k, (unsigned long) dt_ms);
+		for (int ch = 0; ch < NUM_SENSORS; ch++) {
+			uint16_t r = IR_Sensor.data->raw[ch];
+			len += snprintf(line + len, sizeof(line) - len, ",%u", (unsigned) r);
+			if (ch < LINE_N_SENSORS) {
+				float d = (float) r - ir_mean[ch];
+				ir_mean[ch] += d / n_f;
+				ir_m2[ch] += d * ((float) r - ir_mean[ch]);
+			}
+		}
+		float gz = imu_data.Gyro_Z;
+		float d_gz = gz - gz_mean;
+		gz_mean += d_gz / n_f;
+		gz_m2 += d_gz * (gz - gz_mean);
+
+		len += snprintf(line + len, sizeof(line) - len, ",%.4f,%.4f\n",
+				gz, imu_data.Gyro_Z_Offset);
+		SD_SysID_WriteChunk(line, (UINT) len);
+		HAL_Delay(5);
+	}
+
+	FRESULT close_res = SD_SysID_Close();
+	Sensor_Stop();
+
+	float ir_std_sum = 0.0f;
+	for (int ch = 0; ch < LINE_N_SENSORS; ch++) {
+		ir_std_sum += sqrtf(ir_m2[ch] / (float) (N_SAMPLES - 1));
+	}
+	float ir_noise_lsb = ir_std_sum / (float) LINE_N_SENSORS;
+	float gz_noise_dps = sqrtf(gz_m2 / (float) (N_SAMPLES - 1));
+
+	LCD_Clear();
+	LCD_Printf(0, 0, "Sensor SysID");
+	LCD_Printf(0, 1, (close_res == FR_OK) ? "Saved SD OK!" : "Save Err:%d", close_res);
+	LCD_Printf(0, 2, "/SysID_Data/");
+	LCD_Printf(0, 3, "sensor_sysid.csv");
+	LCD_Printf(0, 5, "IR Noise:%.1fLSB", ir_noise_lsb);
+	LCD_Printf(0, 6, "Gz Noise:%.3fdps", gz_noise_dps);
+	LCD_Printf(0, 7, "Gz Bias :%.3fdps", fabsf(gz_mean));
+	LCD_Printf(0, 9, "[K Hold] Exit");
+
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
+		;
+	Button_Wait_Release(&btn_k);
+	LCD_Clear();
 }

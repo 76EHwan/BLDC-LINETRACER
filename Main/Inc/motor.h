@@ -34,6 +34,7 @@ void MTR_Simple_FOC(void);
 void MTR_Encoder_Test(void);
 void MTR_Speed_FOC(void);
 void MTR_Current_Tune_Loop(void);
+void MTR_SysID_Test(void);
 
 void Fan_Mtr_Start(void);
 void Fan_Mtr_Set_Duty(uint8_t duty);
@@ -43,5 +44,6 @@ void Magnet_Encoder_Test(void);
 void Battery_Check_Safe(void);
 
 void Steer_Motor(void);
+void Steer_Reset_State(void);
 
 #endif /* INC_MOTOR_H_ */

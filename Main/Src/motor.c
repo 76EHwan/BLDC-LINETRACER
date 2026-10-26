@@ -5,6 +5,7 @@
 #include "mt6701.h"
 
 #include "drive.h" // 조향 제어 시 목표 속도(g_current_base_mps) 참조용
+#include "lsm6ds3tr-c.h" // 캐스케이드 조향: imu_data.Gyro_Z
 #include "motor.h"
 #include "sensor.h"
 #include "user_init.h"
@@ -166,13 +167,33 @@ void Fan_Mtr_Stop() {
 arm_pid_instance_f32 steer_pid;
 static volatile float32_t g_current_steer = 0.0f;
 static volatile float32_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
+static volatile float32_t g_yaw_integ = 0.0f;    // 캐스케이드 안쪽 루프 적분 [rad/s]
+static volatile float32_t g_grip_atten = 1.0f;   // 접지 한계 감속 비율 (lat_acc_max)
+static volatile float32_t g_prev_steer_error = 0.0f;
+static volatile float32_t g_filtered_deriv = 0.0f;
+#define YAW_INTEG_MAX 5.0f                        // 적분 한계 [rad/s]
+
+void Steer_Reset_State(void) {
+	g_yaw_integ = 0.0f;
+	g_grip_atten = 1.0f;
+	filtered_atten = 1.0f;
+	g_prev_steer_error = 0.0f;
+	g_filtered_deriv = 0.0f;
+}
+
 void Steer_Motor() {
 	// 1. float32_t 자료형 사용으로 단정밀도(Single-Precision) 강제
 	float32_t line_pos = Sensor_Get_Position();
 	float32_t error = line_pos - IR_Sensor.data->target_pos;
 
-	// 2. arm_pid_f32 입출력에 완벽히 매칭됨
-	g_current_steer = arm_pid_f32(&steer_pid, error);
+	// 2. 미분항(Kd): 측정값(line_pos) 미분(Derivative-on-Measurement) 적용
+	//    target_pos가 동적으로 이동할 때 인공적인 Kd 미분 킥(스파이크) 및 자이로 요레이트 폭주 차단
+	float32_t raw_deriv = line_pos - g_prev_steer_error;
+	g_prev_steer_error = line_pos;
+
+	// LPF 차단주파수 약 80Hz (dt = 0.0005s, alpha = 0.80f)
+	const float32_t lpf_alpha = 0.80f;
+	g_filtered_deriv = (lpf_alpha * g_filtered_deriv) + ((1.0f - lpf_alpha) * raw_deriv);
 
 	// 3. fabsf()와 1.0f 등 단정밀도 전용 수학 함수/리터럴 사용
 	float32_t raw_atten = 1.0f - (fabsf(error) * driveData.pos_atten_gain);
@@ -192,15 +213,67 @@ void Steer_Motor() {
 	// 필터가 적용된 실제 주행 속도
 	float32_t active_mps = g_current_base_mps * filtered_atten;
 
-	// 양쪽 모터 목표 속도 산출 (상수를 1.0f 형태로 명시)
-	float32_t mps_L = active_mps * (1.0f + g_current_steer * THREAD_DIV2);
-	float32_t mps_R = active_mps * (1.0f - g_current_steer * THREAD_DIV2);
+	// Gyro_Z [dps]는 좌회전(CCW)이 + 이므로 부호를 뒤집는다: yaw_meas [rad/s], + = 우회전
+	float32_t yaw_meas = -(imu_data.Gyro_Z - imu_data.Gyro_Z_Offset) * (PI / 180.0f);
+
+	// 4. 접지 한계 감속: 속도 x 요레이트(= 횡가속도)가 lat_acc_max를 넘으면 그만큼 속도를 낮춘다.
+	//    곡선에서 미끄러지지 않게(엔코더 거리, 마커 인식이 깨끗하게). 빨리 내리고 천천히(약 0.1 s) 올린다.
+	if (driveData.lat_acc_max > 0.0f) {
+		float32_t a_lat = active_mps * fabsf(yaw_meas);
+		float32_t raw = (a_lat > driveData.lat_acc_max) ? driveData.lat_acc_max / a_lat : 1.0f;
+		if (raw < g_grip_atten)
+			g_grip_atten = raw;
+		else
+			g_grip_atten = 0.995f * g_grip_atten + 0.005f * raw;
+		active_mps *= g_grip_atten;
+	} else {
+		g_grip_atten = 1.0f;
+	}
+
+	// 5. 속도 스케일링: 고속 가속 구간(max_mps)에서 루프 이득이 과도해져 발진하지 않도록 보정
+	//    (이동거리 미분 de/ds 및 Pure Pursuit 곡률 기반 보정)
+	float32_t p_term = steer_pid.Kp * error;
+	float32_t d_term = steer_pid.Kd * g_filtered_deriv;
+
+	float32_t v_base = driveData.base_mps > 0.5f ? driveData.base_mps : 1.0f;
+	if (active_mps > v_base) {
+		float32_t speed_ratio = v_base / active_mps;
+		p_term *= speed_ratio;
+		d_term *= speed_ratio;
+	}
+
+	g_current_steer = p_term + d_term;
+
+	// 6. 캐스케이드 조향: 라인 PD 출력(steer, 곡률)을 목표 요레이트로 바꾸고 자이로로 추종
+	//    yaw_ref [rad/s], + = 우회전(왼쪽 바퀴가 빠름). yaw_gain_p = yaw_gain_i = 0이면 기존 PD와 동일.
+	float32_t yaw_ref = active_mps * g_current_steer;
+	float32_t yaw_cmd = yaw_ref;
+	if (driveData.yaw_gain_p > 0.0f || driveData.yaw_gain_i > 0.0f) {
+		float32_t yaw_err = yaw_ref - yaw_meas;
+		if (active_mps > 0.05f) {
+			g_yaw_integ += driveData.yaw_gain_i * yaw_err * RAMP_DT;
+			g_yaw_integ = fminf(fmaxf(g_yaw_integ, -YAW_INTEG_MAX), YAW_INTEG_MAX);
+		} else {
+			g_yaw_integ = 0.0f;
+		}
+		yaw_cmd = yaw_ref + driveData.yaw_gain_p * yaw_err + g_yaw_integ;
+	} else {
+		g_yaw_integ = 0.0f;
+	}
+
+	// 양쪽 모터 목표 속도 산출: 바퀴 속도차 = 요레이트 x 바퀴 간격
+	float32_t mps_L = active_mps + yaw_cmd * THREAD_DIV2;
+	float32_t mps_R = active_mps - yaw_cmd * THREAD_DIV2;
 
 	foc_L.target_omega = mps_L * MPS_TO_OMEGA;
 	foc_R.target_omega = -mps_R * MPS_TO_OMEGA;
 
 	foc_L.omega_setpoint = foc_L.target_omega;
 	foc_R.omega_setpoint = foc_R.target_omega;
+
+	// 7. 실기(Sim2Real) 텔레메트리 실시간 수집 (추정 슬립각 beta, 자이로 진동 에너지 weave, 이탈 직전 속도)
+	Drive_Diag_Update_ISR(line_pos, active_mps, yaw_meas, yaw_ref,
+			imu_data.Gyro_Z - imu_data.Gyro_Z_Offset);
 }
 
 // ====================================================================
@@ -782,5 +855,194 @@ void Battery_Check_Safe(void) {
 	FOC_ADC_Stop();
 	MTR_TIM_Stop(&foc_L);
 	MTR_TIM_Stop(&foc_R);
+	LCD_Clear();
+}
+
+
+#include "sd_ui.h"
+
+void MTR_SysID_Test(void) {
+	LCD_Clear();
+	LCD_Printf(0, 0, "Motor SysID");
+	LCD_Printf(0, 1, "Lift Wheels!");
+	HAL_Delay(500);
+
+	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
+	foc_L.omega_ramp_rate = 100000.0f;
+	foc_R.omega_ramp_rate = 100000.0f;
+
+	uint32_t n = 0;
+	uint32_t t0 = HAL_GetTick();
+	uint8_t aborted = 0;
+
+	// Phase 0: 전류 루프 스텝 응답 (80 샘플, 1ms 간격)
+	foc_L.speed_loop_en = 0;
+	foc_R.speed_loop_en = 0;
+	foc_L.target_Iq = 0.0f;
+	foc_R.target_Iq = 0.0f;
+	for (int k = 0; k < 80 && n < SYSID_DRIVE_SAMPLE_MAX; k++) {
+		float id_cmd = (k < 40) ? 1.5f : 0.0f;
+		foc_L.target_Id = id_cmd;
+		foc_R.target_Id = id_cmd;
+
+		SysID_DriveSample_t *sp = &g_sysid_drive_buf[n++];
+		sp->t_ms = (uint16_t) (HAL_GetTick() - t0);
+		sp->line_pos_x10k = 0;
+		sp->tgt_mps_mmps = 0;
+		sp->mps_L_mmps = (int16_t) foc_L.omega_e_meas;
+		sp->mps_R_mmps = (int16_t) (-foc_R.omega_e_meas);
+		sp->tgt_iq_L_mA = (int16_t) (foc_L.target_Id * 1000.0f);
+		sp->tgt_iq_R_mA = (int16_t) (foc_R.target_Id * 1000.0f);
+		sp->iq_L_mA = (int16_t) (foc_L.I_d * 1000.0f);
+		sp->iq_R_mA = (int16_t) (foc_R.I_d * 1000.0f);
+		sp->gyro_z_ddps = (int16_t) (foc_L.V_d * 100.0f);
+		sp->odom_mm = (uint16_t) (int16_t) (foc_R.V_d * 100.0f);
+		sp->marker_cnt = 0;
+		sp->vbus_dV = (uint8_t) (FOC_Get_VBus() * 10.0f);
+		HAL_Delay(1);
+	}
+	foc_L.target_Id = 0.0f;
+	foc_R.target_Id = 0.0f;
+
+	// Phase 1..7: 무부하 속도 계단 스윕 (쿨롱 마찰 + 점성 마찰 + 속도 스텝 응답)
+	static const float test_omegas[7] = {
+		200.0f, 400.0f, 600.0f, 800.0f, 1000.0f, 1200.0f, 1500.0f
+	};
+	float step_w[7] = { 0 };
+	float step_iq[7] = { 0 };
+	int valid_steps = 0;
+
+	foc_L.speed_loop_en = 1;
+	foc_R.speed_loop_en = 1;
+
+	for (int s = 0; s < 7 && !aborted; s++) {
+		float w = test_omegas[s];
+		foc_L.target_omega = w;
+		foc_R.target_omega = -w;
+		foc_L.omega_setpoint = w;
+		foc_R.omega_setpoint = -w;
+
+		LCD_Printf(0, 2, "Step %d/7:%4.0f", s + 1, w);
+
+		float sum_w = 0.0f;
+		float sum_iq = 0.0f;
+		int steady_cnt = 0;
+
+		for (int k = 0; k < 120 && n < SYSID_DRIVE_SAMPLE_MAX; k++) {
+			if (Button_Get_Input() == INPUT_CMD_K_HOLD) {
+				aborted = 1;
+				break;
+			}
+			float iq_l_meas = (fabsf(foc_L.I_q) > 1e-4f) ? foc_L.I_q : foc_L.target_Iq;
+			float iq_r_meas = (fabsf(foc_R.I_q) > 1e-4f) ? (-foc_R.I_q) : (-foc_R.target_Iq);
+
+			SysID_DriveSample_t *sp = &g_sysid_drive_buf[n++];
+			sp->t_ms = (uint16_t) (HAL_GetTick() - t0);
+			sp->line_pos_x10k = (int16_t) (s + 1);
+			sp->tgt_mps_mmps = (int16_t) w;
+			sp->mps_L_mmps = (int16_t) foc_L.omega_e_meas;
+			sp->mps_R_mmps = (int16_t) (-foc_R.omega_e_meas);
+			sp->tgt_iq_L_mA = (int16_t) (foc_L.target_Iq * 1000.0f);
+			sp->tgt_iq_R_mA = (int16_t) (-foc_R.target_Iq * 1000.0f);
+			sp->iq_L_mA = (int16_t) (iq_l_meas * 1000.0f);
+			sp->iq_R_mA = (int16_t) (iq_r_meas * 1000.0f);
+			sp->gyro_z_ddps = (int16_t) (foc_L.V_q * 100.0f);
+			sp->odom_mm = (uint16_t) (int16_t) (-foc_R.V_q * 100.0f);
+			sp->marker_cnt = (uint8_t) (s + 1);
+			sp->vbus_dV = (uint8_t) (FOC_Get_VBus() * 10.0f);
+
+			if (k >= 60) {
+				sum_w += 0.5f * (fabsf(foc_L.omega_e_meas) + fabsf(foc_R.omega_e_meas));
+				sum_iq += 0.5f * (fabsf(iq_l_meas) + fabsf(iq_r_meas));
+				steady_cnt++;
+			}
+			HAL_Delay(5);
+		}
+		if (!aborted && steady_cnt > 0) {
+			step_w[valid_steps] = sum_w / (float) steady_cnt;
+			step_iq[valid_steps] = sum_iq / (float) steady_cnt;
+			valid_steps++;
+		}
+	}
+
+	float vbus_now = FOC_Get_VBus();
+	MTR_Safe_Stop();
+
+	// 선형 회귀: tau = Kt * Iq = friction + viscous * omega
+	float friction_Nm = 0.00025f;
+	float viscous_Nms = 2.0e-8f;
+	if (valid_steps >= 2) {
+		float sw = 0.0f, st = 0.0f, sww = 0.0f, swt = 0.0f;
+		for (int i = 0; i < valid_steps; i++) {
+			float w = step_w[i];
+			float tau = MOTOR_TORQUE_CONSTANT * step_iq[i];
+			sw += w;
+			st += tau;
+			sww += w * w;
+			swt += w * tau;
+		}
+		float denom = (float) valid_steps * sww - sw * sw;
+		if (fabsf(denom) > 1e-6f) {
+			viscous_Nms = ((float) valid_steps * swt - sw * st) / denom;
+			friction_Nm = (st - viscous_Nms * sw) / (float) valid_steps;
+			if (viscous_Nms < 0.0f) viscous_Nms = 0.0f;
+			if (friction_Nm < 0.0f) friction_Nm = 0.0f;
+		}
+	}
+
+	LCD_Clear();
+	LCD_Printf(0, 0, "Saving MotorID..");
+	FRESULT res = SD_SysID_Open(SYSID_MOTOR_PATH);
+	if (res == FR_OK) {
+		char line[256];
+		int len = snprintf(line, sizeof(line),
+				"# kt=%.6f\n# r_phase=%.4f\n# j_rotor=%.4e\n# gear=%.7f\n"
+				"# vbus=%.3f\n# fitted_friction_Nm=%.6e\n# fitted_viscous_Nms=%.6e\n"
+				"step,t_ms,target_omega,meas_omega_L,meas_omega_R,"
+				"target_iq_L,target_iq_R,meas_iq_L,meas_iq_R,vq_L,vq_R,vbus\n",
+				(double) MOTOR_TORQUE_CONSTANT,
+				(double) MOTOR_PARAM_PHASE_RESISTOR,
+				(double) MOTOR_PARAM_ROTOR_INERTIA,
+				(double) GEAR_RATIO,
+				(double) vbus_now,
+				(double) friction_Nm,
+				(double) viscous_Nms);
+		SD_SysID_WriteChunk(line, (UINT) len);
+
+		for (uint32_t i = 0; i < n; i++) {
+			const SysID_DriveSample_t *sp = &g_sysid_drive_buf[i];
+			int16_t vq_r_cV = (int16_t) sp->odom_mm;
+			len = snprintf(line, sizeof(line),
+					"%d,%u,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f,%.1f\n",
+					(int) sp->line_pos_x10k,
+					(unsigned) sp->t_ms,
+					(int) sp->tgt_mps_mmps,
+					(int) sp->mps_L_mmps,
+					(int) sp->mps_R_mmps,
+					sp->tgt_iq_L_mA * 0.001f,
+					sp->tgt_iq_R_mA * 0.001f,
+					sp->iq_L_mA * 0.001f,
+					sp->iq_R_mA * 0.001f,
+					sp->gyro_z_ddps * 0.01f,
+					vq_r_cV * 0.01f,
+					sp->vbus_dV * 0.1f);
+			SD_SysID_WriteChunk(line, (UINT) len);
+		}
+		res = SD_SysID_Close();
+	}
+
+	LCD_Clear();
+	LCD_Printf(0, 0, "Motor SysID");
+	LCD_Printf(0, 1, (res == FR_OK) ? "Saved SD OK!" : "Save Err:%d", res);
+	LCD_Printf(0, 2, "/SysID_Data/");
+	LCD_Printf(0, 3, "motor_sysid.csv");
+	LCD_Printf(0, 5, "Fric:%.3fmNm", friction_Nm * 1000.0f);
+	LCD_Printf(0, 6, "Visc:%.2e", viscous_Nms);
+	LCD_Printf(0, 7, "Vbus:%.2fV", vbus_now);
+	LCD_Printf(0, 9, "[K Hold] Exit");
+
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD)
+		;
+	Button_Wait_Release(&btn_k);
 	LCD_Clear();
 }

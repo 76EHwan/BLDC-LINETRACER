@@ -29,7 +29,7 @@
 #define SPD_DT         	0.0005f
 #define SPD_D_TAU       (SPD_DT * SPD_MA_WINDOW)       // D항 LPF 시정수 (2kHz 대비 4샘플 정도)
 
-#define SPD_IQ_LIMIT     3.0f        // Iq 지령 상한 (A)
+#define SPD_IQ_LIMIT     5.0f        // Iq 지령 상한 (A)
 
 // =========================================================
 // [모터 전기적 파라미터 - maxon ECX SPEED 16 M, 36V 권선 기준]

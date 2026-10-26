@@ -71,7 +71,8 @@ MenuItem_t sensor_menu_items[] = {
     { .name = "State",        .pfnActionCallback = Sensor_State_Printf },
 	{ .name = "Position",     .pfnActionCallback = Sensor_Position_Printf },
     { .name = "Update Thres", .pfnActionCallback = NULL },
-    { .name = "IMU Test",     .pfnActionCallback = IMU_Test }
+    { .name = "IMU Test",     .pfnActionCallback = IMU_Test },
+    { .name = "SysID Log",    .pfnActionCallback = Sensor_SysID_Log }
 };
 
 MenuItem_t motor_menu_items[] = {
@@ -87,6 +88,7 @@ MenuItem_t motor_menu_items[] = {
 	{ .name = "Battery Volt",	.pfnActionCallback = Battery_Check_Safe		},
 	{ .name = "Load From SD",	.pfnActionCallback = FOC_Menu_LoadFromSD	},
 	{ .name = "Save To SD",		.pfnActionCallback = FOC_Menu_SaveToSD		},
+	{ .name = "SysID Test",		.pfnActionCallback = MTR_SysID_Test			},
 };
 
 MenuItem_t drive_menu_items[] = {
@@ -94,7 +96,9 @@ MenuItem_t drive_menu_items[] = {
     { .name = "2nd Drive",    .pfnActionCallback = Drive_Second 			},
     { .name = "3rd Drive",    .pfnActionCallback = Drive_Third				},
     { .name = "4th Drive",    .pfnActionCallback = Drive_Fourth				},
+	{ .name = "AI Auto-Heal", .pfnActionCallback = Drive_AutoHeal_Menu		},
 	{ .name = "Vibe Test",    .pfnActionCallback = Drive_Vibration_Test		},
+	{ .name = "SysID Drive",  .pfnActionCallback = Drive_SysID_Test			},
     { .name = "Update Param", .pfnActionCallback = NULL, 				.child_menu = &drive_param_menu },
 };
 
@@ -111,6 +115,12 @@ MenuItem_t drive_param_items[] = {
 	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
 	{ .name = "Target Shift", 	.pfnActionCallback = Update_Target_Shift_Val	}, // ★ 새로 추가
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
+	{ .name = "Yaw KP", 		.pfnActionCallback = Update_Yaw_KP				}, // 캐스케이드 조향 (0 = 끔)
+	{ .name = "Yaw KI", 		.pfnActionCallback = Update_Yaw_KI				},
+	{ .name = "Lat Acc Max", 	.pfnActionCallback = Update_Lat_Acc_Max			},
+	{ .name = "Tgt Crv Gain", 	.pfnActionCallback = Update_Target_Curve_Gain	}, // 3·4차 곡선 target_pos 배율
+	{ .name = "Slalom Ratio", 	.pfnActionCallback = Update_Slalom_Ratio		}, // 4차 45도 구간 속도 비율
+	{ .name = "Brake Margin", 	.pfnActionCallback = Update_Brake_Margin		}, // 직선 감속 여유 거리 [m]
 };
 
 // =========================================================
@@ -510,6 +520,30 @@ void Update_Target_Shift_Val() {
 void Update_Fan_Enable() {
 	Update_Param_Menu(DATA_UINT8, (uint32_t*) &(driveData.fan_en), NULL,
 			"Fan Enable");
+}
+
+void Update_Yaw_KP() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.yaw_gain_p), "Yaw KP");
+}
+
+void Update_Yaw_KI() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.yaw_gain_i), "Yaw KI");
+}
+
+void Update_Lat_Acc_Max() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.lat_acc_max), "Lat Acc Max");
+}
+
+void Update_Target_Curve_Gain() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.target_curve_gain), "Tgt Crv Gain");
+}
+
+void Update_Slalom_Ratio() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.slalom_ratio), "Slalom Ratio");
+}
+
+void Update_Brake_Margin() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.brake_margin_m), "Brake Margin");
 }
 
 void Menu_ProcessLoop() {

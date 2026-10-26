@@ -207,7 +207,7 @@ void SysTick_Handler(void)
   /* USER CODE BEGIN SysTick_IRQn 0 */
 	static uint8_t imu_trigger_tick = 0;
 	imu_trigger_tick++;
-	if (imu_trigger_tick >= 10) {
+	if (imu_trigger_tick >= IMU_READ_DIV) {
 		imu_trigger_tick = 0;
 		if (!imu_dma_busy) {
 			LSM6DS3_ReadGyroZ_DMA_Start();
