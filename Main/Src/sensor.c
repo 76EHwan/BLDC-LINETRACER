@@ -227,30 +227,51 @@ float32_t Sensor_Get_Position(void) {
 		uint32_t window_mask = ((1U << window_len) - 1) << search_start;
 		uint8_t active_in_window = __builtin_popcount(state16 & window_mask);
 		uint8_t active_out_window = __builtin_popcount(state16 & ~window_mask);
+		uint8_t total_active = active_in_window + active_out_window;
+
+		// 크로스(교차로) 감지 조건:
+		// 단일 라인은 테이프 폭 19mm로 센서 1~3개(최대 4개)만 활성화됨.
+		// 교차선이 진입하면 16개 센서 중 5개 이상 켜지거나, 윈도우 내 포화 및 외곽 활성화 발생.
+		uint8_t cross_condition = (total_active >= 5) ||
+		                          (active_in_window >= 5) ||
+		                          (active_in_window >= 4 && active_out_window >= 1) ||
+		                          (active_out_window >= 3);
 
 		if (cross_state == 0) {
-			for (int8_t i = search_start; i <= search_end; i++) {
-				if (IR_Sensor.data->normalized[i] > max_val) {
-					max_val = IR_Sensor.data->normalized[i];
-					current_peak_idx = i;
-				}
-			}
-			if (active_in_window > POS_WINDOW_HALF + 1) {
+			if (cross_condition) {
+				// 크로스 진입: 진입 즉시 크로스 플래그를 세워 진입 순간 왜곡 위치가 prev_position에 오염되는 것 차단
 				cross_state = 1;
+				is_cross_line = 1;
+				current_peak_idx = prev_peak_idx; // 메인 라인 피크 위치 보존 (zero position shift 시에도 피크 불변)
+			} else {
+				// 정상 단일 라인: 윈도우 내 피크 탐색
+				for (int8_t i = search_start; i <= search_end; i++) {
+					if (IR_Sensor.data->normalized[i] > max_val) {
+						max_val = IR_Sensor.data->normalized[i];
+						current_peak_idx = i;
+					}
+				}
+				is_cross_line = 0;
 			}
 		} else {
-			float32_t center_offset = (LINE_N_SENSORS - 1) / 2.0f;
-			int8_t target_idx = (int8_t)(IR_Sensor.data->target_pos * center_offset + center_offset + 0.5f);
-
-			if (target_idx < 0) target_idx = 0;
-			if (target_idx >= LINE_N_SENSORS) target_idx = LINE_N_SENSORS - 1;
-
-			current_peak_idx = target_idx;
-			max_val = IR_Sensor.data->normalized[current_peak_idx];
-			is_cross_line = 1;
-
-			if (!active_out_window && active_in_window < 3) {
+			// 크로스 상태 유지 중:
+			// 탈출 조건: 교차선이 완전히 통과하여 단일 라인으로 복귀했는지 확인
+			// - 전체 켜진 센서가 3개 이하이거나,
+			// - 윈도우 바깥이 완전히 꺼지고 윈도우 내부 센서가 정상 수준(3개 이하)
+			if (total_active <= 3 || (active_out_window == 0 && active_in_window <= 3) ||
+			    (active_out_window <= 1 && total_active <= 4 && active_in_window <= 3)) {
 				cross_state = 0;
+				is_cross_line = 0;
+				for (int8_t i = search_start; i <= search_end; i++) {
+					if (IR_Sensor.data->normalized[i] > max_val) {
+						max_val = IR_Sensor.data->normalized[i];
+						current_peak_idx = i;
+					}
+				}
+			} else {
+				is_cross_line = 1;
+				// 크로스 통과 중: target_idx 등으로 튀지 않고 직전의 메인 라인 피크 위치를 그대로 고정
+				current_peak_idx = prev_peak_idx;
 			}
 		}
 	}
@@ -315,6 +336,17 @@ float32_t Sensor_Get_Position(void) {
 		}
 
 		float32_t current_position = (total_weight > 0.0f) ? (weighted_sum / total_weight) : line_sensor_pos[current_peak_idx];
+
+		// 교차로 통과 직후 잔류 노이즈나 고주파 센서 스파이크에 대한 변화율 제한(Slew Rate Limiter)
+		// 500us(2kHz) 제어 주기 기준 최대 0.08f (초당 160 units/s, 로봇 전폭을 12ms에 가로지르는 물리적 극한 이상)
+		float32_t pos_diff = current_position - prev_position;
+		const float32_t MAX_POS_STEP = 0.08f;
+		if (pos_diff > MAX_POS_STEP) {
+			current_position = prev_position + MAX_POS_STEP;
+		} else if (pos_diff < -MAX_POS_STEP) {
+			current_position = prev_position - MAX_POS_STEP;
+		}
+
 		prev_position = current_position; // 정상 라인일 때 절대 위치 갱신
 
 		return current_position;

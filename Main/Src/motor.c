@@ -171,6 +171,7 @@ static volatile float32_t g_yaw_integ = 0.0f;    // 캐스케이드 안쪽 루�
 static volatile float32_t g_grip_atten = 1.0f;   // 접지 한계 감속 비율 (lat_acc_max)
 static volatile float32_t g_prev_steer_error = 0.0f;
 static volatile float32_t g_filtered_deriv = 0.0f;
+static volatile float32_t g_smooth_target_pos = 0.0f; // zero position shifting 완충 필터
 #define YAW_INTEG_MAX 5.0f                        // 적분 한계 [rad/s]
 
 void Steer_Reset_State(void) {
@@ -179,12 +180,17 @@ void Steer_Reset_State(void) {
 	filtered_atten = 1.0f;
 	g_prev_steer_error = 0.0f;
 	g_filtered_deriv = 0.0f;
+	g_smooth_target_pos = 0.0f;
 }
 
 void Steer_Motor() {
-	// 1. float32_t 자료형 사용으로 단정밀도(Single-Precision) 강제
+	// 1. zero position shifting 완충: target_pos 동적 변경 시 급격한 스텝으로 인한 차체 흔들림 방지
+	const float32_t target_lpf_alpha = 0.96f; // dt=0.5ms 기준 시상수 약 12ms (빠른 추종과 충격 완화의 최적점)
+	g_smooth_target_pos = (target_lpf_alpha * g_smooth_target_pos) + ((1.0f - target_lpf_alpha) * IR_Sensor.data->target_pos);
+
+	// 2. 단정밀도(Single-Precision) 강제 계측 위치 수신
 	float32_t line_pos = Sensor_Get_Position();
-	float32_t error = line_pos - IR_Sensor.data->target_pos;
+	float32_t error = line_pos - g_smooth_target_pos;
 
 	// 2. 미분항(Kd): 측정값(line_pos) 미분(Derivative-on-Measurement) 적용
 	//    target_pos가 동적으로 이동할 때 인공적인 Kd 미분 킥(스파이크) 및 자이로 요레이트 폭주 차단

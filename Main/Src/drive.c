@@ -16,20 +16,20 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 2.30f,
+    .base_mps = 2.21f,
     .max_mps = 10.00f,
     .accel = 7.5f,
     .decel = 7.5f,
-    .steer_gain_p = 25.000f,
-    .steer_gain_d = 500.0f,
+    .steer_gain_p = 20.577f,
+    .steer_gain_d = 593.0f,
     .pos_atten_gain = 0.00f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
-	.target_shift_val = 0.40f,
+	.target_shift_val = 0.38f,
 	.yaw_gain_p = 0.60f,
 	.yaw_gain_i = 0.0f,
-	.lat_acc_max = 13.00f,
-	.target_curve_gain = 1.44f,
+	.lat_acc_max = 13.90f,
+	.target_curve_gain = 1.42f,
 	.slalom_ratio = 0.03f,
 	.brake_margin_m = 0.24f,
 };
