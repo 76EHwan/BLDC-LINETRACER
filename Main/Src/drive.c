@@ -1,4 +1,4 @@
-﻿#include "main.h"
+#include "main.h"
 #include "dac.h"
 #include "drive.h"
 #include "sensor.h"
@@ -22,7 +22,7 @@ DriveParam_t driveData = {
     .decel = 7.5f,
     .steer_gain_p = 14.500f,
     .steer_gain_d = 260.0f,
-    .pos_atten_gain = 0.25f,
+    .pos_atten_gain = 0.00f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
 	.target_shift_val = 0.38f,
