@@ -567,8 +567,6 @@ typedef struct {
 } SegmentPlan_t;
 
 static CrossMarkerLog_t ref_log[CROSS_LOG_MAX];
-static float g_smooth_target_pos = 0.0f;
-static float g_last_odom_m = 0.0f;
 static uint16_t ref_log_count = 0;
 static SegmentPlan_t seg_plan[CROSS_LOG_MAX];
 
@@ -1648,30 +1646,22 @@ __STATIC_INLINE void Build_Segment_Plan_Fifth(void) {
 
 	for (uint16_t i = 0; i < ref_log_count; i++) {
 		CrossEvent_t cur = ref_log[i].type;
-		uint8_t is_straight = 0;
 
 		if (cur == CROSS_CROSS) {
-			is_straight = (curve_state == 0) ? 1 : 0;
+			// 크로스는 직전 곡선 상태 유지
 		} else if (cur == CROSS_LEFT) {
 			if (curve_state == 1) {
 				curve_state = 0;
-				is_straight = 1;
 			} else {
 				curve_state = 1;
-				is_straight = 0;
 			}
 		} else if (cur == CROSS_RIGHT) {
 			if (curve_state == 2) {
 				curve_state = 0;
-				is_straight = 1;
 			} else {
 				curve_state = 2;
-				is_straight = 0;
 			}
-		}
-
-		if (cur == CROSS_STOP) {
-			is_straight = (i == 0) ? 1 : 0;
+		} else if (cur == CROSS_STOP) {
 			curve_state = 0;
 		}
 
