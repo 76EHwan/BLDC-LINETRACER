@@ -14,6 +14,7 @@
 FRESULT SDCard_Test(void);
 
 extern uint8_t sdcard_err;
+extern uint32_t sd_test_rng_val;
 
 typedef enum {
     SDCFG_FLOAT,

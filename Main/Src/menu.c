@@ -70,7 +70,7 @@ MenuItem_t sensor_menu_items[] = {
     { .name = "Normalized",   .pfnActionCallback = Sensor_Normalize_Printf },
     { .name = "State",        .pfnActionCallback = Sensor_State_Printf },
 	{ .name = "Position",     .pfnActionCallback = Sensor_Position_Printf },
-    { .name = "Update Thres", .pfnActionCallback = NULL },
+    { .name = "Update Thres", .pfnActionCallback = Update_Threshold },
     { .name = "IMU Test",     .pfnActionCallback = IMU_Test },
     { .name = "SysID Log",    .pfnActionCallback = Sensor_SysID_Log }
 };
@@ -103,24 +103,16 @@ MenuItem_t drive_menu_items[] = {
 };
 
 MenuItem_t drive_param_items[] = {
-	{ .name = "Threshold", 		.pfnActionCallback = Update_Threshold 			},
-	{ .name = "Lost Pos Min", 	.pfnActionCallback = Update_Line_Lost_Sum_Min	},
 	{ .name = "Base m/s", 		.pfnActionCallback = Update_Base_Mps			},
+	{ .name = "Max m/s", 		.pfnActionCallback = Update_Max_Mps				},
 	{ .name = "Base Accel", 	.pfnActionCallback = Update_Base_Accel			},
 	{ .name = "Base Decel", 	.pfnActionCallback = Update_Base_Decel			},
-	{ .name = "Max m/s", 		.pfnActionCallback = Update_Max_Mps				},
 	{ .name = "Steer KP", 		.pfnActionCallback = Update_Steer_KP			},
 	{ .name = "Steer KD", 		.pfnActionCallback = Update_Steer_KD			},
-	{ .name = "Pos Abs Gain", 	.pfnActionCallback = Update_Position_Abs_Gain	},
+	{ .name = "Brake Margin", 	.pfnActionCallback = Update_Brake_Margin		},
+	{ .name = "Target Shift", 	.pfnActionCallback = Update_Target_Shift_Val	},
 	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
-	{ .name = "Target Shift", 	.pfnActionCallback = Update_Target_Shift_Val	}, // ★ 새로 추가
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
-	{ .name = "Yaw KP", 		.pfnActionCallback = Update_Yaw_KP				}, // 캐스케이드 조향 (0 = 끔)
-	{ .name = "Yaw KI", 		.pfnActionCallback = Update_Yaw_KI				},
-	{ .name = "Lat Acc Max", 	.pfnActionCallback = Update_Lat_Acc_Max			},
-	{ .name = "Tgt Crv Gain", 	.pfnActionCallback = Update_Target_Curve_Gain	}, // 3·4차 곡선 target_pos 배율
-	{ .name = "Slalom Ratio", 	.pfnActionCallback = Update_Slalom_Ratio		}, // 4차 45도 구간 속도 비율
-	{ .name = "Brake Margin", 	.pfnActionCallback = Update_Brake_Margin		}, // 직선 감속 여유 거리 [m]
 };
 
 // =========================================================
@@ -286,6 +278,11 @@ static void LastUsed_Execute(void) {
 // =========================================================
 // 3. UI 렌더링 및 입력 처리 함수
 // =========================================================
+static volatile uint8_t g_menu_needs_redraw = 1;
+
+void Menu_RequestRedraw(void) {
+	g_menu_needs_redraw = 1;
+}
 __STATIC_INLINE void Show_Menu(MenuContext_t *pCtx) {
 	LCD_Printf(0, 0, "%-16s", pCtx->category_name);
 	LCD_Printf(0, 1, "----------------");
@@ -310,6 +307,7 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 		pCtx->cursor_index =
 				(pCtx->cursor_index == (pCtx->item_count - 1)) ?
 						0 : (pCtx->cursor_index + 1);
+		g_menu_needs_redraw = 1;
 		break;
 
 	case INPUT_CMD_U_SINGLE:
@@ -317,20 +315,21 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 		pCtx->cursor_index =
 				(pCtx->cursor_index == 0) ?
 						(pCtx->item_count - 1) : (pCtx->cursor_index - 1);
+		g_menu_needs_redraw = 1;
 		break;
 
 	case INPUT_CMD_L_SINGLE:
 		// parent_menu가 등록되어 있다면 상위 메뉴로 이동
 		if (pCtx->parent_menu != NULL) {
 			current_menu = pCtx->parent_menu;
-			current_menu->cursor_index = 0; // 뒤로 갈 때 커서 초기화 원하면 유지
+			current_menu->cursor_index = 0;
 			LCD_Clear();
+			g_menu_needs_redraw = 1;
 		}
 		break;
 
 	case INPUT_CMD_R_SINGLE:
-		while (HAL_GPIO_ReadPin(btn_r.port, btn_r.pin) == btn_k.active_state)
-			;
+		Button_Wait_Release(&btn_r);
 		LCD_Clear();
 
 		uint8_t selected = pCtx->cursor_index;
@@ -339,6 +338,7 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 		if (pCtx->pMenuItems[selected].child_menu != NULL) {
 			current_menu = pCtx->pMenuItems[selected].child_menu;
 			current_menu->cursor_index = 0;
+			g_menu_needs_redraw = 1;
 		}
 		// 2. 실행할 함수가 연결되어 있으면 콜백 실행
 		else if (pCtx->pMenuItems[selected].pfnActionCallback != NULL) {
@@ -346,6 +346,8 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 					!= LastUsed_Execute)
 				LastUsed_Save(pCtx, selected); /* 실행 전에 기록 */
 			pCtx->pMenuItems[selected].pfnActionCallback();
+			LCD_Clear();
+			g_menu_needs_redraw = 1;
 		}
 		break;
 
@@ -357,44 +359,56 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 __STATIC_INLINE void Update_Param_Intergal(Data_TypeDef param_Data_Typem,
 		uint32_t *intergalData) {
 	UserInput_t btn = INPUT_CMD_NONE;
+	uint8_t dirty = 1;
 	while ((btn = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
-		if (param_Data_Typem == DATA_INT8) {
-			LCD_Printf(0, 1, "int8");
-			LCD_Printf(0, 2, "%-5d", (int8_t) *intergalData);
-		} else if (param_Data_Typem == DATA_INT16) {
-			LCD_Printf(0, 1, "int16");
-			LCD_Printf(0, 2, "%-5d", (int16_t) *intergalData);
-		} else if (param_Data_Typem == DATA_INT32) {
-			LCD_Printf(0, 1, "int32");
-			LCD_Printf(0, 2, "%-5d", (int32_t) *intergalData);
-		} else if (param_Data_Typem == DATA_UINT8) {
-			LCD_Printf(0, 1, "uint8");
-			LCD_Printf(0, 2, "%-5d", (uint8_t) *intergalData);
-		} else if (param_Data_Typem == DATA_UINT16) {
-			LCD_Printf(0, 1, "uint16");
-			LCD_Printf(0, 2, "%-5d", (uint16_t) *intergalData);
-		} else {
-			LCD_Printf(0, 1, "uint32");
-			LCD_Printf(0, 2, "%-5d", *intergalData);
+		if (dirty) {
+			if (param_Data_Typem == DATA_INT8) {
+				LCD_Printf(0, 1, "int8");
+				LCD_Printf(0, 2, "%-5d", (int8_t) *intergalData);
+			} else if (param_Data_Typem == DATA_INT16) {
+				LCD_Printf(0, 1, "int16");
+				LCD_Printf(0, 2, "%-5d", (int16_t) *intergalData);
+			} else if (param_Data_Typem == DATA_INT32) {
+				LCD_Printf(0, 1, "int32");
+				LCD_Printf(0, 2, "%-5d", (int32_t) *intergalData);
+			} else if (param_Data_Typem == DATA_UINT8) {
+				LCD_Printf(0, 1, "uint8");
+				LCD_Printf(0, 2, "%-5d", (uint8_t) *intergalData);
+			} else if (param_Data_Typem == DATA_UINT16) {
+				LCD_Printf(0, 1, "uint16");
+				LCD_Printf(0, 2, "%-5d", (uint16_t) *intergalData);
+			} else {
+				LCD_Printf(0, 1, "uint32");
+				LCD_Printf(0, 2, "%-5d", *intergalData);
+			}
+			dirty = 0;
 		}
 		switch (btn) {
 		case INPUT_CMD_L_SINGLE:
 		case INPUT_CMD_L_HOLD:
 			*intergalData -= 1;
+			dirty = 1;
 			break;
 		case INPUT_CMD_L_DOUBLE:
 			*intergalData -= 5;
+			dirty = 1;
 			break;
 		case INPUT_CMD_R_SINGLE:
 		case INPUT_CMD_R_HOLD:
 			*intergalData += 1;
+			dirty = 1;
 			break;
 		case INPUT_CMD_R_DOUBLE:
 			*intergalData += 5;
+			dirty = 1;
 			break;
 
 		default:
 			break;
+		}
+		uint32_t t_start = HAL_GetTick();
+		while ((HAL_GetTick() - t_start) < 10) {
+			__WFI();
 		}
 	}
 }
@@ -403,42 +417,56 @@ __STATIC_INLINE void Update_Param_Float(Data_TypeDef param_Data_Type,
 		float_t *floatData) {
 	UserInput_t btn = INPUT_CMD_NONE;
 	uint8_t index = 0;
+	uint8_t dirty = 1;
 
 	while ((btn = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
 		float_t step = 1.f;
 		for (uint8_t i = 0; i < index; i++) {
 			step /= 10.f;
 		}
-		LCD_Printf(0, 1, "float");
-		LCD_Printf(0, 2, "step: %-7.6f", step);
-		LCD_Printf(0, 3, "%-9.6f", *floatData);
+		if (dirty) {
+			LCD_Printf(0, 1, "float");
+			LCD_Printf(0, 2, "step: %-7.6f", step);
+			LCD_Printf(0, 3, "%-9.6f", *floatData);
+			dirty = 0;
+		}
 		switch (btn) {
 		case INPUT_CMD_L_SINGLE:
 		case INPUT_CMD_L_HOLD:
 			*floatData -= step;
+			dirty = 1;
 			break;
 		case INPUT_CMD_L_DOUBLE:
 			*floatData -= 5.f * step;
+			dirty = 1;
 			break;
 		case INPUT_CMD_R_SINGLE:
 		case INPUT_CMD_R_HOLD:
 			*floatData += step;
+			dirty = 1;
 			break;
 		case INPUT_CMD_R_DOUBLE:
 			*floatData += 5.f * step;
+			dirty = 1;
 			break;
 		case INPUT_CMD_U_SINGLE:
-			if (index == 0)
-				break;
-			index--;
+			if (index > 0) {
+				index--;
+				dirty = 1;
+			}
 			break;
 		case INPUT_CMD_D_SINGLE:
-			if (index == 6)
-				break;
-			index++;
+			if (index < 6) {
+				index++;
+				dirty = 1;
+			}
 			break;
 		default:
 			break;
+		}
+		uint32_t t_start = HAL_GetTick();
+		while ((HAL_GetTick() - t_start) < 10) {
+			__WFI();
 		}
 	}
 }
@@ -548,13 +576,32 @@ void Update_Brake_Margin() {
 
 void Menu_ProcessLoop() {
 	static uint8_t lu_inited = 0;
+	static MenuContext_t *last_rendered_menu = NULL;
+	static uint8_t last_rendered_index = 0xFF;
+
 	if (!lu_inited) { /* 부팅 후 flash 기록으로 라벨 1회 복원 */
 		LastUsed_RefreshLabel();
 		lu_inited = 1;
+		g_menu_needs_redraw = 1;
 	}
+
 	Select_Menu(current_menu);
-	Show_Menu(current_menu);
+
+	// 메뉴 화면이나 커서가 변경되었을 때만 LCD 재렌더링 (불필요한 무한 SPI/DMA 전송 차단)
+	if (g_menu_needs_redraw || current_menu != last_rendered_menu || current_menu->cursor_index != last_rendered_index) {
+		Show_Menu(current_menu);
+		last_rendered_menu = current_menu;
+		last_rendered_index = current_menu->cursor_index;
+		g_menu_needs_redraw = 0;
+	}
+
 	current_menu->prev_index = current_menu->cursor_index;
+
+	// 10ms 동안 인터럽트 대기 슬립(WFI)로 진입하여 CPU 코어 발열 급감
+	uint32_t t_start = HAL_GetTick();
+	while ((HAL_GetTick() - t_start) < 10) {
+		__WFI();
+	}
 }
 
 FRESULT FOC_Parameters_InitOrLoad(void) {

@@ -205,6 +205,7 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   /* USER CODE BEGIN SysTick_IRQn 0 */
+#ifndef IMU_CS_Pin
 	static uint8_t imu_trigger_tick = 0;
 	imu_trigger_tick++;
 	if (imu_trigger_tick >= IMU_READ_DIV) {
@@ -214,6 +215,7 @@ void SysTick_Handler(void)
 		}
 	}
 
+#endif
   /* USER CODE END SysTick_IRQn 0 */
   HAL_IncTick();
   /* USER CODE BEGIN SysTick_IRQn 1 */
@@ -234,6 +236,11 @@ void SysTick_Handler(void)
 void EXTI0_IRQHandler(void)
 {
   /* USER CODE BEGIN EXTI0_IRQn 0 */
+  if (__HAL_GPIO_EXTI_GET_IT(IMU_INT1_Pin) != RESET) {
+    __HAL_GPIO_EXTI_CLEAR_IT(IMU_INT1_Pin);
+    LSM6DS_INT1_IRQHandler();
+  }
+  return;
 
   /* USER CODE END EXTI0_IRQn 0 */
   HAL_GPIO_EXTI_IRQHandler(IMU_INT1_Pin);

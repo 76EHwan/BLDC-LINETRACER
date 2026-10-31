@@ -9,47 +9,43 @@
 #include <stdio.h> // sprintf 사용을 위해 추가
 #include "ff.h"    // f_unlink (FatFs 파일 삭제) 사용을 위해 추가
 
-#include "drv8316crq1.h"
+#include "user_init.h"
 #include "button.h"
 #include "buzzer.h"
-#include "mct8316z.h"
 #include "lsm6ds3tr-c.h"
 #include "SDcard.h"
 #include "mt6701.h"
-
-#include "user_init.h"
 #include "menu.h"
+
+#ifdef FOC_CONTROL
+#include "drv8316crq1.h"
 #include "foc.h"
+#elif defined(SENSOR_TRAP_CONTROL)
+#include "mct8316z.h"
+#include "trap.h"
+#endif
 
 // ==========================================================
 // ★ 주행 마커 txt 파일 전체 삭제 함수
 // ==========================================================
 void Delete_All_Marker_Logs(void) {
     char filepath[64];
-    FATFS fs; // 로컬 파일 시스템 객체 생성
     FRESULT res;
 
-    // 1. SD 카드 논리 드라이브("0:") 강제 마운트 (1 = 즉시 마운트)
-    if (f_mount(&fs, "0:", 1) != FR_OK) {
-        LCD_Printf(0, 8, "Del Mount Fail");
-        HAL_Delay(1000);
+    // 1. SD 카드 마운트 (SDFatFS_NC 전역 버퍼 사용)
+    if (SDCard_Mount() != FR_OK) {
         return; // 마운트 실패 시 함수 종료
     }
 
-    // 2. 파일 삭제 루프 진행
+    // 2. 파일 삭제 루프 진행 (save_slot_1 ~ save_slot_10)
     for (int i = 1; i <= 10; i++) {
         sprintf(filepath, "0:/Drive_Data/save_slot_%d.txt", i);
         res = f_unlink(filepath);
-
-        // FR_NO_FILE(E4)은 파일이 없는 정상이므로 무시
-        if (res != FR_OK && res != FR_NO_FILE) {
-            LCD_Printf(0, 8, "Del Fail %-2d: E%d", i, res);
-            HAL_Delay(500);
-        }
+        (void)res;
     }
 
     // 3. 안전을 위해 삭제 작업 완료 후 마운트 해제
-    f_mount(NULL, "0:", 0);
+    SDCard_Unmount();
 }
 
 void User_Init() {
@@ -57,8 +53,15 @@ void User_Init() {
 	Buzzer_Init();
 	Buzzer_Start();
 	LCD_Test();
-	LSM6DS3_Init();
+
+	HAL_StatusTypeDef imu_status = LSM6DS_Init();
+	if (imu_status == HAL_OK) {
+		LCD_Printf(0, 4, "%s OK(0x%02X)", LSM6DS_GetModelName(), imu_data.Chip_ID);
+	} else {
+		LCD_Printf(0, 4, "IMU Fail");
+	}
 	Buzzer_Stop();
+
 	MX_DRV8316C_Init();
 	LCD_Printf(0, 5, "DRV8316 SET OK");
 	FOC_Init_Motor(&foc_L, &htim3, &hadc2, &hlptim2);
@@ -76,25 +79,45 @@ void User_Init() {
 	LCD_Printf(0, 10, "VBAT: %5.3f V", g_vbus_filt);
 	FOC_ADC_Stop();
 
-//	uint8_t encBuffer[3] = { 0 };
-//	MT6701_Init(&encDataL, encBuffer);
-//	LCD_Printf(0, 8, "ENC %02X%02X%02X", encBuffer[2], encBuffer[1], encBuffer[0]);
-
-	LCD_Printf(0, 11, "IMU Cali");
-	LSM6DS3_Gyro_Calibrate_Z_Only();
-
-//	SDCard_DebugTest();
-
-	FRESULT res;
-	if ((res = SDCard_Test()) != FR_OK) {
-		LCD_Printf(0, 6, "SDcard Fail");
-		while (1) {
-			LED_Blink(250);
-		}
+	if (imu_status == HAL_OK) {
+		LCD_Printf(0, 11, "IMU Cali...");
+		LSM6DS3_Gyro_Calibrate_Z_Only();
+		LCD_Printf(0, 11, "IMU Cali OK");
+	} else {
+		LCD_Printf(0, 11, "IMU Cali SKIP");
 	}
 
-	// ★ SD 카드 정상 인식 후 마커 기록 파일들 삭제 함수 호출
-	Delete_All_Marker_Logs();
-	HAL_Delay(500);
+	FRESULT res = SDCard_Test();
+	if (res == FR_OK) {
+		sdcard_err = 0;
+		LCD_Printf(0, 12, "SD:OK 0x%08lX", (unsigned long)sd_test_rng_val);
+		Delete_All_Marker_Logs();
+	} else if (res == FR_INT_ERR) {
+		sdcard_err = 1;
+		LCD_Printf(0, 12, "SD:MISMATCH");
+	} else {
+		sdcard_err = 1;
+		LCD_Printf(0, 12, "SD:SKIP(%d)", res);
+	}
 
+	// =========================================================================
+	// 초기화 결과 확인: KEY 버튼을 누르고 있으면 화면 일시정지 유지
+	// =========================================================================
+	uint32_t wait_start = HAL_GetTick();
+	while ((HAL_GetTick() - wait_start < 700) || (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) == GPIO_PIN_SET)) {
+		if (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) == GPIO_PIN_SET) {
+			LCD_Printf(0, 14, "PAUSED (Rel KEY)");
+			// KEY 버튼에서 손을 뗄 때까지 화면 정지 상태 유지 및 LED 점멸
+			while (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) == GPIO_PIN_SET) {
+				LED_TOGGLE;
+				HAL_Delay(100);
+			}
+			LED_ON;
+			HAL_Delay(200);
+			break;
+		}
+		HAL_Delay(10);
+	}
+
+	Button_init(); // 메뉴 진입 전 버튼 상태 초기화
 }

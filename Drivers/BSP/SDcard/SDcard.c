@@ -1,8 +1,11 @@
 #include "SDcard.h"
 #include "fatfs.h"
 #include "user_init.h"
+#include "rng.h"
+#include <stdio.h>
 
 uint8_t sdcard_err = 1;
+uint32_t sd_test_rng_val = 0;
 
 FRESULT SDCard_Mount(void) {
 	return f_mount(&SDFatFS_NC, "", 1);
@@ -64,39 +67,41 @@ uint8_t SDCard_FileExists(const char *path) {
 
 FRESULT SDCard_Test(void) {
 	FRESULT res;
-	char writeData[] = "STM32 FATFS Write & Read Test Success!";
-	char readBuffer[50];
-
-	LCD_Printf(0, 0, "[SD Test]");
+	uint32_t write_val = 0;
 
 	res = SDCard_Mount();
 	if (res != FR_OK) {
-		LCD_Printf(0, 1, "FAIL: Mount %d", res);
 		return res;
 	}
 
-	res = SDCard_Write("test.txt", writeData);
+	if (HAL_RNG_GenerateRandomNumber(&hrng, &write_val) != HAL_OK) {
+		write_val = HAL_GetTick() ^ 0xA5A55A5AU;
+	}
+	sd_test_rng_val = write_val;
+
+	char write_str[16];
+	snprintf(write_str, sizeof(write_str), "%08lX", (unsigned long)write_val);
+
+	res = SDCard_Write("sd_test.tmp", write_str);
 	if (res != FR_OK) {
-		LCD_Printf(0, 1, "FAIL: Write %d", res);
+		f_unlink("sd_test.tmp");
 		SDCard_Unmount();
 		return res;
 	}
 
-	res = SDCard_Read("test.txt", readBuffer, sizeof(readBuffer));
-	if (res != FR_OK) {
-		LCD_Printf(0, 1, "FAIL: Read %d", res);
-		SDCard_Unmount();
-		return res;
-	}
-
-	if (strcmp(writeData, readBuffer) != 0) {
-		LCD_Printf(0, 1, "FAIL: Mismatch");
-		return FR_NOT_ENABLED;
-	}
-
-	LCD_Printf(0, 2, readBuffer);
-
+	char read_str[16] = { 0 };
+	res = SDCard_Read("sd_test.tmp", read_str, sizeof(read_str));
+	f_unlink("sd_test.tmp");
 	SDCard_Unmount();
+
+	if (res != FR_OK) {
+		return res;
+	}
+
+	if (strcmp(write_str, read_str) != 0) {
+		return FR_INT_ERR;
+	}
+
 	return FR_OK;
 }
 

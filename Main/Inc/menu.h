@@ -27,6 +27,7 @@ extern uint8_t current_menu_index; // 프로젝트에 맞춰 변수명 확인
 // 배열 크기를 자동으로 계산하는 매크로
 #define MENU_ITEM_COUNT(arr) (sizeof(arr) / sizeof((arr)[0]))
 void Menu_ProcessLoop(void);
+void Menu_RequestRedraw(void);
 
 FRESULT FOC_Parameters_InitOrLoad(void);
 void FOC_Menu_SaveToSD(void);
