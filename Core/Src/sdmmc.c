@@ -32,11 +32,21 @@ void MX_SDMMC1_SD_Init(void)
 {
 
   /* USER CODE BEGIN SDMMC1_Init 0 */
-  /* SD 카드가 장착되지 않은 경우 불필요한 HAL_SD_Init 타임아웃 지연 없이 즉시 복귀 */
-  if (BSP_SD_IsDetected() != SD_PRESENT)
+  /* CubeMX "Generate Code" 시 아래쪽의 if (HAL_SD_Init != HAL_OK) Error_Handler()가
+   * 다시 덮어써지더라도 SD 카드 미장착 시 시스템이 멈추지 않도록
+   * USER CODE 블록 내에서 안전하게 초기화하고 조기 return 처리합니다. */
+  hsd1.Instance = SDMMC1;
+  hsd1.Init.ClockEdge = SDMMC_CLOCK_EDGE_RISING;
+  hsd1.Init.ClockPowerSave = SDMMC_CLOCK_POWER_SAVE_DISABLE;
+  hsd1.Init.BusWide = SDMMC_BUS_WIDE_4B;
+  hsd1.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_DISABLE;
+  hsd1.Init.ClockDiv = 5;
+
+  if (BSP_SD_IsDetected() == SD_PRESENT)
   {
-    return;
+    (void)HAL_SD_Init(&hsd1);
   }
+  return;
   /* USER CODE END SDMMC1_Init 0 */
 
   /* USER CODE BEGIN SDMMC1_Init 1 */
@@ -50,8 +60,7 @@ void MX_SDMMC1_SD_Init(void)
   hsd1.Init.ClockDiv = 5;
   if (HAL_SD_Init(&hsd1) != HAL_OK)
   {
-    /* SD 카드가 없거나 초기화 실패 시 시스템을 Error_Handler 무한 루프로 멈추지 않고 통과 */
-    // Error_Handler();
+    Error_Handler();
   }
   /* USER CODE BEGIN SDMMC1_Init 2 */
 
