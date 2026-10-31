@@ -21,7 +21,7 @@
 #include "sdmmc.h"
 
 /* USER CODE BEGIN 0 */
-
+#include "bsp_driver_sd.h"
 /* USER CODE END 0 */
 
 SD_HandleTypeDef hsd1;
@@ -32,7 +32,11 @@ void MX_SDMMC1_SD_Init(void)
 {
 
   /* USER CODE BEGIN SDMMC1_Init 0 */
-
+  /* SD 카드가 장착되지 않은 경우 불필요한 HAL_SD_Init 타임아웃 지연 없이 즉시 복귀 */
+  if (BSP_SD_IsDetected() != SD_PRESENT)
+  {
+    return;
+  }
   /* USER CODE END SDMMC1_Init 0 */
 
   /* USER CODE BEGIN SDMMC1_Init 1 */
@@ -46,7 +50,8 @@ void MX_SDMMC1_SD_Init(void)
   hsd1.Init.ClockDiv = 5;
   if (HAL_SD_Init(&hsd1) != HAL_OK)
   {
-    Error_Handler();
+    /* SD 카드가 없거나 초기화 실패 시 시스템을 Error_Handler 무한 루프로 멈추지 않고 통과 */
+    // Error_Handler();
   }
   /* USER CODE BEGIN SDMMC1_Init 2 */
 
@@ -146,4 +151,3 @@ void HAL_SD_MspDeInit(SD_HandleTypeDef* sdHandle)
 /* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */
-
