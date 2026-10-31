@@ -50,7 +50,8 @@ static void LastUsed_Save(MenuContext_t *pCtx, uint8_t index);
 extern MenuContext_t sensor_menu;
 extern MenuContext_t motor_menu;
 extern MenuContext_t drive_menu;
-extern MenuContext_t drive_param_menu;
+extern MenuContext_t speed_param_menu;
+extern MenuContext_t steer_param_menu;
 
 // =========================================================
 // 1. 메뉴 아이템 배열 정의 (자동 개수 산정을 위해 먼저 정의)
@@ -100,24 +101,28 @@ MenuItem_t drive_menu_items[] = {
 	{ .name = "AI Auto-Heal", .pfnActionCallback = Drive_AutoHeal_Menu		},
 	{ .name = "Vibe Test",    .pfnActionCallback = Drive_Vibration_Test		},
 	{ .name = "SysID Drive",  .pfnActionCallback = Drive_SysID_Test			},
-    { .name = "Update Param", .pfnActionCallback = NULL, 				.child_menu = &drive_param_menu },
+    { .name = "Speed Param",  .pfnActionCallback = NULL, 				.child_menu = &speed_param_menu },
+    { .name = "Steer Param",  .pfnActionCallback = NULL, 				.child_menu = &steer_param_menu },
 };
 
-MenuItem_t drive_param_items[] = {
+MenuItem_t speed_param_items[] = {
 	{ .name = "Base m/s", 		.pfnActionCallback = Update_Base_Mps			},
 	{ .name = "Max m/s", 		.pfnActionCallback = Update_Max_Mps				},
 	{ .name = "Base Accel", 	.pfnActionCallback = Update_Base_Accel			},
 	{ .name = "Base Decel", 	.pfnActionCallback = Update_Base_Decel			},
+	{ .name = "Brake Margin", 	.pfnActionCallback = Update_Brake_Margin		},
+	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
+	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
+};
+
+MenuItem_t steer_param_items[] = {
 	{ .name = "Steer KP", 		.pfnActionCallback = Update_Steer_KP			},
 	{ .name = "Steer KD", 		.pfnActionCallback = Update_Steer_KD			},
 	{ .name = "Yaw KP", 		.pfnActionCallback = Update_Yaw_KP				},
 	{ .name = "Lat Acc Max", 	.pfnActionCallback = Update_Lat_Acc_Max			},
-	{ .name = "Brake Margin", 	.pfnActionCallback = Update_Brake_Margin		},
 	{ .name = "Target Shift", 	.pfnActionCallback = Update_Target_Shift_Val	},
 	{ .name = "Tgt Crv Gain", 	.pfnActionCallback = Update_Target_Curve_Gain	},
 	{ .name = "Slalom Ratio", 	.pfnActionCallback = Update_Slalom_Ratio		},
-	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
-	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
 };
 
 // =========================================================
@@ -155,10 +160,18 @@ MenuContext_t drive_menu = {
     .cursor_index = 0
 };
 
-MenuContext_t drive_param_menu = {
-	.category_name = "Update Param",
-	.pMenuItems = drive_param_items,
-	.item_count = MENU_ITEM_COUNT(drive_param_items),
+MenuContext_t speed_param_menu = {
+	.category_name = "Speed Param",
+	.pMenuItems = speed_param_items,
+	.item_count = MENU_ITEM_COUNT(speed_param_items),
+	.parent_menu = &drive_menu,
+	.cursor_index = 0
+};
+
+MenuContext_t steer_param_menu = {
+	.category_name = "Steer Param",
+	.pMenuItems = steer_param_items,
+	.item_count = MENU_ITEM_COUNT(steer_param_items),
 	.parent_menu = &drive_menu,
 	.cursor_index = 0
 };
