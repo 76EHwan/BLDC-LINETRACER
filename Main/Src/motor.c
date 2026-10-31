@@ -172,15 +172,18 @@ static volatile float32_t g_grip_atten = 1.0f;   // 접지 한계 감속 비율 
 static volatile float32_t g_prev_steer_error = 0.0f;
 static volatile float32_t g_filtered_deriv = 0.0f;
 static volatile float32_t g_smooth_target_pos = 0.0f; // zero position shifting 완충 필터
+static volatile uint8_t g_prev_was_cross = 0;
 #define YAW_INTEG_MAX 5.0f                        // 적분 한계 [rad/s]
 
 void Steer_Reset_State(void) {
+	Sensor_Reset_Position();
 	g_yaw_integ = 0.0f;
 	g_grip_atten = 1.0f;
 	filtered_atten = 1.0f;
 	g_prev_steer_error = 0.0f;
 	g_filtered_deriv = 0.0f;
 	g_smooth_target_pos = 0.0f;
+	g_prev_was_cross = 0;
 }
 
 void Steer_Motor() {
@@ -193,9 +196,23 @@ void Steer_Motor() {
 	float32_t error = line_pos - g_smooth_target_pos;
 
 	// 2. 미분항(Kd): 측정값(line_pos) 미분(Derivative-on-Measurement) 적용
-	//    target_pos가 동적으로 이동할 때 인공적인 Kd 미분 킥(스파이크) 및 자이로 요레이트 폭주 차단
-	float32_t raw_deriv = line_pos - g_prev_steer_error;
-	g_prev_steer_error = line_pos;
+	//    target_pos 동적 이동 시 인공적인 Kd 미분 킥 차단 및
+	//    크로스 라인 진입/탈출 시 불연속 스텝으로 인한 Kd 폭주/발산 완전 차단
+	float32_t raw_deriv;
+	if (IR_Sensor.is_cross) {
+		g_prev_was_cross = 1;
+		raw_deriv = 0.0f;
+		g_prev_steer_error = line_pos;
+		g_filtered_deriv = 0.0f;
+	} else if (g_prev_was_cross) {
+		g_prev_was_cross = 0;
+		raw_deriv = 0.0f;
+		g_prev_steer_error = line_pos;
+		g_filtered_deriv = 0.0f;
+	} else {
+		raw_deriv = line_pos - g_prev_steer_error;
+		g_prev_steer_error = line_pos;
+	}
 
 	// LPF 차단주파수 약 80Hz (dt = 0.0005s, alpha = 0.80f)
 	const float32_t lpf_alpha = 0.80f;

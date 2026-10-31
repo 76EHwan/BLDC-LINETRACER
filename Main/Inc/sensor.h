@@ -52,6 +52,7 @@ typedef struct {
 	uint8_t is_calibration;
 	uint8_t is_lost_position;
 	uint8_t is_position;
+	uint8_t is_cross;
 	volatile SensorData_TypeDef *data;
 } Sensor_TypeDef;
 
@@ -83,6 +84,7 @@ void Sensor_Stop();
 void Sensor_Printf(uint8_t idx, volatile uint16_t *sensor_data);
 
 float Sensor_Get_Position(void);
+void Sensor_Reset_Position(void);
 
 void Cross_Detect_Reset(void);
 CrossEvent_t Cross_Detect_Update(void);

@@ -67,6 +67,7 @@ volatile Sensor_TypeDef IR_Sensor = {
 		.is_calibration = 0,
 		.is_lost_position = 0,
 		.is_position = 0,
+		.is_cross = 0,
 		.data = &sensorData,
 };
 // @formatter:on
@@ -190,14 +191,22 @@ static uint16_t g_marker_on_count = 0;
 static uint16_t g_marker_off_count = 0;
 #define MARKER_MIN_BLIND_DIST_M 0.080f  // 최소 마커 두께(20mm): 마커 통과 직후 20mm 이내의 노이즈 재트리거(고스트) 차단
 
+static int8_t prev_peak_idx = LINE_N_SENSORS / 2;
+static float32_t prev_position = 0.0f; // 직전 절대 물리 위치 기억
+static uint16_t lost_counter = 0;
+static uint8_t force_full_scan = 0;
+static uint8_t cross_state = 0;
+
+void Sensor_Reset_Position(void) {
+	prev_peak_idx = LINE_N_SENSORS / 2;
+	prev_position = 0.0f;
+	lost_counter = 0;
+	force_full_scan = 1;
+	cross_state = 0;
+	IR_Sensor.is_cross = 0;
+}
+
 float32_t Sensor_Get_Position(void) {
-	static int8_t prev_peak_idx = LINE_N_SENSORS / 2;
-	static float32_t prev_position = 0.0f; // ★ 직전 절대 물리 위치 기억
-
-	static uint16_t lost_counter = 0;
-	static uint8_t force_full_scan = 0;
-
-	static uint8_t cross_state = 0;
 
 	uint16_t max_val = 0;
 	int8_t current_peak_idx = LINE_N_SENSORS / 2;
@@ -332,15 +341,17 @@ float32_t Sensor_Get_Position(void) {
 		lost_counter = 0;
 
 		if (is_cross_line) {
+			IR_Sensor.is_cross = 1;
 			return prev_position;
 		}
+		IR_Sensor.is_cross = 0;
 
 		float32_t current_position = (total_weight > 0.0f) ? (weighted_sum / total_weight) : line_sensor_pos[current_peak_idx];
 
 		// 교차로 통과 직후 잔류 노이즈나 고주파 센서 스파이크에 대한 변화율 제한(Slew Rate Limiter)
-		// 500us(2kHz) 제어 주기 기준 최대 0.08f (초당 160 units/s, 로봇 전폭을 12ms에 가로지르는 물리적 극한 이상)
+		// 500us(2kHz) 제어 주기 기준 최대 0.035f (초당 70 units/s, 물리적 한계 약 5.6 m/s)
 		float32_t pos_diff = current_position - prev_position;
-		const float32_t MAX_POS_STEP = 0.08f;
+		const float32_t MAX_POS_STEP = 0.035f;
 		if (pos_diff > MAX_POS_STEP) {
 			current_position = prev_position + MAX_POS_STEP;
 		} else if (pos_diff < -MAX_POS_STEP) {
@@ -359,6 +370,7 @@ float32_t Sensor_Get_Position(void) {
 			lost_counter = 0;
 		}
 
+		IR_Sensor.is_cross = 0;
 		// 라인을 잃었을 때도 급격히 튀지 않도록 직전 위치 반환
 		return prev_position;
 	}
