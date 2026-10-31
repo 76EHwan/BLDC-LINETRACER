@@ -721,18 +721,55 @@ void Sensor_Position_Printf() {
 }
 
 void IMU_Test(void) {
+	LCD_Clear();
 	LCD_Printf(0, 0, "IMU Test");
+	LCD_Printf(0, 5, "[U] Cali [D] 0Yaw");
+	LCD_Printf(0, 6, "[K Hold] Exit");
 
 	LSM6DS3_Reset_Yaw();
 
-	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
-		LCD_Printf(0, 1, "Yaw: %+6.3f", imu_data.Yaw_Angle);
+	while (1) {
+		uint8_t cmd = Button_Get_Input();
+		if (cmd == INPUT_CMD_K_HOLD) {
+			break;
+		} else if (cmd == INPUT_CMD_U_SINGLE || cmd == INPUT_CMD_U_HOLD) {
+			LCD_Printf(0, 4, "Calibrating...  ");
+			LSM6DS3_Gyro_Calibrate_Z_Only();
+			LCD_Printf(0, 4, "Cali OK!        ");
+		} else if (cmd == INPUT_CMD_D_SINGLE || cmd == INPUT_CMD_D_HOLD) {
+			LSM6DS3_Reset_Yaw();
+			LCD_Printf(0, 4, "Yaw Reset!      ");
+		}
+
+		LCD_Printf(0, 1, "Yaw : %+7.2f deg", (double)imu_data.Yaw_Angle);
+		LCD_Printf(0, 2, "Gz  : %+7.2f dps", (double)(imu_data.Gyro_Z - imu_data.Gyro_Z_Offset));
+		LCD_Printf(0, 3, "Ofst: %+7.2f dps", (double)imu_data.Gyro_Z_Offset);
 
 		HAL_Delay(50);
 	}
 
 	LCD_Clear();
 	Button_Wait_Release(&btn_k);
+}
+
+void IMU_Calibrate_Menu(void) {
+	LCD_Clear();
+	LCD_Printf(0, 0, "IMU Calibration");
+	LCD_Printf(0, 2, "Keep Still 1s...");
+	HAL_Delay(200);
+
+	LSM6DS3_Gyro_Calibrate_Z_Only();
+
+	LCD_Printf(0, 2, "Calibrated OK!  ");
+	LCD_Printf(0, 4, "Offset: %+6.2fdps", (double)imu_data.Gyro_Z_Offset);
+	LCD_Printf(0, 6, "[K] Exit");
+
+	uint8_t btn;
+	while ((btn = Button_Get_Input()) != INPUT_CMD_K_HOLD && btn != INPUT_CMD_K_SINGLE) {
+		HAL_Delay(20);
+	}
+	Button_Wait_Release(&btn_k);
+	LCD_Clear();
 }
 
 
@@ -744,6 +781,8 @@ void Sensor_SysID_Log(void) {
 	if (!IR_Sensor.is_calibration) {
 		Sensor_Load_Calibration();
 	}
+
+	LSM6DS3_Gyro_Calibrate_Z_Only();
 
 	Sensor_Start();
 	HAL_Delay(20);

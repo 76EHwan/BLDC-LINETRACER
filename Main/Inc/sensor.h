@@ -104,5 +104,6 @@ float Sensor_Line_Estimate_Pass1(void);
 float Sensor_Line_Estimate_Pass2(void);
 
 void IMU_Test(void);
+void IMU_Calibrate_Menu(void);
 
 #endif /* INC_SENSOR_H_ */

@@ -72,6 +72,7 @@ MenuItem_t sensor_menu_items[] = {
 	{ .name = "Position",     .pfnActionCallback = Sensor_Position_Printf },
     { .name = "Update Thres", .pfnActionCallback = Update_Threshold },
     { .name = "IMU Test",     .pfnActionCallback = IMU_Test },
+    { .name = "IMU Cali",     .pfnActionCallback = IMU_Calibrate_Menu },
     { .name = "SysID Log",    .pfnActionCallback = Sensor_SysID_Log }
 };
 

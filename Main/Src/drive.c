@@ -412,6 +412,16 @@ void Drive_Reset_Ref_Log_Flag(void) {
     is_ref_log_copied = 0;
 }
 
+__STATIC_INLINE void Drive_IMU_Auto_Calibrate(void) {
+	if (imu_data.Model != LSM6DS_MODEL_UNKNOWN) {
+		LCD_Printf(0, 0, "IMU Calibrating ");
+		LCD_Printf(0, 1, "Keep Still...   ");
+		LSM6DS3_Gyro_Calibrate_Z_Only();
+		LCD_Printf(0, 1, "Ofst:%+6.2f dps", (double)imu_data.Gyro_Z_Offset);
+		HAL_Delay(200);
+	}
+}
+
 __STATIC_INLINE uint8_t Drive_Init_Sequence(void) {
 	LCD7789_Invert(0);
 
@@ -424,6 +434,8 @@ __STATIC_INLINE uint8_t Drive_Init_Sequence(void) {
 			return 0;
 		}
 	}
+
+	Drive_IMU_Auto_Calibrate();
 
 	if (driveData.fan_en) {
 		Fan_Mtr_Start();
@@ -641,6 +653,8 @@ __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
 			return 0;
 		}
 	}
+
+	Drive_IMU_Auto_Calibrate();
 
 	if (driveData.fan_en) {
 		Fan_Mtr_Start();
@@ -935,6 +949,8 @@ __STATIC_INLINE uint8_t Drive_Third_Init_Sequence(void) {
 		if (ref_log_count == 0) return 0;
 		Build_Segment_Plan_Third();
 	}
+
+	Drive_IMU_Auto_Calibrate();
 
 	if (driveData.fan_en) {
 		Fan_Mtr_Start();
@@ -1314,6 +1330,8 @@ __STATIC_INLINE uint8_t Drive_Fourth_Init_Sequence(void) {
 		if (ref_log_count == 0) return 0;
 		Build_Segment_Plan_Fourth();
 	}
+
+	Drive_IMU_Auto_Calibrate();
 
 	if (driveData.fan_en) {
 		Fan_Mtr_Start();
@@ -1701,6 +1719,8 @@ __STATIC_INLINE uint8_t Drive_Fifth_Init_Sequence(void) {
 		if (ref_log_count == 0) return 0;
 		Build_Segment_Plan_Fifth();
 	}
+
+	Drive_IMU_Auto_Calibrate();
 
 	if (driveData.fan_en) {
 		Fan_Mtr_Start();

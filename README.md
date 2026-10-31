@@ -162,7 +162,7 @@ target_omega = mps * (2/TIRE_DIA) * POLE_PAIRS * GEAR_RATIO
 
 공통 사항
 
-- 매 주행 시작 시 센서 캘리브레이션 로드, 팬 기동, 마커 로그·오도메트리 초기화, 조향 PID 재초기화,
+- 매 주행 시작 시 센서 캘리브레이션 로드, 팬 기동 전 출발선 IMU Gyro Z 오프셋 캘리브레이션(약 0.6초), 팬 기동, 마커 로그·오도메트리 초기화, 조향 PID 재초기화,
   FOC 속도 루프 기동, yaw 리셋을 수행합니다 (`Drive_*_Init_Sequence`).
 - 2~4회차는 실제 마커 순서를 기준 로그와 대조하다가 어긋나면 `mismatch` 로 전환해 가속을 중단하고,
   이후 `CROSS_CROSS` 를 만나면 인덱스를 재동기화합니다.
@@ -178,7 +178,7 @@ target_omega = mps * (2/TIRE_DIA) * POLE_PAIRS * GEAR_RATIO
 
 ```
 Main Menu
-├── Sensor Menu   Calibration / Raw / Normalized / State / Position / Update Thres / IMU Test / SysID Log
+├── Sensor Menu   Calibration / Raw / Normalized / State / Position / Update Thres / IMU Test / IMU Cali / SysID Log
 ├── Motor Menu    Driver Setup(레지스터 뷰) / Update Setup / 6-Step PWM / Simple FOC /
 │                 Tune Cur PI / Encoder Test / Tune Spd PID / Fan Test /
 │                 Mag Enc Test / Battery Volt / Load From SD / Save To SD / SysID Test
