@@ -1009,7 +1009,7 @@ void MTR_SysID_Test(void) {
 	LCD_Printf(0, 0, "Saving MotorID..");
 	FRESULT res = SD_SysID_Open(SYSID_MOTOR_PATH);
 	if (res == FR_OK) {
-		char line[256];
+		char line[512];
 		int len = snprintf(line, sizeof(line),
 				"# kt=%.6f\n# r_phase=%.4f\n# j_rotor=%.4e\n# gear=%.7f\n"
 				"# vbus=%.3f\n# fitted_friction_Nm=%.6e\n# fitted_viscous_Nms=%.6e\n"
