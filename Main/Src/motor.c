@@ -877,6 +877,12 @@ void MTR_SysID_Test(void) {
 	foc_L.omega_ramp_rate = 100000.0f;
 	foc_R.omega_ramp_rate = 100000.0f;
 
+	// 3A 파워 서플라이 보호: 모터당 1.0A로 제한 (양쪽 합산 최대 2.0A, OCP 셧다운 방지)
+	float orig_limit_L = foc_L.iq_limit;
+	float orig_limit_R = foc_R.iq_limit;
+	foc_L.iq_limit = 1.0f;
+	foc_R.iq_limit = 1.0f;
+
 	uint32_t n = 0;
 	uint32_t t0 = HAL_GetTick();
 	uint8_t aborted = 0;
@@ -887,7 +893,7 @@ void MTR_SysID_Test(void) {
 	foc_L.target_Iq = 0.0f;
 	foc_R.target_Iq = 0.0f;
 	for (int k = 0; k < 80 && n < SYSID_DRIVE_SAMPLE_MAX; k++) {
-		float id_cmd = (k < 40) ? 1.5f : 0.0f;
+		float id_cmd = (k < 40) ? 0.9f : 0.0f; // 합산 최대 1.8A
 		foc_L.target_Id = id_cmd;
 		foc_R.target_Id = id_cmd;
 
@@ -911,8 +917,9 @@ void MTR_SysID_Test(void) {
 	foc_R.target_Id = 0.0f;
 
 	// Phase 1..7: 무부하 속도 계단 스윕 (쿨롱 마찰 + 점성 마찰 + 속도 스텝 응답)
+	// 3A 파워 공급 환경에 맞춰 안정적인 단계(150~1050 rad/s)로 스윕
 	static const float test_omegas[7] = {
-		200.0f, 400.0f, 600.0f, 800.0f, 1000.0f, 1200.0f, 1500.0f
+		150.0f, 300.0f, 450.0f, 600.0f, 750.0f, 900.0f, 1050.0f
 	};
 	float step_w[7] = { 0 };
 	float step_iq[7] = { 0 };
@@ -973,6 +980,8 @@ void MTR_SysID_Test(void) {
 
 	float vbus_now = FOC_Get_VBus();
 	MTR_Safe_Stop();
+	foc_L.iq_limit = orig_limit_L;
+	foc_R.iq_limit = orig_limit_R;
 
 	// 선형 회귀: tau = Kt * Iq = friction + viscous * omega
 	float friction_Nm = 0.00025f;
