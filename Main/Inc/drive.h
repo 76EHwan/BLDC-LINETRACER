@@ -76,6 +76,7 @@ typedef struct {
 	float_t max_lat_mm;        // 센서바 기준 최대 횡방향 오차 [mm]
 	float_t weave_dps;         // 주행 중 자이로 고주파 진동 에너지 (RMS) [deg/s]
 	float_t fail_v;            // 이탈 직전 주행 속도 [m/s]
+	float_t max_a_lat;         // 실측 최대 횡가속도 [m/s^2]
 	uint32_t heal_count;       // 누적 Auto-Heal 적용 횟수
 	char last_role[16];        // 마지막 적용된 힐링 처방 이름
 } DriveDiag_t;
@@ -111,5 +112,6 @@ void Drive_Diag_Finalize(uint8_t line_lost);
 void Drive_AutoHeal_Apply(void);
 void Drive_AutoHeal_Reset_Anchor(void);
 void Drive_AutoHeal_Menu(void);
+uint8_t Drive_AutoAdapt_Grip(char *diag_str, uint8_t diag_str_size);
 
 #endif /* INC_DRIVE_H_ */

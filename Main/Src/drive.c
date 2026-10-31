@@ -152,6 +152,7 @@ void Drive_Diag_Reset(uint8_t drive_mode) {
 	g_drive_diag.max_lat_mm = 0.0f;
 	g_drive_diag.weave_dps = 0.0f;
 	g_drive_diag.fail_v = driveData.base_mps;
+	g_drive_diag.max_a_lat = 0.0f;
 
 	s_beta_rad = 0.0f;
 	s_gyro_lpf_dps = 0.0f;
@@ -229,6 +230,12 @@ void Drive_Diag_Update_ISR(float_t line_pos_norm, float_t active_mps,
 	float_t hp_dps = gyro_z_dps - s_gyro_lpf_dps;
 	s_weave_sq_sum += hp_dps * hp_dps;
 	s_weave_cnt++;
+
+	// 5. 실측 횡가속도 피크 추적: v * |omega_z|
+	float_t a_lat_obs = fabsf(active_mps * yaw_meas_rads);
+	if (a_lat_obs > g_drive_diag.max_a_lat) {
+		g_drive_diag.max_a_lat = a_lat_obs;
+	}
 }
 
 void Drive_Diag_Finalize(uint8_t line_lost) {
@@ -240,6 +247,62 @@ void Drive_Diag_Finalize(uint8_t line_lost) {
 		g_drive_diag.weave_dps = 0.0f;
 	}
 	g_drive_diag.was_oversteer = (g_drive_diag.max_beta_deg >= 25.0f) ? 1 : 0;
+}
+
+// 텔레메트리 기반 횡가속도(그립 한계) 온보드 자동 학습 및 적응 함수
+// 완주 성공 + 안정적 주행 -> lat_acc_max 자동 상향 (+0.50 ~ +0.70 m/s^2)
+// 오버스티어 / 탈출 진동 감지 -> lat_acc_max 하향 (-0.40 m/s^2) 및 최적값 고정
+uint8_t Drive_AutoAdapt_Grip(char *diag_str, uint8_t diag_str_size) {
+	if (g_drive_diag.line_lost) {
+		// [이탈 실패]
+		if (g_drive_diag.was_oversteer || g_drive_diag.max_beta_deg >= 15.0f) {
+			// 오버스티어/스핀 이탈 -> 횡가속도 한계 하향 (-0.60 m/s^2)
+			driveData.lat_acc_max = Clamp_F32(driveData.lat_acc_max - 0.60f, 10.0f, 25.0f);
+			if (g_heal_anchor_init) g_heal_anchor.lat_acc_max = driveData.lat_acc_max;
+			if (diag_str && diag_str_size) {
+				snprintf(diag_str, diag_str_size, "SpinCut->%.1f", driveData.lat_acc_max);
+			}
+			return 2;
+		} else {
+			// 언더스티어 진입 과속 이탈 -> 횡가속도 약간 하향 & 브레이크 마진 보강
+			driveData.lat_acc_max = Clamp_F32(driveData.lat_acc_max - 0.35f, 10.0f, 25.0f);
+			driveData.brake_margin_m = Clamp_F32(driveData.brake_margin_m + 0.02f, 0.06f, 0.24f);
+			if (g_heal_anchor_init) {
+				g_heal_anchor.lat_acc_max = driveData.lat_acc_max;
+				g_heal_anchor.brake_margin_m = driveData.brake_margin_m;
+			}
+			if (diag_str && diag_str_size) {
+				snprintf(diag_str, diag_str_size, "UndCut->%.1f", driveData.lat_acc_max);
+			}
+			return 2;
+		}
+	}
+
+	// [완주 성공]
+	// 1. 코너 탈출 진동(weave) 또는 슬립각(beta) 과다 여부 검사
+	if (g_drive_diag.max_beta_deg > 6.0f || g_drive_diag.weave_dps > 170.0f) {
+		// 완주는 했으나 한계 그립 초과 조짐 (피시테일/과슬립) -> 살짝 하향하여 최적 안정값 확정
+		driveData.lat_acc_max = Clamp_F32(driveData.lat_acc_max - 0.40f, 10.0f, 25.0f);
+		if (g_heal_anchor_init) g_heal_anchor.lat_acc_max = driveData.lat_acc_max;
+		if (diag_str && diag_str_size) {
+			snprintf(diag_str, diag_str_size, "GripOpt->%.1f", driveData.lat_acc_max);
+		}
+		return 3;
+	}
+
+	// 2. 완벽한 안정 완주 (슬립각 beta <= 6.0° && weave <= 170 dps)
+	// 타이어가 선형 점착 구간에서 여유롭게 버티고 있으므로 한계를 한 단계 상향!
+	float_t step = 0.50f;
+	if (g_drive_diag.max_beta_deg < 3.0f && g_drive_diag.weave_dps < 110.0f) {
+		step = 0.70f; // 여유가 아주 많으면 과감히 상향
+	}
+	driveData.lat_acc_max = Clamp_F32(driveData.lat_acc_max + step, 10.0f, 25.0f);
+	if (g_heal_anchor_init) g_heal_anchor.lat_acc_max = driveData.lat_acc_max;
+
+	if (diag_str && diag_str_size) {
+		snprintf(diag_str, diag_str_size, "Grip+%.1f->%.1f", step, driveData.lat_acc_max);
+	}
+	return 1;
 }
 
 // 실패/주행 텔레메트리 비례 게인 보정 + 누적 포화(Ratchet) 방지 소프트 블렌딩
@@ -312,6 +375,11 @@ void Drive_AutoHeal_Apply(void) {
 			healed.lat_acc_max = Clamp_F32(base.lat_acc_max - (0.25f * slip_sev + 0.35f * speed_sev), 10.0f, 25.0f);
 			healed.brake_margin_m = Clamp_F32(base.brake_margin_m + (0.012f * slip_sev + 0.022f * speed_sev), 0.06f, 0.24f);
 		}
+	} else if (!g_drive_diag.line_lost && osc_sev < 0.25f && slip_sev < 0.25f) {
+		// [GripUp] 안정 완주 -> 횡가속도 한계(그립) 자동 승격
+		role = "GripUp";
+		float_t step = (g_drive_diag.max_beta_deg < 3.0f && g_drive_diag.weave_dps < 110.0f) ? 0.70f : 0.50f;
+		healed.lat_acc_max = Clamp_F32(driveData.lat_acc_max + step, 10.0f, 25.0f);
 	} else {
 		// [PropUND] 언더스티어/조향 부족 이탈 -> 이탈 심각도에 비례해 KP 상향 & KD는 최적 댐핑비(22.4*KP)로 정렬
 		role = "PropUND";
@@ -329,7 +397,12 @@ void Drive_AutoHeal_Apply(void) {
 	const float_t a = 0.15f;
 	driveData.steer_gain_p = fmaxf(0.0f, roundf((a * healed.steer_gain_p + (1.0f - a) * driveData.steer_gain_p) * 1000.0f) / 1000.0f);
 	driveData.steer_gain_d = fmaxf(0.0f, a * healed.steer_gain_d + (1.0f - a) * driveData.steer_gain_d);
-	driveData.lat_acc_max = Clamp_F32(a * healed.lat_acc_max + (1.0f - a) * driveData.lat_acc_max, 10.0f, 25.0f);
+	if (strcmp(role, "GripUp") == 0) {
+		driveData.lat_acc_max = healed.lat_acc_max;
+	} else {
+		driveData.lat_acc_max = Clamp_F32(a * healed.lat_acc_max + (1.0f - a) * driveData.lat_acc_max, 10.0f, 25.0f);
+	}
+	if (g_heal_anchor_init) g_heal_anchor.lat_acc_max = driveData.lat_acc_max;
 	driveData.brake_margin_m = Clamp_F32(a * healed.brake_margin_m + (1.0f - a) * driveData.brake_margin_m, 0.06f, 0.24f);
 	driveData.target_shift_val = Clamp_F32(a * healed.target_shift_val + (1.0f - a) * driveData.target_shift_val, 0.24f, 0.58f);
 	driveData.target_curve_gain = Clamp_F32(a * healed.target_curve_gain + (1.0f - a) * driveData.target_curve_gain, 1.20f, 2.05f);
@@ -2184,13 +2257,17 @@ void Drive_SysID_Test(void) {
 	LCD_Printf(0, 0, "Saving SysID...");
 	FRESULT res = Drive_Save_SysID_To_SD();
 
+	char grip_msg[20] = { 0 };
+	Drive_AutoAdapt_Grip(grip_msg, sizeof(grip_msg));
+
 	LCD_Clear();
 	LCD_Printf(0, 0, exit_reason_lost ? "SysID(Lost)" : "SysID(End)");
-	LCD_Printf(0, 1, (res == FR_OK) ? "Saved SD OK!" : "Save Err:%d", res);
-	LCD_Printf(0, 2, "/SysID_Data/");
-	LCD_Printf(0, 3, "drive_sysid.csv");
-	LCD_Printf(0, 4, "N:%lu T:%.2fs", (unsigned long) g_sysid_drive_count, lap_time);
+	LCD_Printf(0, 1, "LatMax:%.2f m/s2", g_drive_diag.max_a_lat);
+	LCD_Printf(0, 2, "B:%.1fd W:%.0f", g_drive_diag.max_beta_deg, g_drive_diag.weave_dps);
+	LCD_Printf(0, 3, "%-16s", grip_msg);
+	LCD_Printf(0, 4, "T:%.2fs", lap_time);
+	LCD_Printf(0, 5, (res == FR_OK) ? "Saved SD OK!" : "Save Err:%d", res);
 
-	Drive_Wait_Exit_Or_Heal(1);
+	Drive_Wait_Exit_Or_Heal(0);
 	LCD_Clear();
 }
