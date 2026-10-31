@@ -17,9 +17,9 @@ STM32H743VIT6 기반 **BLDC(FOC 제어) 라인트레이서** 펌웨어입니다.
 | 엔코더 | 쿼드러처 엔코더 2048 CPR — LPTIM2(좌) / LPTIM1(우) 엔코더 모드 |
 | 보조 엔코더 | MT6701 자기 엔코더 (SPI2 SSI, 테스트 메뉴에서만 사용) |
 | 라인 센서 | IR 18채널 (라인 16 + 좌/우 마커 2), 4bit MUX 스캔, ADC3 + BDMA |
-| IMU | LSM6DS3TR-C (I2C1 DMA, Gyro Z 적분으로 yaw 산출) |
-| 디스플레이 | ST7789 LCD (SPI, `st7735` 드라이버도 함께 포함) |
-| 저장장치 | microSD (SDMMC1 + FatFs), W25Qxx QSPI 플래시 |
+| IMU | ST **LSM6DS 전 시리즈 범용 지원** (`LSM6DS3`, `LSM6DS3TR-C`, `LSM6DSR`, `LSM6DSO`, `LSM6DST`, `LSM6DSV`, `LSM6DSV16X`, `LSM6DSV32X` `WHO_AM_I` 자동 판별, I2C1 DMA / SPI1 EXTI0, Gyro Z 적분으로 yaw 산출) |
+| 디스플레이 | ST7789 LCD (SPI4 BDMA, 화면 변경 시에만 재렌더링 + 10 ms `__WFI()` 슬립으로 코어/LCD 발열 최소화, 한 화면 10개 메뉴 최적화) |
+| 저장장치 | microSD (SDMMC1 + FatFs, 미장착 시 부팅 자동 스킵 및 RNG 기반 무결성 검증), W25Qxx QSPI 플래시 |
 | 입력 | 5-way 버튼 (U / D / L / R / K), 싱글·더블·홀드 인식 |
 | 부저 | DAC + DMA 파형 출력 (FUET-8540), LPTIM3로 발음 시간 관리 |
 | 기타 | 흡입팬 PWM(TIM15), 배터리 전압 분압 측정, USB DFU 부트로더 진입 |
@@ -43,14 +43,14 @@ Main/                     ← 애플리케이션 로직 (직접 작성한 코드
  ├── Src/motor.c          모터 기동/정지, 조향(Steer), 드라이버 설정, 튜닝 UI
  ├── Src/sensor.c         라인 센서 스캔·정규화·위치 추정, 마커 검출/로깅
  ├── Src/drive.c          1~4회차 주행 시퀀스, 가감속 램프, 구간 계획
- ├── Src/menu.c           계층형 LCD 메뉴, 파라미터 편집, Last-Used 기록
+ ├── Src/menu.c           계층형 LCD 메뉴 (WFI 슬립 발열 억제 및 10개 상한 최적화), 파라미터 편집, Last-Used 기록
  ├── Src/sd_ui.c          SD 카드 설정 저장/로드, 주행 로그 저장, 슬롯 선택 UI
  ├── Src/bootloader.c     시스템 메모리(DFU) 부트로더 점프
- └── Src/user_init.c      전원 인가 후 초기화 시퀀스
+ └── Src/user_init.c      전원 인가 후 초기화 시퀀스 (KEY 홀드 시 부팅 화면 일시정지 지원)
 
-Drivers/BSP/              보드 주변장치 드라이버 (DRV8316C, MCT8316Z, LSM6DS3TR-C,
+Drivers/BSP/              보드 주변장치 드라이버 (DRV8316C, MCT8316Z, LSM6DS3TR-C 범용 드라이버,
                           MT6701, ST7735/ST7789, SDcard, w25qxx, Button, Buzzer)
-Core/                     CubeMX 생성 코드 (main.c, 주변장치 init, IRQ 디스패처)
+Core/                     CubeMX 생성 코드 (main.c, 주변장치 init, IRQ 디스패처, sd_diskio_patch)
 Drivers/CMSIS/DSP         CMSIS-DSP (Clarke/Park/PID/삼각함수)
 FATFS/, Middlewares/      FatFs, USB Device
 MDK-ARM/                  Keil 프로젝트 (보조)
@@ -67,7 +67,7 @@ BLDC_Template_v2.0.0.ioc  STM32CubeMX 프로젝트 파일
 | 속도 루프 | TIM13 | **2 kHz** | 엔코더 차분 속도 측정(이동평균 4), 속도 PID → Iq 지령, Vbus LPF |
 | 램프 & 조향 | TIM14 | **2 kHz** | 오도메트리 적산, 목표속도 가감속 램프, `Steer_Motor()` |
 | 센서 스캔 | TIM7 → TIM2 → ADC3 | 슬롯 25 µs / 전체 **2 kHz** | MUX 채널 전환 → 5 µs 후 ADC 트리거 → 정규화 + 임계 판정 |
-| IMU 샘플링 | SysTick 10 tick | 100 Hz | Gyro Z DMA 읽기 → DWT 사이클 기반 dt로 yaw 적분 |
+| IMU 샘플링 | SysTick 10 tick (I2C1) / EXTI0 (SPI1) | 100 Hz / 1.66~1.92 kHz | Gyro Z 비동기 읽기 → DWT 사이클 기반 dt로 yaw 적분 |
 
 PWM은 TIM3(좌)/TIM4(우) **center-aligned, ARR 4800 @ 240 MHz → 25 kHz** 입니다.
 `MX_DRV8316C_Init()` 에서 CubeMX가 Hall 모드로 만들어 둔 TIM3/TIM4를 PWM 모드로 재구성하고,
@@ -154,9 +154,11 @@ target_omega = mps * (2/TIRE_DIA) * POLE_PAIRS * GEAR_RATIO
 |---|---|---|
 | **1st Drive** | `Drive_First` | 기본 속도로 완주하며 마커·거리·yaw 로그 수집. 두 번째 STOP 마커에서 종료 후 SD 슬롯(1~10)에 저장 |
 | **2nd Drive** | `Drive_Second` | 1회차 로그로 구간 계획을 세워 **직선 구간에서만 `max_mps` 로 가속**, 제동거리 `(v1²−v2²)/2a + 마진` 을 남기고 감속 |
-| **3rd Drive** | `Drive_Third` | 가속은 끄고, 다가올 코너 방향에 따라 **목표 위치(`target_pos`)를 좌우로 선형 보간 이동**시켜 인코스 주행 |
-| **4th Drive** | `Drive_Fourth` | 2회차의 가속 + 3회차의 타겟 시프트를 결합. 기록된 yaw 크기로 **15°~65° 얕은 연속 곡선(슬라롬)** 을 판별해 `max_mps × 0.85` 로 가속 |
+| **3rd Drive** | `Drive_Third` | 직선 가속 + 다가올 코너 방향에 따라 **목표 위치(`target_pos`)를 좌우로 선형 보간 이동**시켜 인코스 주행 |
+| **4th Drive** | `Drive_Fourth` | 2회차의 가속 + 3회차의 타겟 시프트를 결합. 기록된 yaw 크기로 **15°~65° 얕은 연속 곡선(슬라롬)** 을 판별해 가속 |
+| **AI Auto-Heal** | `Drive_AutoHeal_Menu` | 주행 중 탈선/오차에 따라 조향 게인 및 속도를 자동 보정하는 AI 자가치유 주행 |
 | **Vibe Test** | `Drive_Vibration_Test` | 기본 속도 주행 중 Gyro Z를 1 ms 주기로 최대 10000 샘플 기록 → `/Drive_Data/vib_log_*.csv` |
+| **SysID Drive** | `Drive_SysID_Test` | 500 Hz 주행 동특성 데이터 SD 로깅 |
 
 공통 사항
 
@@ -172,17 +174,21 @@ target_omega = mps * (2/TIRE_DIA) * POLE_PAIRS * GEAR_RATIO
 ## 8. 메뉴 구조 (`Main/Src/menu.c`)
 
 버튼: `U`/`D` 커서 이동, `R` 진입/실행, `L` 상위 메뉴, `K` 홀드로 각 기능 종료.
+유휴 상태에서는 화면/커서 변경 시에만 LCD를 갱신하고 10 ms `__WFI()` 슬립으로 대기하여 발열을 방지합니다.
 
 ```
 Main Menu
-├── Sensor Menu   Calibration / Raw / Normalized / State / Position / IMU Test
+├── Sensor Menu   Calibration / Raw / Normalized / State / Position / Update Thres / IMU Test / SysID Log
 ├── Motor Menu    Driver Setup(레지스터 뷰) / Update Setup / 6-Step PWM / Simple FOC /
 │                 Tune Cur PI / Encoder Test / Tune Spd PID / Fan Test /
-│                 Mag Enc Test / Battery Volt / Load From SD / Save To SD
-├── Drive Menu    1st ~ 4th Drive / Vibe Test
-│   └── Update Param  Threshold, Lost Pos Min, Base m/s, Base Accel, Base Decel,
-│                     Max m/s, Steer KP, Steer KD, Pos Abs Gain, Pit In Dis M,
-│                     Target Shift, Fan Enable
+│                 Mag Enc Test / Battery Volt / Load From SD / Save To SD / SysID Test
+├── Drive Menu    1st ~ 4th Drive / AI Auto-Heal / Vibe Test / SysID Drive
+│   └── Update Param  (한 화면 10개 최적화)
+│                     1. Base m/s       6. Steer KD
+│                     2. Max m/s        7. Brake Margin
+│                     3. Base Accel     8. Target Shift
+│                     4. Base Decel     9. Pit In Dis M
+│                     5. Steer KP      10. Fan Enable
 ├── Boot Load     K 홀드 4초 → DFU 부트로더 진입
 └── Last Used     마지막 실행 기능 바로 실행 (내부 플래시에 기록)
 ```
@@ -201,8 +207,9 @@ Main Menu
 | `/Drive_Data/save_slot_1..10.txt` | 주행 파라미터 + 마커 로그 (`IDX / TYPE / DIST / YAW`) |
 | `/Drive_Data/vib_log_*.csv` | 진동 테스트 Gyro Z 로그 |
 
-`save_slot_*.txt` 는 부팅할 때 `Delete_All_Marker_Logs()` 가 전부 삭제하므로,
-보존이 필요한 로그는 전원을 내리기 전에 PC로 옮겨야 합니다.
+- 부팅 시 `SDCard_Test()`가 하드웨어 RNG 난수(`sd_test_rng_val`)를 `/sd_test.tmp`에 기록·검증 후 즉시 삭제합니다.
+- SD 카드가 장착되어 있지 않더라도 부팅이 멈추지 않고 `SD:SKIP`을 표시한 뒤 정상 진입합니다.
+- `save_slot_*.txt` 는 부팅할 때 `Delete_All_Marker_Logs()` 가 비캐시(`SDFatFS_NC`) 버퍼로 마운트하여 전부 삭제하므로, 보존이 필요한 로그는 전원을 내리기 전에 PC로 옮겨야 합니다.
 
 ---
 
@@ -212,14 +219,14 @@ Main Menu
 
 | 항목 | 기본값 | 설명 |
 |---|---|---|
-| `base_mps` | 1.8 | 기본 주행 속도 [m/s] |
+| `base_mps` | 1.9 | 기본 주행 속도 [m/s] |
 | `max_mps` | 8.0 | 가속 구간 최고 속도 [m/s] |
 | `accel` / `decel` | 5.5 / 5.5 | 가감속도 [m/s²] |
-| `steer_gain_p` | 22.4 | 조향 P 게인 |
-| `steer_gain_d` | 600.0 | 조향 D 게인 |
-| `pos_atten_gain` | 0.0 | 오차 비례 감속 게인 (0이면 비활성) |
+| `steer_gain_p` | 11.77 | 조향 P 게인 |
+| `steer_gain_d` | 200.81 | 조향 D 게인 |
+| `brake_margin_m` | 0.135 | 직선 감속 여유 거리 [m] |
 | `pit_in_distance_m` | 0.15 | 정지선 통과 후 정지까지 거리 [m] |
-| `target_shift_val` | 0.3 | 3·4회차 인코스 타겟 이동량 (센서 정규화 좌표) |
+| `target_shift_val` | 0.193 | 3·4회차 인코스 타겟 이동량 (센서 정규화 좌표) |
 | `fan_en` | 0 | 흡입팬 사용 여부 |
 
 센서 임계값 `threshold = 95`, 라인 로스트 판정 합 `line_lost_sum_min = 20` (`sensor.c`).
@@ -242,6 +249,7 @@ Main Menu
 
 > CubeMX로 코드를 재생성한 뒤에는 `Core/Src/stm32h7xx_it.c` 의 USER CODE 블록(타이머/ADC 콜백 디스패처)과
 > `main.c` 의 `Check_Bootloader_Request()` 호출이 유지되었는지 확인하세요.
+> `Core/Src/sd_diskio_patch.c` 에서 `BSP_SD_IsDetected()` 를 오버라이드하므로 CubeMX 재생성 후에도 SD 카드 감지(`PD4`)가 유지됩니다.
 > TIM3/TIM4는 CubeMX에서 Hall 모드로 생성되며 `MX_DRV8316C_Init()` 이 런타임에 PWM으로 바꿉니다 — 정상 동작입니다.
 
 **USB DFU로 플래시하기**
@@ -254,15 +262,16 @@ Main Menu
 
 ## 12. 사용 순서 (첫 세팅)
 
-1. **센서 캘리브레이션** — `Sensor Menu > Calibration`
+1. **부팅 상태 확인** — 전원 인가 시 초기화 결과(감지된 IMU 모델명/Chip ID, FOC 오프셋, 배터리 전압, SD 카드 RNG 검증 결과)가 표시됩니다. `KEY` 버튼을 누르고 있으면 화면이 일시정지(`PAUSED (Rel KEY)`)되어 천천히 확인할 수 있습니다.
+2. **센서 캘리브레이션** — `Sensor Menu > Calibration`
    흰 바닥 위에서 센서바를 흔들어 whitemax 수집 → K 홀드 → 검은 라인 위에서 blackmax 수집 → K 홀드.
    결과는 자동으로 SD에 저장됩니다.
-2. **모터 방향/엔코더 확인** — `Motor Menu > 6-Step PWM` 에서 DirL / DirR 이 `OK` 인지 확인,
+3. **모터 방향/엔코더 확인** — `Motor Menu > 6-Step PWM` 에서 DirL / DirR 이 `OK` 인지 확인,
    `Encoder Test` 로 CNT 증가 방향 확인.
-3. **전류 PI 튜닝** — `Motor Menu > Tune Cur PI` (Id 스텝 응답 관찰), 필요 시 `Tune Spd PID`.
+4. **전류 PI 튜닝** — `Motor Menu > Tune Cur PI` (Id 스텝 응답 관찰), 필요 시 `Tune Spd PID`.
    튜닝값은 `Save To SD` 로 저장, 다음 전원 인가 후 `Load From SD` 로 복원합니다.
-4. **주행 파라미터 설정** — `Drive Menu > Update Param`.
-5. **1st Drive** 로 코스를 한 바퀴 학습시킨 뒤, 같은 전원 세션에서 **2nd / 3rd / 4th Drive** 실행.
+5. **주행 파라미터 설정** — `Drive Menu > Update Param`.
+6. **1st Drive** 로 코스를 한 바퀴 학습시킨 뒤, 같은 전원 세션에서 **2nd / 3rd / 4th Drive** 실행.
    (기준 로그는 RAM에 유지되므로 전원을 내리면 다시 1회차부터 수행해야 합니다.)
 
 ---
