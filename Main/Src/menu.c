@@ -110,8 +110,12 @@ MenuItem_t drive_param_items[] = {
 	{ .name = "Base Decel", 	.pfnActionCallback = Update_Base_Decel			},
 	{ .name = "Steer KP", 		.pfnActionCallback = Update_Steer_KP			},
 	{ .name = "Steer KD", 		.pfnActionCallback = Update_Steer_KD			},
+	{ .name = "Yaw KP", 		.pfnActionCallback = Update_Yaw_KP				},
+	{ .name = "Lat Acc Max", 	.pfnActionCallback = Update_Lat_Acc_Max			},
 	{ .name = "Brake Margin", 	.pfnActionCallback = Update_Brake_Margin		},
 	{ .name = "Target Shift", 	.pfnActionCallback = Update_Target_Shift_Val	},
+	{ .name = "Tgt Crv Gain", 	.pfnActionCallback = Update_Target_Curve_Gain	},
+	{ .name = "Slalom Ratio", 	.pfnActionCallback = Update_Slalom_Ratio		},
 	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
 };
@@ -284,17 +288,25 @@ static volatile uint8_t g_menu_needs_redraw = 1;
 void Menu_RequestRedraw(void) {
 	g_menu_needs_redraw = 1;
 }
+#define MENU_MAX_VISIBLE_LINES 12
+
 __STATIC_INLINE void Show_Menu(MenuContext_t *pCtx) {
 	LCD_Printf(0, 0, "%-16s", pCtx->category_name);
 	LCD_Printf(0, 1, "----------------");
 
-	for (uint8_t i = 0; i < pCtx->item_count; i++) {
+	uint8_t visible = pCtx->item_count - pCtx->top_index;
+	if (visible > MENU_MAX_VISIBLE_LINES) {
+		visible = MENU_MAX_VISIBLE_LINES;
+	}
+
+	for (uint8_t k = 0; k < visible; k++) {
+		uint8_t i = pCtx->top_index + k;
 		if (i == pCtx->cursor_index) {
 			LCD_Set_Color(BLACK, WHITE);
 		} else {
 			LCD_Set_Color(WHITE, BLACK);
 		}
-		LCD_Printf(0, 2 + i, "%X. %-12s", i + 1, pCtx->pMenuItems[i].name);
+		LCD_Printf(0, 2 + k, "%X. %-12s", i + 1, pCtx->pMenuItems[i].name);
 	}
 	LCD_Set_Color(WHITE, BLACK);
 }
@@ -308,6 +320,11 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 		pCtx->cursor_index =
 				(pCtx->cursor_index == (pCtx->item_count - 1)) ?
 						0 : (pCtx->cursor_index + 1);
+		if (pCtx->cursor_index == 0) {
+			pCtx->top_index = 0;
+		} else if (pCtx->cursor_index >= pCtx->top_index + MENU_MAX_VISIBLE_LINES) {
+			pCtx->top_index = pCtx->cursor_index - MENU_MAX_VISIBLE_LINES + 1;
+		}
 		g_menu_needs_redraw = 1;
 		break;
 
@@ -316,6 +333,12 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 		pCtx->cursor_index =
 				(pCtx->cursor_index == 0) ?
 						(pCtx->item_count - 1) : (pCtx->cursor_index - 1);
+		if (pCtx->cursor_index == pCtx->item_count - 1) {
+			pCtx->top_index = (pCtx->item_count > MENU_MAX_VISIBLE_LINES) ?
+					(pCtx->item_count - MENU_MAX_VISIBLE_LINES) : 0;
+		} else if (pCtx->cursor_index < pCtx->top_index) {
+			pCtx->top_index = pCtx->cursor_index;
+		}
 		g_menu_needs_redraw = 1;
 		break;
 
@@ -324,6 +347,7 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 		if (pCtx->parent_menu != NULL) {
 			current_menu = pCtx->parent_menu;
 			current_menu->cursor_index = 0;
+			current_menu->top_index = 0;
 			LCD_Clear();
 			g_menu_needs_redraw = 1;
 		}
@@ -339,6 +363,7 @@ __STATIC_INLINE void Select_Menu(MenuContext_t *pCtx) {
 		if (pCtx->pMenuItems[selected].child_menu != NULL) {
 			current_menu = pCtx->pMenuItems[selected].child_menu;
 			current_menu->cursor_index = 0;
+			current_menu->top_index = 0;
 			g_menu_needs_redraw = 1;
 		}
 		// 2. 실행할 함수가 연결되어 있으면 콜백 실행
@@ -579,6 +604,7 @@ void Menu_ProcessLoop() {
 	static uint8_t lu_inited = 0;
 	static MenuContext_t *last_rendered_menu = NULL;
 	static uint8_t last_rendered_index = 0xFF;
+	static uint8_t last_rendered_top = 0xFF;
 
 	if (!lu_inited) { /* 부팅 후 flash 기록으로 라벨 1회 복원 */
 		LastUsed_RefreshLabel();
@@ -588,11 +614,14 @@ void Menu_ProcessLoop() {
 
 	Select_Menu(current_menu);
 
-	// 메뉴 화면이나 커서가 변경되었을 때만 LCD 재렌더링 (불필요한 무한 SPI/DMA 전송 차단)
-	if (g_menu_needs_redraw || current_menu != last_rendered_menu || current_menu->cursor_index != last_rendered_index) {
+	// 메뉴 화면이나 커서/스크롤이 변경되었을 때만 LCD 재렌더링 (불필요한 무한 SPI/DMA 전송 차단)
+	if (g_menu_needs_redraw || current_menu != last_rendered_menu
+			|| current_menu->cursor_index != last_rendered_index
+			|| current_menu->top_index != last_rendered_top) {
 		Show_Menu(current_menu);
 		last_rendered_menu = current_menu;
 		last_rendered_index = current_menu->cursor_index;
+		last_rendered_top = current_menu->top_index;
 		g_menu_needs_redraw = 0;
 	}
 

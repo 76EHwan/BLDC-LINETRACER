@@ -140,7 +140,7 @@ void Drive_Diag_Reset(uint8_t drive_mode) {
 		// 포화 상태 방지용 안전 범위 클램핑 후 초기 기준점(Anchor) 저장
 		g_heal_anchor.steer_gain_p = (g_heal_anchor.steer_gain_p < 0.0f) ? 0.0f : g_heal_anchor.steer_gain_p;
 		g_heal_anchor.steer_gain_d = (g_heal_anchor.steer_gain_d < 0.0f) ? 0.0f : g_heal_anchor.steer_gain_d;
-		g_heal_anchor.lat_acc_max = Clamp_F32(g_heal_anchor.lat_acc_max, 11.0f, 15.0f);
+		g_heal_anchor.lat_acc_max = Clamp_F32(g_heal_anchor.lat_acc_max, 10.0f, 25.0f);
 		g_heal_anchor.brake_margin_m = Clamp_F32(g_heal_anchor.brake_margin_m, 0.06f, 0.24f);
 		g_heal_anchor_init = 1;
 	}
@@ -295,7 +295,7 @@ void Drive_AutoHeal_Apply(void) {
 		float_t ideal_kd = Clamp_F32(healed.steer_gain_p * 22.4f, 220.0f, 440.0f);
 		healed.steer_gain_d = Clamp_F32(0.60f * base.steer_gain_d + 0.40f * ideal_kd, 200.0f, 440.0f);
 		healed.brake_margin_m = Clamp_F32(base.brake_margin_m + (0.015f + 0.030f * entry_sev), 0.07f, 0.24f);
-		healed.lat_acc_max = Clamp_F32(base.lat_acc_max - (0.30f + 0.55f * entry_sev), 11.0f, 14.8f);
+		healed.lat_acc_max = Clamp_F32(base.lat_acc_max - (0.30f + 0.55f * entry_sev), 10.0f, 25.0f);
 	} else if (g_drive_diag.was_oversteer) {
 		// [PropOVS] 오버스티어/드리프트 과다 -> 슬립각 및 진동량에 비례해 KP 감쇠 & KD 보강
 		role = "PropOVS";
@@ -309,7 +309,7 @@ void Drive_AutoHeal_Apply(void) {
 		}
 		healed.yaw_gain_p = Clamp_F32(base.yaw_gain_p + 0.03f * slip_sev, 0.15f, 0.60f);
 		if (g_drive_diag.drive_mode >= 2) {
-			healed.lat_acc_max = Clamp_F32(base.lat_acc_max - (0.25f * slip_sev + 0.35f * speed_sev), 11.2f, 15.0f);
+			healed.lat_acc_max = Clamp_F32(base.lat_acc_max - (0.25f * slip_sev + 0.35f * speed_sev), 10.0f, 25.0f);
 			healed.brake_margin_m = Clamp_F32(base.brake_margin_m + (0.012f * slip_sev + 0.022f * speed_sev), 0.06f, 0.24f);
 		}
 	} else {
@@ -329,7 +329,7 @@ void Drive_AutoHeal_Apply(void) {
 	const float_t a = 0.15f;
 	driveData.steer_gain_p = fmaxf(0.0f, roundf((a * healed.steer_gain_p + (1.0f - a) * driveData.steer_gain_p) * 1000.0f) / 1000.0f);
 	driveData.steer_gain_d = fmaxf(0.0f, a * healed.steer_gain_d + (1.0f - a) * driveData.steer_gain_d);
-	driveData.lat_acc_max = Clamp_F32(a * healed.lat_acc_max + (1.0f - a) * driveData.lat_acc_max, 11.0f, 15.0f);
+	driveData.lat_acc_max = Clamp_F32(a * healed.lat_acc_max + (1.0f - a) * driveData.lat_acc_max, 10.0f, 25.0f);
 	driveData.brake_margin_m = Clamp_F32(a * healed.brake_margin_m + (1.0f - a) * driveData.brake_margin_m, 0.06f, 0.24f);
 	driveData.target_shift_val = Clamp_F32(a * healed.target_shift_val + (1.0f - a) * driveData.target_shift_val, 0.24f, 0.58f);
 	driveData.target_curve_gain = Clamp_F32(a * healed.target_curve_gain + (1.0f - a) * driveData.target_curve_gain, 1.20f, 2.05f);

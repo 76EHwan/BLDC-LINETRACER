@@ -20,6 +20,7 @@ struct MenuContext_t {
     MenuContext_t *parent_menu;       // 'Left' 버튼을 눌렀을 때 돌아갈 상위 메뉴
     uint8_t prev_index;
     uint8_t cursor_index;
+    uint8_t top_index;                // 스크롤 상단 항목 인덱스
 };
 
 extern uint8_t current_menu_index; // 프로젝트에 맞춰 변수명 확인
