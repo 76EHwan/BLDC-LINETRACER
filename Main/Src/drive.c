@@ -1,4 +1,4 @@
-#include "main.h"
+﻿#include "main.h"
 #include "dac.h"
 #include "drive.h"
 #include "sensor.h"
@@ -16,21 +16,21 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 1.80f,
+    .base_mps = 2.55f,
     .max_mps = 10.00f,
-    .accel = 7.5f,
-    .decel = 7.5f,
-    .steer_gain_p = 14.500f,
-    .steer_gain_d = 260.0f,
+    .accel = 6.0f,
+    .decel = 6.0f,
+    .steer_gain_p = 18.751f,
+    .steer_gain_d = 998.4f,
     .pos_atten_gain = 0.00f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
-	.target_shift_val = 0.38f,
-	.yaw_gain_p = 0.35f,
-	.yaw_gain_i = 0.0f,
-	.lat_acc_max = 13.90f,
-	.target_curve_gain = 1.42f,
-	.slalom_ratio = 0.03f,
+	.target_shift_val = 0.58f,
+	.yaw_gain_p = 0.53f,
+	.yaw_gain_i = 0.2f,
+	.lat_acc_max = 13.40f,
+	.target_curve_gain = 1.50f,
+	.slalom_ratio = 0.02f,
 	.brake_margin_m = 0.24f,
 };
 // @formatter:on
@@ -961,40 +961,95 @@ typedef struct {
 	float end_mps;    // 구간 끝(다음 구간 진입)에서 맞춰야 할 속도
 } DriveThirdState_t;
 
-// 3차 주행용 구간 계획 빌드 (사용자 원본 4차 알고리즘)
+// 3차 주행용 구간 계획 빌드 (마커 페어링 기반 직선/곡선 판별 및 45도 곡선 가속)
 __STATIC_INLINE void Build_Segment_Plan_Third(void) {
-	uint8_t curve_state = 0;
+	uint8_t curve_state = 0; // 0: 직선, 1: 좌(L) 곡선, 2: 우(R) 곡선
 
 	for (uint16_t i = 0; i < ref_log_count; i++) {
 		CrossEvent_t cur = ref_log[i].type;
-
-		// 1. 방향 판별 (CROSS는 투명인간 취급)
-		if (cur == CROSS_LEFT) curve_state = 1;
-		else if (cur == CROSS_RIGHT) curve_state = 2;
-		else if (cur == CROSS_STOP) curve_state = 0;
-
-		seg_plan_3[i].curve_dir = curve_state;
-
-		// 2. 다음 마커까지의 가속 속성 판별
 		uint8_t a_type = 0;
-		if (cur == CROSS_STOP) {
-			a_type = (i == 0) ? 1 : 0;
-		} else if (i + 1 < ref_log_count) {
-			float next_yaw_mag = fabsf(ref_log[i + 1].yaw_angle);
 
-			if (cur == CROSS_CROSS) {
-				a_type = 1; // 직선 가속
-			} else if (cur == CROSS_LEFT || cur == CROSS_RIGHT) {
-				if (next_yaw_mag <= 15.0f) {
-					a_type = 1; // 곡선 끝 마커 뒤의 직선: 풀 가속
-				} else if (next_yaw_mag < 65.0f) {
-					a_type = 2; // 45도(슬라롬) 커브 가속 허용
+		if (cur == CROSS_STOP) {
+			a_type = (i == 0) ? 1 : 0; // 첫 출발 마커(i==0) 직후는 시작 직선이므로 풀 가속(1), 도착 마커는 감속(0)
+			curve_state = 0;
+		} else if (cur == CROSS_CROSS) {
+			// 크로스는 직선 상태 유지 및 풀 가속
+			a_type = 1;
+			curve_state = 0;
+		} else if (cur == CROSS_LEFT) {
+			if (curve_state == 1) {
+				// 좌회전 탈출 마커 -> 곡선 종료, 이후 구간은 무조건 직선 풀 가속
+				curve_state = 0;
+				a_type = 1;
+			} else {
+				// 좌회전 진입 마커 -> 곡선 구간
+				curve_state = 1;
+				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
+				if (curve_yaw < 65.0f) {
+					a_type = 2; // 45도(슬라롬) 가속
+				} else {
+					a_type = 0; // 90도/180도 등 깊은 커브는 안전하게 감속
+				}
+			}
+		} else if (cur == CROSS_RIGHT) {
+			if (curve_state == 2) {
+				// 우회전 탈출 마커 -> 곡선 종료, 이후 구간은 무조건 직선 풀 가속
+				curve_state = 0;
+				a_type = 1;
+			} else {
+				// 우회전 진입 마커 -> 곡선 구간
+				curve_state = 2;
+				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
+				if (curve_yaw < 65.0f) {
+					a_type = 2; // 45도(슬라롬) 가속
 				} else {
 					a_type = 0; // 90도/180도 등 깊은 커브는 안전하게 감속
 				}
 			}
 		}
+
+		seg_plan_3[i].curve_dir = curve_state;
 		seg_plan_3[i].accel_type = a_type;
+	}
+
+	// [사용자 요청: 45도 S자(슬라롬)와 독립 45도 코너(직-45-직) 분리]
+	// 앞뒤가 모두 직선(0.30m 이상)인 독립 45도 코너는 Slalom 가속(type 2)을 끄고 안전 감속(type 0, base_mps) 적용
+	for (uint16_t i = 0; i < ref_log_count; i++) {
+		if (seg_plan_3[i].curve_dir != 0 && seg_plan_3[i].accel_type == 2) {
+			float dist_from_prev_curve = 0.0f;
+			uint8_t prev_has_curve = 0;
+			for (int p = (int)i - 1; p >= 0; p--) {
+				dist_from_prev_curve += ref_log[p + 1].dist_from_prev_m;
+				if (ref_log[p].type == CROSS_CROSS) continue;
+				if (seg_plan_3[p].curve_dir != 0) {
+					prev_has_curve = 1;
+					break;
+				}
+				if (dist_from_prev_curve > 0.30f) break;
+			}
+
+			uint16_t exit_idx = i + 1;
+			while (exit_idx < ref_log_count && seg_plan_3[exit_idx].curve_dir != 0) {
+				exit_idx++;
+			}
+
+			float dist_to_next_curve = 0.0f;
+			uint8_t next_has_curve = 0;
+			for (uint16_t n = exit_idx; n < ref_log_count; n++) {
+				if (n + 1 < ref_log_count) dist_to_next_curve += ref_log[n + 1].dist_from_prev_m;
+				if (ref_log[n].type == CROSS_CROSS) continue;
+				if (seg_plan_3[n].curve_dir != 0) {
+					next_has_curve = 1;
+					break;
+				}
+				if (dist_to_next_curve > 0.30f) break;
+			}
+
+			if ((!prev_has_curve || dist_from_prev_curve >= 0.30f) &&
+			    (!next_has_curve || dist_to_next_curve >= 0.30f)) {
+				seg_plan_3[i].accel_type = 0;
+			}
+		}
 	}
 }
 
@@ -1248,7 +1303,31 @@ __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 		float ratio = traveled / total_dist;
 		if (ratio > 1.0f) ratio = 1.0f;
 		if (ratio < 0.0f) ratio = 0.0f;
-		IR_Sensor.data->target_pos = current_target + (next_target - current_target) * ratio;
+
+		// [사용자 요청: 180도 및 270도 급코너 Late Apex 인코스 제어]
+		// 깊은 헤어핀/루프 코너(150도 이상): 탈출 90도 전까지는 100% 인코스 유지 후 마지막 90도 구간 동안 다음 마커로 보간
+		float curve_yaw = 0.0f;
+		for (int i = prev_idx + 1; i <= next_idx; i++) {
+			curve_yaw += fabsf(ref_log[i].yaw_angle);
+		}
+
+		if (prev_curve != 0 && curve_yaw >= 150.0f) {
+			// 사용자 요청: 진입 후 처음 90도는 완전한 인코스 유지, 그 이후 남은 각도 동안 다음 마커로 부드럽게 보간
+			float hold_ratio = 90.0f / curve_yaw;
+			if (hold_ratio < 0.2f) hold_ratio = 0.2f;
+			if (hold_ratio > 0.65f) hold_ratio = 0.65f;
+
+			if (ratio < hold_ratio) {
+				IR_Sensor.data->target_pos = current_target;
+			} else {
+				float exit_ratio = (ratio - hold_ratio) / (1.0f - hold_ratio);
+				if (exit_ratio > 1.0f) exit_ratio = 1.0f;
+				if (exit_ratio < 0.0f) exit_ratio = 0.0f;
+				IR_Sensor.data->target_pos = current_target + (next_target - current_target) * exit_ratio;
+			}
+		} else {
+			IR_Sensor.data->target_pos = current_target + (next_target - current_target) * ratio;
+		}
 	} else {
 		IR_Sensor.data->target_pos = current_target;
 	}
@@ -1342,40 +1421,82 @@ typedef struct {
 	float end_mps;
 } DriveFourthState_t;
 
-// 4차 주행용 구간 계획 빌드
+// 4차 주행용 구간 계획 빌드 (마커 페어링 기반 직선/곡선 판별 및 45도 곡선 가속)
 __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 	uint8_t curve_state = 0;
 
 	for (uint16_t i = 0; i < ref_log_count; i++) {
 		CrossEvent_t cur = ref_log[i].type;
-
-		// 1. 방향 판별 (CROSS는 투명인간 취급)
-		if (cur == CROSS_LEFT) curve_state = 1;
-		else if (cur == CROSS_RIGHT) curve_state = 2;
-		else if (cur == CROSS_STOP) curve_state = 0;
-
-		seg_plan_4[i].curve_dir = curve_state;
-
-		// 2. 다음 마커까지의 가속 속성 판별
 		uint8_t a_type = 0;
+
 		if (cur == CROSS_STOP) {
 			a_type = (i == 0) ? 1 : 0;
-		} else if (i + 1 < ref_log_count) {
-			float next_yaw_mag = fabsf(ref_log[i + 1].yaw_angle);
-
-			if (cur == CROSS_CROSS) {
+			curve_state = 0;
+		} else if (cur == CROSS_CROSS) {
+			a_type = 1;
+			curve_state = 0;
+		} else if (cur == CROSS_LEFT) {
+			if (curve_state == 1) {
+				curve_state = 0;
 				a_type = 1;
-			} else if (cur == CROSS_LEFT || cur == CROSS_RIGHT) {
-				if (next_yaw_mag <= 15.0f) {
-					a_type = 1; // 곡선 끝 마커 뒤의 직선: 풀 가속
-				} else if (next_yaw_mag < 65.0f) {
-					a_type = 2; // 45도(슬라롬) 가속
-				} else {
-					a_type = 0; // 90도 이상 급커브 안전 감속
-				}
+			} else {
+				curve_state = 1;
+				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
+				a_type = (curve_yaw < 65.0f) ? 2 : 0;
+			}
+		} else if (cur == CROSS_RIGHT) {
+			if (curve_state == 2) {
+				curve_state = 0;
+				a_type = 1;
+			} else {
+				curve_state = 2;
+				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
+				a_type = (curve_yaw < 65.0f) ? 2 : 0;
 			}
 		}
+
+		seg_plan_4[i].curve_dir = curve_state;
 		seg_plan_4[i].accel_type = a_type;
+	}
+
+	// [사용자 요청: 45도 S자(슬라롬)와 독립 45도 코너(직-45-직) 분리]
+	// 앞뒤가 모두 직선(0.30m 이상)인 독립 45도 코너는 Slalom 가속(type 2)을 끄고 안전 감속(type 0, base_mps) 적용
+	for (uint16_t i = 0; i < ref_log_count; i++) {
+		if (seg_plan_4[i].curve_dir != 0 && seg_plan_4[i].accel_type == 2) {
+			float dist_from_prev_curve = 0.0f;
+			uint8_t prev_has_curve = 0;
+			for (int p = (int)i - 1; p >= 0; p--) {
+				dist_from_prev_curve += ref_log[p + 1].dist_from_prev_m;
+				if (ref_log[p].type == CROSS_CROSS) continue;
+				if (seg_plan_4[p].curve_dir != 0) {
+					prev_has_curve = 1;
+					break;
+				}
+				if (dist_from_prev_curve > 0.30f) break;
+			}
+
+			uint16_t exit_idx = i + 1;
+			while (exit_idx < ref_log_count && seg_plan_4[exit_idx].curve_dir != 0) {
+				exit_idx++;
+			}
+
+			float dist_to_next_curve = 0.0f;
+			uint8_t next_has_curve = 0;
+			for (uint16_t n = exit_idx; n < ref_log_count; n++) {
+				if (n + 1 < ref_log_count) dist_to_next_curve += ref_log[n + 1].dist_from_prev_m;
+				if (ref_log[n].type == CROSS_CROSS) continue;
+				if (seg_plan_4[n].curve_dir != 0) {
+					next_has_curve = 1;
+					break;
+				}
+				if (dist_to_next_curve > 0.30f) break;
+			}
+
+			if ((!prev_has_curve || dist_from_prev_curve >= 0.30f) &&
+			    (!next_has_curve || dist_to_next_curve >= 0.30f)) {
+				seg_plan_4[i].accel_type = 0;
+			}
+		}
 	}
 }
 
@@ -1621,7 +1742,31 @@ __STATIC_INLINE void Update_Target_Pos_Fourth(DriveFourthState_t *state) {
 		float ratio = traveled / total_dist;
 		if (ratio > 1.0f) ratio = 1.0f;
 		if (ratio < 0.0f) ratio = 0.0f;
-		IR_Sensor.data->target_pos = current_target + (next_target - current_target) * ratio;
+
+		// [사용자 요청: 180도 및 270도 급코너 Late Apex 인코스 제어]
+		// 깊은 헤어핀/루프 코너(150도 이상): 탈출 90도 전까지는 100% 인코스 유지 후 마지막 90도 구간 동안 다음 마커로 보간
+		float curve_yaw = 0.0f;
+		for (int i = prev_idx + 1; i <= next_idx; i++) {
+			curve_yaw += fabsf(ref_log[i].yaw_angle);
+		}
+
+		if (prev_curve != 0 && curve_yaw >= 150.0f) {
+			// 사용자 요청: 진입 후 처음 90도는 완전한 인코스 유지, 그 이후 남은 각도 동안 다음 마커로 부드럽게 보간
+			float hold_ratio = 90.0f / curve_yaw;
+			if (hold_ratio < 0.2f) hold_ratio = 0.2f;
+			if (hold_ratio > 0.65f) hold_ratio = 0.65f;
+
+			if (ratio < hold_ratio) {
+				IR_Sensor.data->target_pos = current_target;
+			} else {
+				float exit_ratio = (ratio - hold_ratio) / (1.0f - hold_ratio);
+				if (exit_ratio > 1.0f) exit_ratio = 1.0f;
+				if (exit_ratio < 0.0f) exit_ratio = 0.0f;
+				IR_Sensor.data->target_pos = current_target + (next_target - current_target) * exit_ratio;
+			}
+		} else {
+			IR_Sensor.data->target_pos = current_target + (next_target - current_target) * ratio;
+		}
 	} else {
 		IR_Sensor.data->target_pos = current_target;
 	}
@@ -1719,44 +1864,35 @@ __STATIC_INLINE void Build_Segment_Plan_Fifth(void) {
 
 	for (uint16_t i = 0; i < ref_log_count; i++) {
 		CrossEvent_t cur = ref_log[i].type;
+		uint8_t a_type = 0;
 
-		if (cur == CROSS_CROSS) {
-			// 크로스는 직전 곡선 상태 유지
+		if (cur == CROSS_STOP) {
+			a_type = (i == 0) ? 1 : 0;
+			curve_state = 0;
+		} else if (cur == CROSS_CROSS) {
+			a_type = 1;
+			curve_state = 0;
 		} else if (cur == CROSS_LEFT) {
 			if (curve_state == 1) {
 				curve_state = 0;
+				a_type = 1;
 			} else {
 				curve_state = 1;
+				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
+				a_type = (curve_yaw < 65.0f) ? 2 : 0;
 			}
 		} else if (cur == CROSS_RIGHT) {
 			if (curve_state == 2) {
 				curve_state = 0;
+				a_type = 1;
 			} else {
 				curve_state = 2;
+				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
+				a_type = (curve_yaw < 65.0f) ? 2 : 0;
 			}
-		} else if (cur == CROSS_STOP) {
-			curve_state = 0;
 		}
 
 		seg_plan_5[i].curve_dir = curve_state;
-
-		uint8_t a_type = 0;
-		if (cur == CROSS_STOP) {
-			a_type = (i == 0) ? 1 : 0;
-		} else if (i + 1 < ref_log_count) {
-			float next_yaw_mag = fabsf(ref_log[i + 1].yaw_angle);
-			if (cur == CROSS_CROSS) {
-				a_type = 1;
-			} else if (cur == CROSS_LEFT || cur == CROSS_RIGHT) {
-				if (next_yaw_mag <= 15.0f) {
-					a_type = 1;
-				} else if (next_yaw_mag < 65.0f) {
-					a_type = 2;
-				} else {
-					a_type = 0;
-				}
-			}
-		}
 		seg_plan_5[i].accel_type = a_type;
 	}
 }
