@@ -30,22 +30,22 @@ static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1, 
 static const uint8_t scan_group2[SCAN_GROUP_LEN] = { 9, 6, 4, 11, 13, 2, 0, 15, 16, 17 };
 
 const float32_t line_sensor_pos[LINE_N_SENSORS] = {
-		-1.00000f,
-		-0.88282f,
-		-0.75897f,
-		-0.62929f,
-		-0.49450f,
-		-0.35592f,
-		-0.21465f,
-		-0.07175f,
-		 0.07175f,
-		 0.21465f,
-		 0.35592f,
-		 0.49450f,
-		 0.62929f,
-		 0.75897f,
-		 0.88282f,
-		 1.00000f
+		-1.5f,
+		-1.3f,
+		-1.1f,
+		-0.9f,
+		-0.7f,
+		-0.5f,
+		-0.3f,
+		-0.1f,
+		 0.1f,
+		 0.3f,
+		 0.5f,
+		 0.7f,
+		 0.9f,
+		 1.1f,
+		 1.3f,
+		 1.5f
 };
 
 volatile SensorData_TypeDef sensorData = {
@@ -349,9 +349,9 @@ float32_t Sensor_Get_Position(void) {
 		float32_t current_position = (total_weight > 0.0f) ? (weighted_sum / total_weight) : line_sensor_pos[current_peak_idx];
 
 		// 교차로 통과 직후 잔류 노이즈나 고주파 센서 스파이크에 대한 변화율 제한(Slew Rate Limiter)
-		// 500us(2kHz) 제어 주기 기준 최대 0.035f (초당 70 units/s, 물리적 한계 약 5.6 m/s)
+		// 500us(2kHz) 제어 주기 기준 최대 0.0525f (초당 105 units/s, 물리적 한계 약 5.6 m/s)
 		float32_t pos_diff = current_position - prev_position;
-		const float32_t MAX_POS_STEP = 0.035f;
+		const float32_t MAX_POS_STEP = 0.0525f;
 		if (pos_diff > MAX_POS_STEP) {
 			current_position = prev_position + MAX_POS_STEP;
 		} else if (pos_diff < -MAX_POS_STEP) {

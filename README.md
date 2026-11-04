@@ -222,11 +222,11 @@ Main Menu
 | `base_mps` | 1.9 | 기본 주행 속도 [m/s] |
 | `max_mps` | 8.0 | 가속 구간 최고 속도 [m/s] |
 | `accel` / `decel` | 5.5 / 5.5 | 가감속도 [m/s²] |
-| `steer_gain_p` | 11.77 | 조향 P 게인 |
-| `steer_gain_d` | 200.81 | 조향 D 게인 |
-| `brake_margin_m` | 0.135 | 직선 감속 여유 거리 [m] |
+| `steer_gain_p` | 15.04 | 조향 P 게인 ([-1.5, +1.5] 센서 좌표계 기준) |
+| `steer_gain_d` | 431.3 | 조향 D 게인 |
+| `brake_margin_m` | 0.23 | 직선 감속 여유 거리 [m] |
 | `pit_in_distance_m` | 0.15 | 정지선 통과 후 정지까지 거리 [m] |
-| `target_shift_val` | 0.193 | 3·4회차 인코스 타겟 이동량 (센서 정규화 좌표) |
+| `target_shift_val` | 0.40 | 3·4회차 인코스 타겟 이동량 (센서 2칸 = 20mm 라인 폭) |
 | `fan_en` | 0 | 흡입팬 사용 여부 |
 
 센서 임계값 `threshold = 95`, 라인 로스트 판정 합 `line_lost_sum_min = 20` (`sensor.c`).

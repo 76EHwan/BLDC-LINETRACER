@@ -119,6 +119,7 @@ MenuItem_t steer_param_items[] = {
 	{ .name = "Steer KP", 		.pfnActionCallback = Update_Steer_KP			},
 	{ .name = "Steer KD", 		.pfnActionCallback = Update_Steer_KD			},
 	{ .name = "Yaw KP", 		.pfnActionCallback = Update_Yaw_KP				},
+	{ .name = "Yaw KI", 		.pfnActionCallback = Update_Yaw_KI				},
 	{ .name = "Lat Acc Max", 	.pfnActionCallback = Update_Lat_Acc_Max			},
 	{ .name = "Target Shift", 	.pfnActionCallback = Update_Target_Shift_Val	},
 	{ .name = "Tgt Crv Gain", 	.pfnActionCallback = Update_Target_Curve_Gain	},
@@ -455,7 +456,9 @@ __STATIC_INLINE void Update_Param_Intergal(Data_TypeDef param_Data_Typem,
 __STATIC_INLINE void Update_Param_Float(Data_TypeDef param_Data_Type,
 		float_t *floatData) {
 	UserInput_t btn = INPUT_CMD_NONE;
-	uint8_t index = 0;
+	uint8_t index = (floatData == &(driveData.yaw_gain_p) || floatData == &(driveData.yaw_gain_i)
+			|| floatData == &(driveData.brake_margin_m)
+			|| (fabsf(*floatData) < 2.0f && fabsf(*floatData) > 1e-4f)) ? 2 : 0;
 	uint8_t dirty = 1;
 
 	while ((btn = Button_Get_Input()) != INPUT_CMD_K_HOLD) {
