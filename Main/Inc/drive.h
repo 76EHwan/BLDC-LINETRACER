@@ -47,6 +47,7 @@ extern DriveParam_t driveData;
 extern float_t accel;
 extern float_t decel;
 extern volatile uint8_t g_is_braking;
+extern volatile uint8_t g_is_straight;
 extern volatile float g_target_base_mps;
 extern volatile float g_current_base_mps;
 

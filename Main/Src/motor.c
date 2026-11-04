@@ -242,8 +242,10 @@ void Steer_Motor() {
 	// 4. 접지 한계 감속: 속도 x 요레이트(= 횡가속도)가 lat_acc_max를 넘으면 그만큼 속도를 낮춘다.
 	//    곡선에서 미끄러지지 않게(엔코더 거리, 마커 인식이 깨끗하게). 빨리 내리고 천천히(약 0.1 s) 올린다.
 	if (driveData.lat_acc_max > 0.0f) {
+		// 직선 가속 구간에서는 lat_acc_max 2배 적용 (감속 없이 고속 주행 유지)
+		float32_t effective_lat_acc = g_is_straight ? (driveData.lat_acc_max * 2.0f) : driveData.lat_acc_max;
 		float32_t a_lat = active_mps * fabsf(yaw_meas);
-		float32_t raw = (a_lat > driveData.lat_acc_max) ? driveData.lat_acc_max / a_lat : 1.0f;
+		float32_t raw = (a_lat > effective_lat_acc) ? effective_lat_acc / a_lat : 1.0f;
 		if (raw < g_grip_atten)
 			g_grip_atten = raw;
 		else
@@ -253,10 +255,17 @@ void Steer_Motor() {
 		g_grip_atten = 1.0f;
 	}
 
-	// 5. 속도 스케일링: 고속 가속 구간(max_mps)에서 루프 이득이 과도해져 발진하지 않도록 보정
-	//    (이동거리 미분 de/ds 및 Pure Pursuit 곡률 기반 보정)
-	float32_t p_term = steer_pid.Kp * error;
-	float32_t d_term = steer_pid.Kd * g_filtered_deriv;
+	// 5. 속도 스케일링 및 직선 사행(Hunting Oscillation) 원천 억제
+	float32_t current_kp = steer_pid.Kp;
+	float32_t current_kd = steer_pid.Kd;
+	if (g_is_straight) {
+		// 직선 구간: 센서 편차에 의한 과도한 좌우 반작용(3.4Hz 공진) 억제 및 차체 감쇠 극대화
+		current_kp *= 0.50f;
+		current_kd *= 1.40f;
+	}
+
+	float32_t p_term = current_kp * error;
+	float32_t d_term = current_kd * g_filtered_deriv;
 
 	float32_t v_base = driveData.base_mps > 0.5f ? driveData.base_mps : 1.0f;
 	if (active_mps > v_base) {
@@ -267,8 +276,7 @@ void Steer_Motor() {
 
 	g_current_steer = p_term + d_term;
 
-	// 6. 캐스케이드 조향: 라인 PD 출력(steer, 곡률)을 목표 요레이트로 바꾸고 자이로로 추종
-	//    yaw_ref [rad/s], + = 우회전(왼쪽 바퀴가 빠름). yaw_gain_p = yaw_gain_i = 0이면 기존 PD와 동일.
+	// 6. 캐스케이드 조향: 외륜 라인 PD 출력 이득의 인위적 증폭 차단 및 능동 각속도 댐핑
 	float32_t yaw_ref = active_mps * g_current_steer;
 	float32_t yaw_cmd = yaw_ref;
 	if (driveData.yaw_gain_p > 0.0f || driveData.yaw_gain_i > 0.0f) {
@@ -279,7 +287,9 @@ void Steer_Motor() {
 		} else {
 			g_yaw_integ = 0.0f;
 		}
-		yaw_cmd = yaw_ref + driveData.yaw_gain_p * yaw_err + g_yaw_integ;
+		// yaw_ref에 (1 + kp)가 곱해지는 기존의 이득 증폭 버그 차단:
+		// 목표치 yaw_ref는 그대로 유지하고 자이로 피드백 감쇠만 순수하게 가산
+		yaw_cmd = yaw_ref + driveData.yaw_gain_p * (yaw_ref - yaw_meas) / (1.0f + driveData.yaw_gain_p) + g_yaw_integ;
 	} else {
 		g_yaw_integ = 0.0f;
 	}

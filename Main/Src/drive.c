@@ -16,22 +16,22 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 2.55f,
+    .base_mps = 1.90f,
     .max_mps = 10.00f,
     .accel = 6.0f,
     .decel = 6.0f,
-    .steer_gain_p = 18.624f,
-    .steer_gain_d = 1010.7f,
+    .steer_gain_p = 22.560f,
+    .steer_gain_d = 647.0f,
     .pos_atten_gain = 0.00f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
-	.target_shift_val = 0.58f,
-	.yaw_gain_p = 0.55f,
-	.yaw_gain_i = 0.2f,
-	.lat_acc_max = 13.32f,
+	.target_shift_val = 0.40f,
+	.yaw_gain_p = 0.35f,
+	.yaw_gain_i = 0.0f,
+	.lat_acc_max = 9.00f,
 	.target_curve_gain = 1.50f,
-	.slalom_ratio = 0.02f,
-	.brake_margin_m = 0.24f,
+	.slalom_ratio = 0.16f,
+	.brake_margin_m = 0.23f,
 };
 // @formatter:on
 
@@ -49,6 +49,7 @@ float_t decel;
 volatile float_t g_target_base_mps = 0.0f;
 volatile float_t g_current_base_mps = 0.0f;
 volatile uint8_t g_is_braking = 0;
+volatile uint8_t g_is_straight = 0;
 uint32_t count_irq = 0;
 
 void Ramp_TIM_IRQ_Handler(void) {
@@ -388,8 +389,8 @@ void Drive_AutoHeal_Apply(void) {
 		float_t ideal_kd = fmaxf(0.0f, healed.steer_gain_p * 22.4f);
 		healed.steer_gain_d = fmaxf(0.0f, 0.65f * base.steer_gain_d + 0.35f * ideal_kd + 10.0f * osc_sev);
 		if (g_drive_diag.drive_mode >= 3) {
-			healed.target_shift_val = Clamp_F32(base.target_shift_val + 0.030f * under_sev, 0.26f, 0.56f);
-			healed.target_curve_gain = Clamp_F32(base.target_curve_gain + 0.050f * under_sev, 1.25f, 2.00f);
+			healed.target_shift_val = Clamp_F32(base.target_shift_val + 0.030f * under_sev, 0.20f, 2.50f);
+			healed.target_curve_gain = Clamp_F32(base.target_curve_gain + 0.050f * under_sev, 1.00f, 5.00f);
 		}
 	}
 
@@ -404,8 +405,8 @@ void Drive_AutoHeal_Apply(void) {
 	}
 	if (g_heal_anchor_init) g_heal_anchor.lat_acc_max = driveData.lat_acc_max;
 	driveData.brake_margin_m = Clamp_F32(a * healed.brake_margin_m + (1.0f - a) * driveData.brake_margin_m, 0.06f, 0.24f);
-	driveData.target_shift_val = Clamp_F32(a * healed.target_shift_val + (1.0f - a) * driveData.target_shift_val, 0.24f, 0.58f);
-	driveData.target_curve_gain = Clamp_F32(a * healed.target_curve_gain + (1.0f - a) * driveData.target_curve_gain, 1.20f, 2.05f);
+	driveData.target_shift_val = Clamp_F32(a * healed.target_shift_val + (1.0f - a) * driveData.target_shift_val, 0.20f, 3.00f);
+	driveData.target_curve_gain = Clamp_F32(a * healed.target_curve_gain + (1.0f - a) * driveData.target_curve_gain, 1.00f, 5.00f);
 	driveData.yaw_gain_p = Clamp_F32(a * healed.yaw_gain_p + (1.0f - a) * driveData.yaw_gain_p, 0.15f, 0.65f);
 	driveData.pos_atten_gain = 0.0f;
 
@@ -574,6 +575,7 @@ extern uint16_t g_last_stop_state;
 extern uint8_t g_last_stop_count;
 
 void Drive_First(void) {
+	g_is_straight = 0;
 	if (!Drive_Init_Sequence())
 		return;
 
@@ -856,20 +858,24 @@ __STATIC_INLINE void Check_Distance_And_Brake(DriveSecondState_t *state) {
 			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 			const float_t tau_sys = 0.045f;
 			brake_dist += v1 * tau_sys;
+			if (v1 > 3.5f) brake_dist += 0.06f;
 		}
 
 		if (remaining <= brake_dist) {
 			g_target_base_mps = driveData.base_mps;
 			state->braking_started = 1;
+			g_is_straight = 0;
 		} else {
 			if (traveled >= ACCEL_START_MARGIN_M) {
 				g_target_base_mps = driveData.max_mps;
+				g_is_straight = 1;
 			}
 		}
 	}
 }
 
 void Drive_Second(void) {
+	g_is_straight = 0;
 	if (!Drive_Second_Init_Sequence())
 		return;
 	uint32_t start_tick = HAL_GetTick();
@@ -1229,14 +1235,17 @@ __STATIC_INLINE void Check_Distance_And_Brake_Third(DriveThirdState_t *state) {
 			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 			const float_t tau_sys = 0.045f;
 			brake_dist += v1 * tau_sys;
+			if (v1 > 3.5f) brake_dist += 0.06f;
 		}
 
 		if (remaining <= brake_dist) {
 			g_target_base_mps = state->end_mps;
 			state->braking_started = 1;
+			g_is_straight = 0;
 		} else {
 			if (traveled >= ACCEL_START_MARGIN_M) {
 				g_target_base_mps = state->target_mps;
+				if (state->target_mps == driveData.max_mps) g_is_straight = 1;
 			}
 		}
 	}
@@ -1244,7 +1253,7 @@ __STATIC_INLINE void Check_Distance_And_Brake_Third(DriveThirdState_t *state) {
 
 // 곡선 구간에서 target_pos 배율 (target_curve_gain) 적용
 #define TARGET_CURVE_YAW_MIN_DEG 20.0f
-#define TARGET_POS_LIMIT         0.9f
+#define TARGET_POS_LIMIT         3.0f
 __STATIC_INLINE void Apply_Target_Curve_Gain(uint16_t idx) {
 	if (idx >= ref_log_count || driveData.target_curve_gain <= 0.0f)
 		return;
@@ -1256,7 +1265,7 @@ __STATIC_INLINE void Apply_Target_Curve_Gain(uint16_t idx) {
 	}
 }
 
-// 3차 주행 전용 Target Position 예지 이동 로직 (사용자 원본 4차 로직: 마커 기반 선형 보간 & Apply_Target_Curve_Gain)
+// 3차 주행 전용 Target Position 예지 이동 로직 (사용자 원본: Late Apex 인코스 제어 & 곡선 인코스 유지)
 __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 	if (state->mismatch || state->idx >= ref_log_count) {
 		IR_Sensor.data->target_pos = 0.0f;
@@ -1305,17 +1314,15 @@ __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 		if (ratio < 0.0f) ratio = 0.0f;
 
 		// [사용자 요청: 180도 및 270도 급코너 Late Apex 인코스 제어]
-		// 깊은 헤어핀/루프 코너(150도 이상): 탈출 90도 전까지는 100% 인코스 유지 후 마지막 90도 구간 동안 다음 마커로 보간
+		// 각도가 아닌 곡선의 퍼센티지(50%) 동안 인코스 유지 후 나머지 50% 동안 다음 마커로 보간
 		float curve_yaw = 0.0f;
 		for (int i = prev_idx + 1; i <= next_idx; i++) {
 			curve_yaw += fabsf(ref_log[i].yaw_angle);
 		}
 
 		if (prev_curve != 0 && curve_yaw >= 150.0f) {
-			// 사용자 요청: 진입 후 처음 90도는 완전한 인코스 유지, 그 이후 남은 각도 동안 다음 마커로 부드럽게 보간
-			float hold_ratio = 90.0f / curve_yaw;
-			if (hold_ratio < 0.2f) hold_ratio = 0.2f;
-			if (hold_ratio > 0.65f) hold_ratio = 0.65f;
+			// 진입 후 곡선의 50%(0.50f)는 인코스 유지, 그 이후 남은 50% 동안 다음 마커로 보간
+			const float hold_ratio = 0.50f;
 
 			if (ratio < hold_ratio) {
 				IR_Sensor.data->target_pos = current_target;
@@ -1335,6 +1342,7 @@ __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 }
 
 void Drive_Third(void) {
+	g_is_straight = 0;
 	if (!Drive_Third_Init_Sequence())
 		return;
 
@@ -1674,106 +1682,86 @@ __STATIC_INLINE void Check_Distance_And_Brake_Fourth(DriveFourthState_t *state) 
 			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 			const float_t tau_sys = 0.045f;
 			brake_dist += v1 * tau_sys;
+			if (v1 > 3.5f) brake_dist += 0.06f;
 		}
 
 		if (remaining <= brake_dist) {
 			g_target_base_mps = state->end_mps;
 			state->braking_started = 1;
+			g_is_straight = 0;
 		} else {
 			if (traveled >= ACCEL_START_MARGIN_M) {
 				g_target_base_mps = state->target_mps;
+				if (state->target_mps == driveData.max_mps) g_is_straight = 1;
 			}
 		}
 	}
 }
 
-// 4차 주행 전용 Target Position 예지 이동 로직 (개선 버전: 코사인 S-커브 전환, 긴 직선 중앙 복귀, 연속 코너 직선화)
+// 4차 주행 전용 Out-In-Out 최적 레이싱 라인 (Optimal Racing Line) 영점 이동
 __STATIC_INLINE void Update_Target_Pos_Fourth(DriveFourthState_t *state) {
-	if (state->mismatch || state->idx >= ref_log_count) {
+	if (state->mismatch || state->idx >= ref_log_count || state->idx == 0) {
 		IR_Sensor.data->target_pos = 0.0f;
 		return;
 	}
 
-	int prev_idx = -1;
-	for (int i = state->idx - 1; i >= 0; i--) {
-		if (ref_log[i].type != CROSS_CROSS) {
-			prev_idx = i;
-			break;
-		}
-	}
+	uint16_t cur_seg_idx = state->idx - 1;
+	uint8_t curve_dir = seg_plan_4[cur_seg_idx].curve_dir;
+	uint8_t a_type = seg_plan_4[cur_seg_idx].accel_type;
 
-	int next_idx = state->idx;
-	for (int i = state->idx; i < ref_log_count; i++) {
-		if (ref_log[i].type != CROSS_CROSS) {
-			next_idx = i;
-			break;
-		}
-	}
-
-	uint8_t prev_curve = (prev_idx >= 0) ? seg_plan_4[prev_idx].curve_dir : 0;
-	float current_target = 0.0f;
-	if (prev_curve == 1) current_target = driveData.target_shift_val;
-	else if (prev_curve == 2) current_target = -driveData.target_shift_val;
-
-	uint8_t next_curve = (next_idx < ref_log_count) ? seg_plan_4[next_idx].curve_dir : 0;
-	float next_target = 0.0f;
-	if (next_curve == 1) next_target = driveData.target_shift_val;
-	else if (next_curve == 2) next_target = -driveData.target_shift_val;
-
-	float total_dist = 0.0f;
-	for (int i = prev_idx + 1; i <= next_idx; i++) {
-		total_dist += ref_log[i].dist_from_prev_m;
-	}
-
+	float seg_len = ref_log[state->idx].dist_from_prev_m;
+	if (seg_len < 0.05f) seg_len = 0.05f;
 	float traveled = g_odom_distance_m - state->marker_start_dist;
-	for (int i = state->idx - 1; i > prev_idx; i--) {
-		traveled += ref_log[i].dist_from_prev_m;
+	float remaining = seg_len - traveled;
+	float u = traveled / seg_len;
+	if (u < 0.0f) u = 0.0f;
+	if (u > 1.0f) u = 1.0f;
+
+	float d_shift = driveData.target_shift_val;
+	if (d_shift < 0.02f) {
+		IR_Sensor.data->target_pos = 0.0f;
+		return;
 	}
+	if (d_shift > 3.0f) d_shift = 3.0f;
 
-	// [사용자 요청: 90도 및 45도 좌우 연속 코너 완전 직선화!]
-	// 좌우가 연속으로 전환되는 S자 구간(90도 S자 포함, total_dist <= 1.25m):
-	// 인코스를 번갈아 타며 요동치지 않고 곧게 직선으로 통과하도록 타겟을 0.0으로 완전 평탄화
-	if (prev_curve != 0 && next_curve != 0 && prev_curve != next_curve && total_dist <= 1.25f) {
-		current_target = 0.0f;
-		next_target = 0.0f;
-	}
+	float D_in = d_shift;
+	float D_out = d_shift * 0.35f;
 
-	if (total_dist > 0.001f) {
-		float ratio = traveled / total_dist;
-		if (ratio > 1.0f) ratio = 1.0f;
-		if (ratio < 0.0f) ratio = 0.0f;
+	float target = 0.0f;
 
-		// [사용자 요청: 180도 및 270도 급코너 Late Apex 인코스 제어]
-		// 깊은 헤어핀/루프 코너(150도 이상): 탈출 90도 전까지는 100% 인코스 유지 후 마지막 90도 구간 동안 다음 마커로 보간
-		float curve_yaw = 0.0f;
-		for (int i = prev_idx + 1; i <= next_idx; i++) {
-			curve_yaw += fabsf(ref_log[i].yaw_angle);
-		}
-
-		if (prev_curve != 0 && curve_yaw >= 150.0f) {
-			// 사용자 요청: 진입 후 처음 90도는 완전한 인코스 유지, 그 이후 남은 각도 동안 다음 마커로 부드럽게 보간
-			float hold_ratio = 90.0f / curve_yaw;
-			if (hold_ratio < 0.2f) hold_ratio = 0.2f;
-			if (hold_ratio > 0.65f) hold_ratio = 0.65f;
-
-			if (ratio < hold_ratio) {
-				IR_Sensor.data->target_pos = current_target;
-			} else {
-				float exit_ratio = (ratio - hold_ratio) / (1.0f - hold_ratio);
-				if (exit_ratio > 1.0f) exit_ratio = 1.0f;
-				if (exit_ratio < 0.0f) exit_ratio = 0.0f;
-				IR_Sensor.data->target_pos = current_target + (next_target - current_target) * exit_ratio;
-			}
+	if (curve_dir != 0) {
+		float turn_sign = (curve_dir == 1) ? 1.0f : -1.0f;
+		if (a_type == 2) {
+			target = turn_sign * (D_in * 0.70f) * sinf(u * PI);
 		} else {
-			IR_Sensor.data->target_pos = current_target + (next_target - current_target) * ratio;
+			float du = u - 0.5f;
+			float val = D_in - (D_in + D_out) * 4.0f * du * du;
+			target = turn_sign * val;
 		}
 	} else {
-		IR_Sensor.data->target_pos = current_target;
+		uint8_t prev_curve = (cur_seg_idx > 0) ? seg_plan_4[cur_seg_idx - 1].curve_dir : 0;
+		uint8_t next_curve = (state->idx < ref_log_count) ? seg_plan_4[state->idx].curve_dir : 0;
+
+		const float TRANS_OUT = 0.30f;
+		const float TRANS_IN = 0.35f;
+		if (prev_curve != 0 && traveled < TRANS_OUT) {
+			float prev_sign = (prev_curve == 1) ? 1.0f : -1.0f;
+			float w = 0.5f * (1.0f + cosf((traveled / TRANS_OUT) * PI));
+			target = -prev_sign * D_out * w;
+		} else if (next_curve != 0 && remaining < TRANS_IN && remaining >= 0.0f) {
+			float next_sign = (next_curve == 1) ? 1.0f : -1.0f;
+			float w = 0.5f * (1.0f - cosf(((TRANS_IN - remaining) / TRANS_IN) * PI));
+			target = -next_sign * D_out * w;
+		} else {
+			target = 0.0f;
+		}
 	}
-	Apply_Target_Curve_Gain(state->idx);
+
+	IR_Sensor.data->target_pos = target;
 }
 
 void Drive_Fourth(void) {
+	g_is_straight = 0;
 	if (!Drive_Fourth_Init_Sequence())
 		return;
 
@@ -2068,14 +2056,17 @@ __STATIC_INLINE void Check_Distance_And_Brake_Fifth(DriveFifthState_t *state) {
 			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 			const float_t tau_sys = 0.045f;
 			brake_dist += v1 * tau_sys;
+			if (v1 > 3.5f) brake_dist += 0.06f;
 		}
 
 		if (remaining <= brake_dist) {
 			g_target_base_mps = state->end_mps;
 			state->braking_started = 1;
+			g_is_straight = 0;
 		} else {
 			if (traveled >= ACCEL_START_MARGIN_M) {
 				g_target_base_mps = state->target_mps;
+				if (state->target_mps == driveData.max_mps) g_is_straight = 1;
 			}
 		}
 	}
@@ -2105,7 +2096,7 @@ __STATIC_INLINE void Update_Target_Pos_Fifth(DriveFifthState_t *state) {
 		IR_Sensor.data->target_pos = 0.0f;
 		return;
 	}
-	if (d_shift > 0.85f) d_shift = 0.85f;
+	if (d_shift > 3.0f) d_shift = 3.0f;
 
 	float D_in = d_shift;
 	float D_out = d_shift * 0.35f;
@@ -2144,67 +2135,8 @@ __STATIC_INLINE void Update_Target_Pos_Fifth(DriveFifthState_t *state) {
 }
 
 void Drive_Fifth(void) {
-	if (!Drive_Fifth_Init_Sequence())
-		return;
-
-	uint32_t start_tick = HAL_GetTick();
-	DriveFifthState_t state = { 0 };
-	state.marker_start_dist = g_odom_distance_m;
-	state.end_mps = driveData.base_mps;
-
-	if (ref_log_count > 0) {
-		state.accel_active = 1;
-		state.seg_len_predicted = (ref_log[0].type == CROSS_STOP && ref_log_count > 1)
-				? (ref_log[0].dist_from_prev_m + ref_log[1].dist_from_prev_m)
-				: ref_log[0].dist_from_prev_m;
-		if (state.seg_len_predicted > 0.3f) {
-			state.target_mps = driveData.max_mps;
-			g_target_base_mps = state.target_mps;
-		} else {
-			state.target_mps = driveData.base_mps;
-			g_target_base_mps = state.target_mps;
-		}
-	}
-
-	while (!IR_Sensor.is_lost_position) {
-		CrossEvent_t cross = Cross_Detect_Update();
-		if (cross != CROSS_NONE) {
-			if (Process_Marker_Event_Fifth(cross, &state))
-				break;
-		}
-
-		Check_Distance_And_Brake_Fifth(&state);
-		Update_Target_Pos_Fifth(&state);
-	}
-
-	Drive_Diag_Finalize(IR_Sensor.is_lost_position);
-	LCD7789_Invert(0);
-	Drive_Stop_At_Distance(driveData.pit_in_distance_m);
-
-	uint32_t end_tick = HAL_GetTick();
-
-	HAL_Delay(500);
-	Ramp_Stop();
-	Buzzer_Discount_Stop();
-	MTR_Safe_Stop();
-	Sensor_Stop();
-	Fan_Mtr_Stop();
-
-	IR_Sensor.data->target_pos = 0.0f;
-
-	float lap_time = (end_tick - start_tick) / 1000.0f;
-	if (IR_Sensor.is_lost_position) {
-		LCD_Printf(0, 0, "Line Lost");
-	} else {
-		LCD_Printf(0, 0, "End(5th)");
-		LCD_Printf(0, 1, "L:%d", g_total_L);
-		LCD_Printf(0, 2, "R:%d", g_total_R);
-		LCD_Printf(0, 3, "C:%d", g_total_C);
-		LCD_Printf(0, 4, "T:%.2fs", lap_time);
-	}
-
-	Drive_Wait_Exit_Or_Heal(1);
-	LCD_Clear();
+	g_is_straight = 0;
+	Drive_Fourth();
 }
 
 // ============================================================================
