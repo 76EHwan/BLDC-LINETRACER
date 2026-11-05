@@ -142,4 +142,4 @@ HAL_StatusTypeDef LSM6DS3_ReadGyroZ_DMA_Wait(uint32_t timeout_ms);
 #define LSM6DS3_UpdateYaw             LSM6DS_UpdateYaw
 #define LSM6DS3_Reset_Yaw             LSM6DS_Reset_Yaw
 
-#endif /* INC_LSM6DS3TR_H_ */
+#endif /* INC_LSM6DS_H_ */

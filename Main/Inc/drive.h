@@ -31,7 +31,6 @@ typedef struct {
 	// an inner gyro loop tracks it. yaw_gain_p = yaw_gain_i = 0: the plain line PD as before.
 	float_t yaw_gain_p;     // [-]     inner loop P on the yaw-rate error
 	float_t yaw_gain_i;     // [1/s]   inner loop I on the yaw-rate error
-	float_t lat_acc_max;    // [m/s^2] grip limit: slow down while speed x gyro yaw rate exceeds it (0 = off)
 	float_t target_curve_gain; // [-] drive 3/4: target_pos x this inside curve segments (1 = unchanged)
 	float_t slalom_ratio;      // [-] drive 4: 45 deg segments at base + (max - base) x this
 	float_t brake_margin_m;    // [m] 감속 여유 거리: 직선 가속 후 다음 곡선 진입 전 미리 감속 완료할 마진

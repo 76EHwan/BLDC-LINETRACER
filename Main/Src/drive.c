@@ -28,7 +28,6 @@ DriveParam_t driveData = {
 	.target_shift_val = 0.39f,
 	.yaw_gain_p = 0.60f,
 	.yaw_gain_i = 0.2f,
-	.lat_acc_max = 11.47f,
 	.target_curve_gain = 1.92f,
 	.slalom_ratio = 0.03f,
 	.brake_margin_m = 0.23f,
@@ -124,7 +123,6 @@ void Drive_AutoHeal_Reset_Anchor(void) {
 	if (g_heal_anchor_init) {
 		driveData.steer_gain_p = g_heal_anchor.steer_gain_p;
 		driveData.steer_gain_d = g_heal_anchor.steer_gain_d;
-		driveData.lat_acc_max = g_heal_anchor.lat_acc_max;
 		driveData.brake_margin_m = g_heal_anchor.brake_margin_m;
 		driveData.target_shift_val = g_heal_anchor.target_shift_val;
 		driveData.target_curve_gain = g_heal_anchor.target_curve_gain;
@@ -141,7 +139,6 @@ void Drive_Diag_Reset(uint8_t drive_mode) {
 		// 포화 상태 방지용 안전 범위 클램핑 후 초기 기준점(Anchor) 저장
 		g_heal_anchor.steer_gain_p = (g_heal_anchor.steer_gain_p < 0.0f) ? 0.0f : g_heal_anchor.steer_gain_p;
 		g_heal_anchor.steer_gain_d = (g_heal_anchor.steer_gain_d < 0.0f) ? 0.0f : g_heal_anchor.steer_gain_d;
-		g_heal_anchor.lat_acc_max = Clamp_F32(g_heal_anchor.lat_acc_max, 10.0f, 25.0f);
 		g_heal_anchor.brake_margin_m = Clamp_F32(g_heal_anchor.brake_margin_m, 0.06f, 0.24f);
 		g_heal_anchor_init = 1;
 	}
@@ -251,59 +248,10 @@ void Drive_Diag_Finalize(uint8_t line_lost) {
 }
 
 // 텔레메트리 기반 횡가속도(그립 한계) 온보드 자동 학습 및 적응 함수
-// 완주 성공 + 안정적 주행 -> lat_acc_max 자동 상향 (+0.50 ~ +0.70 m/s^2)
-// 오버스티어 / 탈출 진동 감지 -> lat_acc_max 하향 (-0.40 m/s^2) 및 최적값 고정
 uint8_t Drive_AutoAdapt_Grip(char *diag_str, uint8_t diag_str_size) {
-	if (g_drive_diag.line_lost) {
-		// [이탈 실패]
-		if (g_drive_diag.was_oversteer || g_drive_diag.max_beta_deg >= 15.0f) {
-			// 오버스티어/스핀 이탈 -> 횡가속도 한계 하향 (-0.60 m/s^2)
-			driveData.lat_acc_max = Clamp_F32(driveData.lat_acc_max - 0.60f, 10.0f, 25.0f);
-			if (g_heal_anchor_init) g_heal_anchor.lat_acc_max = driveData.lat_acc_max;
-			if (diag_str && diag_str_size) {
-				snprintf(diag_str, diag_str_size, "SpinCut->%.1f", driveData.lat_acc_max);
-			}
-			return 2;
-		} else {
-			// 언더스티어 진입 과속 이탈 -> 횡가속도 약간 하향 & 브레이크 마진 보강
-			driveData.lat_acc_max = Clamp_F32(driveData.lat_acc_max - 0.35f, 10.0f, 25.0f);
-			driveData.brake_margin_m = Clamp_F32(driveData.brake_margin_m + 0.02f, 0.06f, 0.24f);
-			if (g_heal_anchor_init) {
-				g_heal_anchor.lat_acc_max = driveData.lat_acc_max;
-				g_heal_anchor.brake_margin_m = driveData.brake_margin_m;
-			}
-			if (diag_str && diag_str_size) {
-				snprintf(diag_str, diag_str_size, "UndCut->%.1f", driveData.lat_acc_max);
-			}
-			return 2;
-		}
-	}
-
-	// [완주 성공]
-	// 1. 코너 탈출 진동(weave) 또는 슬립각(beta) 과다 여부 검사
-	if (g_drive_diag.max_beta_deg > 6.0f || g_drive_diag.weave_dps > 170.0f) {
-		// 완주는 했으나 한계 그립 초과 조짐 (피시테일/과슬립) -> 살짝 하향하여 최적 안정값 확정
-		driveData.lat_acc_max = Clamp_F32(driveData.lat_acc_max - 0.40f, 10.0f, 25.0f);
-		if (g_heal_anchor_init) g_heal_anchor.lat_acc_max = driveData.lat_acc_max;
-		if (diag_str && diag_str_size) {
-			snprintf(diag_str, diag_str_size, "GripOpt->%.1f", driveData.lat_acc_max);
-		}
-		return 3;
-	}
-
-	// 2. 완벽한 안정 완주 (슬립각 beta <= 6.0° && weave <= 170 dps)
-	// 타이어가 선형 점착 구간에서 여유롭게 버티고 있으므로 한계를 한 단계 상향!
-	float_t step = 0.50f;
-	if (g_drive_diag.max_beta_deg < 3.0f && g_drive_diag.weave_dps < 110.0f) {
-		step = 0.70f; // 여유가 아주 많으면 과감히 상향
-	}
-	driveData.lat_acc_max = Clamp_F32(driveData.lat_acc_max + step, 10.0f, 25.0f);
-	if (g_heal_anchor_init) g_heal_anchor.lat_acc_max = driveData.lat_acc_max;
-
-	if (diag_str && diag_str_size) {
-		snprintf(diag_str, diag_str_size, "Grip+%.1f->%.1f", step, driveData.lat_acc_max);
-	}
-	return 1;
+	(void) diag_str;
+	(void) diag_str_size;
+	return 0;
 }
 
 // 실패/주행 텔레메트리 비례 게인 보정 + 누적 포화(Ratchet) 방지 소프트 블렌딩
@@ -316,7 +264,6 @@ void Drive_AutoHeal_Apply(void) {
 	DriveParam_t base = driveData;
 	base.steer_gain_p = 0.85f * driveData.steer_gain_p + 0.15f * g_heal_anchor.steer_gain_p;
 	base.steer_gain_d = 0.85f * driveData.steer_gain_d + 0.15f * g_heal_anchor.steer_gain_d;
-	base.lat_acc_max = 0.85f * driveData.lat_acc_max + 0.15f * g_heal_anchor.lat_acc_max;
 	base.brake_margin_m = 0.85f * driveData.brake_margin_m + 0.15f * g_heal_anchor.brake_margin_m;
 	base.target_shift_val = 0.85f * driveData.target_shift_val + 0.15f * g_heal_anchor.target_shift_val;
 	base.target_curve_gain = 0.85f * driveData.target_curve_gain + 0.15f * g_heal_anchor.target_curve_gain;
@@ -359,7 +306,6 @@ void Drive_AutoHeal_Apply(void) {
 		float_t ideal_kd = Clamp_F32(healed.steer_gain_p * 28.68f, 147.0f, 293.0f);
 		healed.steer_gain_d = Clamp_F32(0.60f * base.steer_gain_d + 0.40f * ideal_kd, 133.0f, 293.0f);
 		healed.brake_margin_m = Clamp_F32(base.brake_margin_m + (0.015f + 0.030f * entry_sev), 0.07f, 0.24f);
-		healed.lat_acc_max = Clamp_F32(base.lat_acc_max - (0.30f + 0.55f * entry_sev), 10.0f, 25.0f);
 	} else if (g_drive_diag.was_oversteer) {
 		// [PropOVS] 오버스티어/드리프트 과다 -> 슬립각 및 진동량에 비례해 KP 감쇠 & KD 보강
 		role = "PropOVS";
@@ -373,14 +319,8 @@ void Drive_AutoHeal_Apply(void) {
 		}
 		healed.yaw_gain_p = Clamp_F32(base.yaw_gain_p + 0.03f * slip_sev, 0.15f, 0.60f);
 		if (g_drive_diag.drive_mode >= 2) {
-			healed.lat_acc_max = Clamp_F32(base.lat_acc_max - (0.25f * slip_sev + 0.35f * speed_sev), 10.0f, 25.0f);
 			healed.brake_margin_m = Clamp_F32(base.brake_margin_m + (0.012f * slip_sev + 0.022f * speed_sev), 0.06f, 0.24f);
 		}
-	} else if (!g_drive_diag.line_lost && osc_sev < 0.25f && slip_sev < 0.25f) {
-		// [GripUp] 안정 완주 -> 횡가속도 한계(그립) 자동 승격
-		role = "GripUp";
-		float_t step = (g_drive_diag.max_beta_deg < 3.0f && g_drive_diag.weave_dps < 110.0f) ? 0.70f : 0.50f;
-		healed.lat_acc_max = Clamp_F32(driveData.lat_acc_max + step, 10.0f, 25.0f);
 	} else {
 		// [PropUND] 언더스티어/조향 부족 이탈 -> 이탈 심각도에 비례해 KP 상향 & KD는 최적 댐핑비(22.4*KP)로 정렬
 		role = "PropUND";
@@ -398,12 +338,7 @@ void Drive_AutoHeal_Apply(void) {
 	const float_t a = 0.15f;
 	driveData.steer_gain_p = fmaxf(0.0f, roundf((a * healed.steer_gain_p + (1.0f - a) * driveData.steer_gain_p) * 1000.0f) / 1000.0f);
 	driveData.steer_gain_d = fmaxf(0.0f, a * healed.steer_gain_d + (1.0f - a) * driveData.steer_gain_d);
-	if (strcmp(role, "GripUp") == 0) {
-		driveData.lat_acc_max = healed.lat_acc_max;
-	} else {
-		driveData.lat_acc_max = Clamp_F32(a * healed.lat_acc_max + (1.0f - a) * driveData.lat_acc_max, 10.0f, 25.0f);
-	}
-	if (g_heal_anchor_init) g_heal_anchor.lat_acc_max = driveData.lat_acc_max;
+	
 	driveData.brake_margin_m = Clamp_F32(a * healed.brake_margin_m + (1.0f - a) * driveData.brake_margin_m, 0.06f, 0.24f);
 	driveData.target_shift_val = Clamp_F32(a * healed.target_shift_val + (1.0f - a) * driveData.target_shift_val, 0.20f, 1.45f);
 	driveData.target_curve_gain = Clamp_F32(a * healed.target_curve_gain + (1.0f - a) * driveData.target_curve_gain, 1.00f, 5.00f);
@@ -431,12 +366,12 @@ static void Drive_Wait_Exit_Or_Heal(uint8_t show_diag_lines) {
 			Drive_AutoHeal_Apply();
 			LCD_Printf(0, 8, "H:%s", g_drive_diag.last_role);
 			LCD_Printf(0, 9, "P:%.3f D:%.0f", driveData.steer_gain_p, driveData.steer_gain_d);
-			LCD_Printf(0, 10, "L:%.1f B:%.2f", driveData.lat_acc_max, driveData.brake_margin_m);
+			LCD_Printf(0, 10, "Brake: %.2f", driveData.brake_margin_m);
 		} else if (btn == INPUT_CMD_L_HOLD) {
 			Drive_AutoHeal_Reset_Anchor();
 			LCD_Printf(0, 8, "Reset Anchor!");
 			LCD_Printf(0, 9, "P:%.3f D:%.0f", driveData.steer_gain_p, driveData.steer_gain_d);
-			LCD_Printf(0, 10, "L:%.1f B:%.2f", driveData.lat_acc_max, driveData.brake_margin_m);
+			LCD_Printf(0, 10, "Brake: %.2f", driveData.brake_margin_m);
 		} else if (btn == INPUT_CMD_U_HOLD) {
 			LCD_Printf(0, 8, "Saving SysID..");
 			FRESULT r = Drive_Save_SysID_To_SD();
@@ -455,7 +390,7 @@ void Drive_AutoHeal_Menu(void) {
 		LCD_Printf(0, 2, "Beta:%.1fd Lat:%.0f", g_drive_diag.max_beta_deg, g_drive_diag.max_lat_mm);
 		LCD_Printf(0, 3, "Weav:%.0f Vf:%.2f", g_drive_diag.weave_dps, g_drive_diag.fail_v);
 		LCD_Printf(0, 4, "KP:%.3f KD:%.0f", driveData.steer_gain_p, driveData.steer_gain_d);
-		LCD_Printf(0, 5, "LAT:%.2f BRK:%.2f", driveData.lat_acc_max, driveData.brake_margin_m);
+		LCD_Printf(0, 5, "BRK:%.2f", driveData.brake_margin_m);
 		LCD_Printf(0, 6, "SHF:%.2f CRV:%.2f", driveData.target_shift_val, driveData.target_curve_gain);
 		LCD_Printf(0, 8, "[R Hold] Heal Now");
 		LCD_Printf(0, 9, "[L Hold] Anchor");
@@ -1187,7 +1122,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Third(CrossEvent_t cross, DriveThir
 			if (next_yaw_deg > 10.0f && next_dist > 0.05f) {
 				float dtheta_rad = next_yaw_deg * (PI / 180.0f);
 				float r_eff = next_dist / dtheta_rad;
-				/* lat_acc_max curve deceleration disabled */
+				
 			}
 		}
 
@@ -1630,7 +1565,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 			if (next_yaw_deg > 10.0f && next_dist > 0.05f) {
 				float dtheta_rad = next_yaw_deg * (PI / 180.0f);
 				float r_eff = next_dist / dtheta_rad;
-				/* lat_acc_max curve deceleration disabled */
+				
 			}
 		}
 
@@ -2001,7 +1936,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fifth(CrossEvent_t cross, DriveFift
 			if (next_yaw_deg > 10.0f && next_dist > 0.05f) {
 				float dtheta_rad = next_yaw_deg * (PI / 180.0f);
 				float r_eff = next_dist / dtheta_rad;
-				/* lat_acc_max curve deceleration disabled */
+				
 			}
 		}
 
@@ -2222,13 +2157,12 @@ FRESULT Drive_Save_SysID_To_SD(void) {
 	int len = snprintf(line, sizeof(line),
 			"# base_mps=%.2f\n# max_mps=%.2f\n# accel=%.2f\n# decel=%.2f\n"
 			"# steer_kp=%.3f\n# steer_kd=%.1f\n# pos_atten_gain=%.2f\n"
-			"# yaw_kp=%.3f\n# yaw_ki=%.3f\n# lat_acc_max=%.2f\n"
+			"# yaw_kp=%.3f\n# yaw_ki=%.3f\n"
 			"# target_shift=%.2f\n# target_curve_gain=%.2f\n# brake_margin=%.2f\n"
 			"# line_lost=%u\n# max_beta_deg=%.2f\n# max_lat_mm=%.1f\n# weave_dps=%.1f\n# fail_v=%.2f\n",
 			driveData.base_mps, driveData.max_mps, driveData.accel, driveData.decel,
 			driveData.steer_gain_p, driveData.steer_gain_d, driveData.pos_atten_gain,
-			driveData.yaw_gain_p, driveData.yaw_gain_i, driveData.lat_acc_max,
-			driveData.target_shift_val, driveData.target_curve_gain, driveData.brake_margin_m,
+			driveData.yaw_gain_p, driveData.yaw_gain_i, 			driveData.target_shift_val, driveData.target_curve_gain, driveData.brake_margin_m,
 			(unsigned) g_drive_diag.line_lost, g_drive_diag.max_beta_deg,
 			g_drive_diag.max_lat_mm, g_drive_diag.weave_dps, g_drive_diag.fail_v);
 	SD_SysID_WriteChunk(line, (UINT) len);

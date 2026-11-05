@@ -120,7 +120,6 @@ MenuItem_t steer_param_items[] = {
 	{ .name = "Steer KD", 		.pfnActionCallback = Update_Steer_KD			},
 	{ .name = "Yaw KP", 		.pfnActionCallback = Update_Yaw_KP				},
 	{ .name = "Yaw KI", 		.pfnActionCallback = Update_Yaw_KI				},
-	{ .name = "Lat Acc Max", 	.pfnActionCallback = Update_Lat_Acc_Max			},
 	{ .name = "Target Shift", 	.pfnActionCallback = Update_Target_Shift_Val	},
 	{ .name = "Tgt Crv Gain", 	.pfnActionCallback = Update_Target_Curve_Gain	},
 	{ .name = "Slalom Ratio", 	.pfnActionCallback = Update_Slalom_Ratio		},
@@ -600,8 +599,6 @@ void Update_Yaw_KI() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.yaw_gain_i), "Yaw KI");
 }
 
-void Update_Lat_Acc_Max() {
-	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.lat_acc_max), "Lat Acc Max");
 }
 
 void Update_Target_Curve_Gain() {

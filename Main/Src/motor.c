@@ -168,7 +168,6 @@ arm_pid_instance_f32 steer_pid;
 static volatile float32_t g_current_steer = 0.0f;
 static volatile float32_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
 static volatile float32_t g_yaw_integ = 0.0f;    // 캐스케이드 안쪽 루프 적분 [rad/s]
-static volatile float32_t g_grip_atten = 1.0f;   // 접지 한계 감속 비율 (lat_acc_max)
 static volatile float32_t g_prev_steer_error = 0.0f;
 static volatile float32_t g_filtered_deriv = 0.0f;
 static volatile float32_t g_smooth_target_pos = 0.0f; // zero position shifting 완충 필터
@@ -178,7 +177,6 @@ static volatile uint8_t g_prev_was_cross = 0;
 void Steer_Reset_State(void) {
 	Sensor_Reset_Position();
 	g_yaw_integ = 0.0f;
-	g_grip_atten = 1.0f;
 	filtered_atten = 1.0f;
 	g_prev_steer_error = 0.0f;
 	g_filtered_deriv = 0.0f;
@@ -239,9 +237,7 @@ void Steer_Motor() {
 	// Gyro_Z [dps]는 좌회전(CCW)이 + 이므로 부호를 뒤집는다: yaw_meas [rad/s], + = 우회전
 	float32_t yaw_meas = -(imu_data.Gyro_Z - imu_data.Gyro_Z_Offset) * (PI / 180.0f);
 
-	// 4. 접지 한계 감속: 속도 x 요레이트(= 횡가속도)가 lat_acc_max를 넘으면 그만큼 속도를 낮춘다.
 	//    곡선에서 미끄러지지 않게(엔코더 거리, 마커 인식이 깨끗하게). 빨리 내리고 천천히(약 0.1 s) 올린다.
-	g_grip_atten = 1.0f;
 
 
 	// 5. 속도 스케일링 및 직선 사행(Hunting Oscillation) 원천 억제

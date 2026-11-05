@@ -1,5 +1,5 @@
 /*
- * lsm6ds3tr-c.c
+ * lsm6ds.c
  *
  * Universal ST LSM6DS-Series High-Performance IMU Driver
  * Supports LSM6DS3, LSM6DS3TR-C, LSM6DSR, LSM6DSO, LSM6DST, LSM6DSV, LSM6DSV32X
