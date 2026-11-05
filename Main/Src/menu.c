@@ -599,8 +599,6 @@ void Update_Yaw_KI() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.yaw_gain_i), "Yaw KI");
 }
 
-}
-
 void Update_Target_Curve_Gain() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.target_curve_gain), "Tgt Crv Gain");
 }
