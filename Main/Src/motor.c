@@ -5,7 +5,7 @@
 #include "mt6701.h"
 
 #include "drive.h" // 조향 제어 시 목표 속도(g_current_base_mps) 참조용
-#include "lsm6ds3tr-c.h" // 캐스케이드 조향: imu_data.Gyro_Z
+#include "lsm6ds.h" // 캐스케이드 조향: imu_data.Gyro_Z
 #include "motor.h"
 #include "sensor.h"
 #include "user_init.h"
@@ -241,19 +241,8 @@ void Steer_Motor() {
 
 	// 4. 접지 한계 감속: 속도 x 요레이트(= 횡가속도)가 lat_acc_max를 넘으면 그만큼 속도를 낮춘다.
 	//    곡선에서 미끄러지지 않게(엔코더 거리, 마커 인식이 깨끗하게). 빨리 내리고 천천히(약 0.1 s) 올린다.
-	if (driveData.lat_acc_max > 0.0f) {
-		// 직선 가속 구간에서는 lat_acc_max 2배 적용 (감속 없이 고속 주행 유지)
-		float32_t effective_lat_acc = g_is_straight ? (driveData.lat_acc_max * 2.0f) : driveData.lat_acc_max;
-		float32_t a_lat = active_mps * fabsf(yaw_meas);
-		float32_t raw = (a_lat > effective_lat_acc) ? effective_lat_acc / a_lat : 1.0f;
-		if (raw < g_grip_atten)
-			g_grip_atten = raw;
-		else
-			g_grip_atten = 0.995f * g_grip_atten + 0.005f * raw;
-		active_mps *= g_grip_atten;
-	} else {
-		g_grip_atten = 1.0f;
-	}
+	g_grip_atten = 1.0f;
+
 
 	// 5. 속도 스케일링 및 직선 사행(Hunting Oscillation) 원천 억제
 	float32_t current_kp = steer_pid.Kp;

@@ -1,4 +1,4 @@
-#include "main.h"
+﻿#include "main.h"
 #include "dac.h"
 #include "drive.h"
 #include "sensor.h"
@@ -9,28 +9,28 @@
 #include "sd_ui.h"
 #include "buzzer.h"
 #include "lptim.h"
-#include "lsm6ds3tr-c.h"
+#include "lsm6ds.h"
 
 #define RAMP_TIM        (&htim14)
 #define VIB_SAMPLE_MAX  10000
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 1.90f,
+    .base_mps = 1.60f,
     .max_mps = 10.00f,
-    .accel = 6.0f,
-    .decel = 6.0f,
-    .steer_gain_p = 15.040f,
-    .steer_gain_d = 431.3f,
+    .accel = 5.5f,
+    .decel = 5.5f,
+    .steer_gain_p = 20.620f,
+    .steer_gain_d = 688.0f,
     .pos_atten_gain = 0.00f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
-	.target_shift_val = 0.40f,
-	.yaw_gain_p = 0.35f,
-	.yaw_gain_i = 0.0f,
-	.lat_acc_max = 9.00f,
-	.target_curve_gain = 1.50f,
-	.slalom_ratio = 0.16f,
+	.target_shift_val = 0.39f,
+	.yaw_gain_p = 0.60f,
+	.yaw_gain_i = 0.2f,
+	.lat_acc_max = 11.47f,
+	.target_curve_gain = 1.92f,
+	.slalom_ratio = 0.03f,
 	.brake_margin_m = 0.23f,
 };
 // @formatter:on
@@ -1187,11 +1187,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Third(CrossEvent_t cross, DriveThir
 			if (next_yaw_deg > 10.0f && next_dist > 0.05f) {
 				float dtheta_rad = next_yaw_deg * (PI / 180.0f);
 				float r_eff = next_dist / dtheta_rad;
-				float a_lat_limit = (driveData.lat_acc_max > 0.0f) ? driveData.lat_acc_max : 12.0f;
-				float v_grip = sqrtf(a_lat_limit * r_eff);
-				if (state->end_mps > v_grip) {
-					state->end_mps = v_grip;
-				}
+				/* lat_acc_max curve deceleration disabled */
 			}
 		}
 
@@ -1634,11 +1630,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 			if (next_yaw_deg > 10.0f && next_dist > 0.05f) {
 				float dtheta_rad = next_yaw_deg * (PI / 180.0f);
 				float r_eff = next_dist / dtheta_rad;
-				float a_lat_limit = (driveData.lat_acc_max > 0.0f) ? driveData.lat_acc_max : 12.0f;
-				float v_grip = sqrtf(a_lat_limit * r_eff);
-				if (state->end_mps > v_grip) {
-					state->end_mps = v_grip;
-				}
+				/* lat_acc_max curve deceleration disabled */
 			}
 		}
 
@@ -2009,11 +2001,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fifth(CrossEvent_t cross, DriveFift
 			if (next_yaw_deg > 10.0f && next_dist > 0.05f) {
 				float dtheta_rad = next_yaw_deg * (PI / 180.0f);
 				float r_eff = next_dist / dtheta_rad;
-				float a_lat_limit = (driveData.lat_acc_max > 0.0f) ? driveData.lat_acc_max : 12.0f;
-				float v_grip = sqrtf(a_lat_limit * r_eff);
-				if (state->end_mps > v_grip) {
-					state->end_mps = v_grip;
-				}
+				/* lat_acc_max curve deceleration disabled */
 			}
 		}
 

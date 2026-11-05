@@ -5,7 +5,7 @@
  * Supports LSM6DS3, LSM6DS3TR-C, LSM6DSR, LSM6DSO, LSM6DST, LSM6DSV, LSM6DSV32X
  */
 
-#include "lsm6ds3tr-c.h"
+#include "lsm6ds.h"
 
 volatile LSM6DS_Data_t imu_data;
 volatile uint8_t imu_dma_busy = 0;

@@ -3,7 +3,7 @@
 
 #include "button.h"
 #include "buzzer.h"
-#include "lsm6ds3tr-c.h"
+#include "lsm6ds.h"
 
 #include "foc.h"
 #include "motor.h"

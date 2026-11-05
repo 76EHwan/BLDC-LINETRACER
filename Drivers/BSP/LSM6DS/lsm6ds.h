@@ -1,5 +1,5 @@
 /*
- * lsm6ds3tr-c.h
+ * lsm6ds.h
  *
  * Universal ST LSM6DS-Series High-Performance IMU Driver
  * Compatible with:
@@ -12,8 +12,8 @@
  *   - LSM6DSV32X    (WHO_AM_I = 0x71)
  */
 
-#ifndef INC_LSM6DS3TR_H_
-#define INC_LSM6DS3TR_H_
+#ifndef INC_LSM6DS_H_
+#define INC_LSM6DS_H_
 
 #include "main.h"
 #include "i2c.h"

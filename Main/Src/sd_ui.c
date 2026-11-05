@@ -17,7 +17,7 @@
 #include "sd_ui.h"
 #include "sensor.h"
 #include "user_init.h"
-#include "lsm6ds3tr-c.h"
+#include "lsm6ds.h"
 
 // =========================================================
 // [SD카드 저장 및 불러오기]
