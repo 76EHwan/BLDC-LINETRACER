@@ -197,6 +197,12 @@ static uint16_t lost_counter = 0;
 static uint8_t force_full_scan = 0;
 static uint8_t cross_state = 0;
 
+// 시간축 1D Convolution을 위한 링버퍼 (마커 후보 강도 저장)
+#define TIME_RING_LEN 8
+static uint8_t left_ring[TIME_RING_LEN] = {0};
+static uint8_t right_ring[TIME_RING_LEN] = {0};
+static uint8_t ring_idx = 0;
+
 void Sensor_Reset_Position(void) {
 	prev_peak_idx = LINE_N_SENSORS / 2;
 	prev_position = 0.0f;
@@ -204,6 +210,11 @@ void Sensor_Reset_Position(void) {
 	force_full_scan = 1;
 	cross_state = 0;
 	IR_Sensor.is_cross = 0;
+	for (int i = 0; i < 8; i++) {
+		left_ring[i] = 0;
+		right_ring[i] = 0;
+	}
+	ring_idx = 0;
 }
 
 float32_t Sensor_Get_Position(void) {
@@ -295,18 +306,60 @@ float32_t Sensor_Get_Position(void) {
 	if (calc_end >= LINE_N_SENSORS)
 		calc_end = LINE_N_SENSORS - 1;
 
-	uint8_t mark_left = 0, mark_right = 0;
+	uint8_t raw_mark_left = 0, raw_mark_right = 0;
+	const int32_t CONV_PEAK_MIN = 50; // 바닥 노이즈(±1~3) 출력(최대 ~6) 대비 8배 이상의 피크 마진
+
+	// 1. 공간(Spatial) 1D Convolution 기반 마커 검출 (커널: [-1, 2, -1])
+	// 왼쪽 외곽 영역 탐색 (0 <= i < calc_start)
 	for (int8_t i = 0; i < calc_start; i++) {
-		if (state16 & (1U << i)) {
-			mark_left = 1;
+		int32_t prev_v = (i > 0) ? (int32_t)IR_Sensor.data->normalized[i - 1] : (int32_t)IR_Sensor.data->normalized[16];
+		int32_t curr_v = (int32_t)IR_Sensor.data->normalized[i];
+		int32_t next_v = (i < LINE_N_SENSORS - 1) ? (int32_t)IR_Sensor.data->normalized[i + 1] : (int32_t)IR_Sensor.data->normalized[17];
+		int32_t conv = -prev_v + 2 * curr_v - next_v;
+
+		if (conv > CONV_PEAK_MIN && curr_v > IR_Sensor.data->threshold) {
+			raw_mark_left = 1;
 			break;
 		}
 	}
+
+	// 오른쪽 외곽 영역 탐색 (calc_end + 1 <= i < LINE_N_SENSORS)
 	for (int8_t i = calc_end + 1; i < LINE_N_SENSORS; i++) {
-		if (state16 & (1U << i)) {
-			mark_right = 1;
+		int32_t prev_v = (i > 0) ? (int32_t)IR_Sensor.data->normalized[i - 1] : (int32_t)IR_Sensor.data->normalized[16];
+		int32_t curr_v = (int32_t)IR_Sensor.data->normalized[i];
+		int32_t next_v = (i < LINE_N_SENSORS - 1) ? (int32_t)IR_Sensor.data->normalized[i + 1] : (int32_t)IR_Sensor.data->normalized[17];
+		int32_t conv = -prev_v + 2 * curr_v - next_v;
+
+		if (conv > CONV_PEAK_MIN && curr_v > IR_Sensor.data->threshold) {
+			raw_mark_right = 1;
 			break;
 		}
+	}
+
+	// 2. 링버퍼 기반 시간축 1D Convolution
+	// 최근 샘플들을 링버퍼에 저장하고 시간축 커널을 적용하여 펄스 신호인지 판정
+	left_ring[ring_idx] = raw_mark_left;
+	right_ring[ring_idx] = raw_mark_right;
+	ring_idx = (ring_idx + 1) % TIME_RING_LEN;
+
+	// 시간축 필터링: 연속된 노이즈 스파이크나 급커브 시 단발성 유입을 방어하기 위해
+	// 최근 N샘플 중 유효 펄스 패턴을 시간축 convolution으로 확인
+	uint8_t mark_left = 0, mark_right = 0;
+	int32_t t_conv_l = 0, t_conv_r = 0;
+	// 가중치 커널 (시간축 중심 강조 필터)
+	static const int8_t time_kernel[TIME_RING_LEN] = {1, 1, 2, 2, 2, 2, 1, 1};
+	for (uint8_t k = 0; k < TIME_RING_LEN; k++) {
+		uint8_t r_pos = (ring_idx + k) % TIME_RING_LEN;
+		t_conv_l += (int32_t)left_ring[r_pos] * time_kernel[k];
+		t_conv_r += (int32_t)right_ring[r_pos] * time_kernel[k];
+	}
+
+	// 시간축 펄스 지속성 기준 (일정 누적 가중치 이상일 때 마커로 확정)
+	if (t_conv_l >= 4) {
+		mark_left = 1;
+	}
+	if (t_conv_r >= 4) {
+		mark_right = 1;
 	}
 
 	IR_Sensor.data->mark_left = mark_left;
@@ -444,10 +497,6 @@ CrossEvent_t Cross_Detect_Update(void) {
 
 	switch (g_marker_state) {
 	case MARKER_STATE_IDLE:
-		// 불응 거리 보호: 직전 마커 판정 후 최소 마커 두께(20mm) 주행 전에는 노이즈나 테이프 잔류 신호로 인한 재인식 차단
-		if (g_cross_log_count > 0 && g_odom_distance_m < MARKER_MIN_BLIND_DIST_M) {
-			break;
-		}
 		if (left_marker || right_marker) {
 			g_marker_state = MARKER_STATE_READING;
 			g_accum_left = left_marker;
