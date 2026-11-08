@@ -16,21 +16,21 @@
 
 // @formatter:off
 DriveParam_t driveData = {
-    .base_mps = 1.60f,
-    .max_mps = 10.00f,
-    .accel = 5.5f,
-    .decel = 5.5f,
-    .steer_gain_p = 20.620f,
-    .steer_gain_d = 688.0f,
+    .base_mps = 2.40f,
+    .max_mps = 7.00f,
+    .accel = 8.0f,
+    .decel = 8.0f,
+    .steer_gain_p = 16.400f,
+    .steer_gain_d = 600.0f,
     .pos_atten_gain = 0.00f,
     .pit_in_distance_m = 0.15f,
     .fan_en = 0,
-	.target_shift_val = 0.39f,
-	.yaw_gain_p = 0.60f,
-	.yaw_gain_i = 0.2f,
-	.target_curve_gain = 1.92f,
+	.target_shift_val = 0.60f,
+	.yaw_gain_p = 0.45f,
+	.yaw_gain_i = 0.0f,
+	.target_curve_gain = 1.25f,
 	.slalom_ratio = 0.03f,
-	.brake_margin_m = 0.23f,
+	.brake_margin_m = 0.15f,
 };
 // @formatter:on
 
@@ -581,7 +581,7 @@ static uint16_t ref_log_count = 0;
 static SegmentPlan_t seg_plan[CROSS_LOG_MAX];
 
 #define BRAKE_MARGIN_M 0.06f
-#define ACCEL_START_MARGIN_M 0.08f
+#define ACCEL_START_MARGIN_M 0.25f // 코너 탈출 직후 차체 직진 정렬 완료 후 가속 개시 마진 (기존 0.08m -> 0.25m)
 
 typedef struct {
 	uint16_t idx;
@@ -607,16 +607,28 @@ __STATIC_INLINE void Build_Segment_Plan(void) {
 				curve_state = 0;
 				is_straight = 1;
 			} else {
-				curve_state = 1;
-				is_straight = 0;
+				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
+				if (curve_yaw < 25.0f) {
+					curve_state = 0;
+					is_straight = 0; // 직선 감속 구간
+				} else {
+					curve_state = 1;
+					is_straight = 0;
+				}
 			}
 		} else if (cur == CROSS_RIGHT) {
 			if (curve_state == 2) {
 				curve_state = 0;
 				is_straight = 1;
 			} else {
-				curve_state = 2;
-				is_straight = 0;
+				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
+				if (curve_yaw < 25.0f) {
+					curve_state = 0;
+					is_straight = 0; // 직선 감속 구간
+				} else {
+					curve_state = 2;
+					is_straight = 0;
+				}
 			}
 		}
 
@@ -660,6 +672,7 @@ __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
 			HAL_Delay(1000);
 			return 0;
 		}
+		Build_Segment_Plan();
 	}
 
 	Drive_IMU_Auto_Calibrate();
@@ -755,7 +768,8 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 		}
 		state->seg_len_predicted = total_straight_dist;
 
-		if (state->idx == 0 || seg_plan[state->idx - 1].accel_ok) {
+		uint8_t prev_was_curve = (state->idx >= 1 && !seg_plan[state->idx - 1].accel_ok);
+		if (state->idx == 0 || !prev_was_curve) {
 			g_target_base_mps = driveData.max_mps;
 		} else {
 			g_target_base_mps = driveData.base_mps;
@@ -764,6 +778,11 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 	} else {
 		state->accel_active = 0;
 		g_target_base_mps = driveData.base_mps;
+		if (state->idx < ref_log_count && seg_plan[state->idx].accel_ok) {
+			g_is_straight = 1;
+		} else {
+			g_is_straight = 0;
+		}
 	}
 
 	state->marker_start_dist = g_odom_distance_m;
@@ -793,15 +812,20 @@ __STATIC_INLINE void Check_Distance_And_Brake(DriveSecondState_t *state) {
 			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 			const float_t tau_sys = 0.045f;
 			brake_dist += v1 * tau_sys;
-			if (v1 > 3.5f) brake_dist += 0.06f;
+			if (v1 > 3.5f) brake_dist += (v1 - 3.5f) * 0.15f + 0.10f;
 		}
 
 		if (remaining <= brake_dist) {
 			g_target_base_mps = driveData.base_mps;
 			state->braking_started = 1;
-			g_is_straight = 0;
 		} else {
-			if (traveled >= ACCEL_START_MARGIN_M) {
+			uint8_t prev_was_curve = (state->idx >= 2 && !seg_plan[state->idx - 2].accel_ok);
+			float_t yaw_rate = fabsf(imu_data.Gyro_Z - imu_data.Gyro_Z_Offset);
+			float_t line_err = fabsf(Sensor_Get_Last_Position());
+			uint8_t is_settled = (traveled >= ACCEL_START_MARGIN_M) &&
+			                     (!prev_was_curve || (traveled >= 0.50f) || (yaw_rate < 40.0f && line_err < 0.20f));
+
+			if (is_settled) {
 				g_target_base_mps = driveData.max_mps;
 				g_is_straight = 1;
 			}
@@ -923,12 +947,17 @@ __STATIC_INLINE void Build_Segment_Plan_Third(void) {
 				curve_state = 0;
 				a_type = 1;
 			} else {
-				// 좌회전 진입 마커 -> 곡선 구간
-				curve_state = 1;
+				// 좌회전 진입 마커 판정: 다음 마커까지의 회전각(yaw_angle) 검증
 				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
-				if (curve_yaw < 65.0f) {
+				if (curve_yaw < 25.0f) {
+					// 25도 미만이면 직선 상의 단독 감속 예고 마커! 곡선이 아니므로 인코스 시프트 끔
+					curve_state = 0;
+					a_type = 0; // 안전 감속
+				} else if (curve_yaw < 65.0f) {
+					curve_state = 1;
 					a_type = 2; // 45도(슬라롬) 가속
 				} else {
+					curve_state = 1;
 					a_type = 0; // 90도/180도 등 깊은 커브는 안전하게 감속
 				}
 			}
@@ -938,12 +967,17 @@ __STATIC_INLINE void Build_Segment_Plan_Third(void) {
 				curve_state = 0;
 				a_type = 1;
 			} else {
-				// 우회전 진입 마커 -> 곡선 구간
-				curve_state = 2;
+				// 우회전 진입 마커 판정: 다음 마커까지의 회전각(yaw_angle) 검증
 				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
-				if (curve_yaw < 65.0f) {
+				if (curve_yaw < 25.0f) {
+					// 25도 미만이면 직선 상의 단독 감속 예고 마커! 곡선이 아니므로 인코스 시프트 끔
+					curve_state = 0;
+					a_type = 0; // 안전 감속
+				} else if (curve_yaw < 65.0f) {
+					curve_state = 2;
 					a_type = 2; // 45도(슬라롬) 가속
 				} else {
+					curve_state = 2;
 					a_type = 0; // 90도/180도 등 깊은 커브는 안전하게 감속
 				}
 			}
@@ -1131,13 +1165,24 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Third(CrossEvent_t cross, DriveThir
 
 		if (state->end_mps > state->target_mps)
 			state->end_mps = state->target_mps;
-		g_target_base_mps = state->target_mps;
+
+		uint8_t prev_was_curve = (state->idx >= 1 && seg_plan_3[state->idx - 1].curve_dir != 0);
+		if (state->idx == 0 || !prev_was_curve) {
+			g_target_base_mps = state->target_mps;
+		} else {
+			g_target_base_mps = driveData.base_mps; // 코너 탈출 직후 차체 직진 정렬 완료까지 base_mps 유지
+		}
 
 	} else {
 		state->accel_active = 0;
 		state->target_mps = driveData.base_mps;
 		state->end_mps = driveData.base_mps;
 		g_target_base_mps = driveData.base_mps;
+		if (state->idx < ref_log_count && seg_plan_3[state->idx].curve_dir == 0) {
+			g_is_straight = 1;
+		} else {
+			g_is_straight = 0;
+		}
 	}
 
 	state->marker_start_dist = g_odom_distance_m;
@@ -1166,15 +1211,20 @@ __STATIC_INLINE void Check_Distance_And_Brake_Third(DriveThirdState_t *state) {
 			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 			const float_t tau_sys = 0.045f;
 			brake_dist += v1 * tau_sys;
-			if (v1 > 3.5f) brake_dist += 0.06f;
+			if (v1 > 3.5f) brake_dist += (v1 - 3.5f) * 0.15f + 0.10f;
 		}
 
 		if (remaining <= brake_dist) {
 			g_target_base_mps = state->end_mps;
 			state->braking_started = 1;
-			g_is_straight = 0;
 		} else {
-			if (traveled >= ACCEL_START_MARGIN_M) {
+			uint8_t prev_was_curve = (state->idx >= 2 && seg_plan_3[state->idx - 2].curve_dir != 0);
+			float_t yaw_rate = fabsf(imu_data.Gyro_Z - imu_data.Gyro_Z_Offset);
+			float_t line_err = fabsf(Sensor_Get_Last_Position());
+			uint8_t is_settled = (traveled >= ACCEL_START_MARGIN_M) &&
+			                     (!prev_was_curve || (traveled >= 0.50f) || (yaw_rate < 40.0f && line_err < 0.20f));
+
+			if (is_settled) {
 				g_target_base_mps = state->target_mps;
 				if (state->target_mps == driveData.max_mps) g_is_straight = 1;
 			}
@@ -1244,30 +1294,24 @@ __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 		if (ratio > 1.0f) ratio = 1.0f;
 		if (ratio < 0.0f) ratio = 0.0f;
 
-		// [사용자 요청: 180도 및 270도 급코너 Late Apex 인코스 제어]
-		// 각도가 아닌 곡선의 퍼센티지(50%) 동안 인코스 유지 후 나머지 50% 동안 다음 마커로 보간
-		float curve_yaw = 0.0f;
-		for (int i = prev_idx + 1; i <= next_idx; i++) {
-			curve_yaw += fabsf(ref_log[i].yaw_angle);
-		}
-
-		if (prev_curve != 0 && curve_yaw >= 150.0f) {
-			// 진입 후 곡선의 50%(0.50f)는 인코스 유지, 그 이후 남은 50% 동안 다음 마커로 보간
-			const float hold_ratio = 0.50f;
-
-			if (ratio < hold_ratio) {
-				IR_Sensor.data->target_pos = current_target;
-			} else {
-				float exit_ratio = (ratio - hold_ratio) / (1.0f - hold_ratio);
-				if (exit_ratio > 1.0f) exit_ratio = 1.0f;
-				if (exit_ratio < 0.0f) exit_ratio = 0.0f;
-				IR_Sensor.data->target_pos = current_target + (next_target - current_target) * exit_ratio;
-			}
+		uint8_t is_straight_seg = (prev_idx >= 0 && seg_plan_3[prev_idx].curve_dir == 0);
+		if (is_straight_seg) {
+			IR_Sensor.data->target_pos = 0.0f;
 		} else {
-			IR_Sensor.data->target_pos = current_target + (next_target - current_target) * ratio;
+			// 곡선 구간: 진입(ratio=0) 및 탈출(ratio=1) 마커 부근에서는 차체가 라인 중앙(0)을 통과하도록 ramp
+			// 코너 중반에서만 인코스(current_target)를 유지하여 마커 인식 시 센서 이탈 방지
+			const float ramp_in = 0.15f;
+			const float ramp_out = 0.20f;
+			if (ratio < ramp_in) {
+				IR_Sensor.data->target_pos = current_target * (ratio / ramp_in);
+			} else if (ratio > (1.0f - ramp_out)) {
+				IR_Sensor.data->target_pos = current_target * ((1.0f - ratio) / ramp_out);
+			} else {
+				IR_Sensor.data->target_pos = current_target;
+			}
 		}
 	} else {
-		IR_Sensor.data->target_pos = current_target;
+		IR_Sensor.data->target_pos = 0.0f;
 	}
 	Apply_Target_Curve_Gain(state->idx);
 }
@@ -1282,7 +1326,6 @@ void Drive_Third(void) {
 	state.marker_start_dist = g_odom_distance_m;
 	state.end_mps = driveData.base_mps;
 
-	// 첫 번째 직선 구간 출발 가속 처리
 	if (ref_log_count > 0) {
 		state.accel_active = 1;
 		state.seg_len_predicted = (ref_log[0].type == CROSS_STOP && ref_log_count > 1)
@@ -1304,8 +1347,8 @@ void Drive_Third(void) {
 				break;
 		}
 
-		Check_Distance_And_Brake_Third(&state); // 가속 및 감속 실행
-		Update_Target_Pos_Third(&state);        // 다가오는 코너에 맞춰 센서 목표점 동적 이동
+		Check_Distance_And_Brake_Third(&state);
+		Update_Target_Pos_Third(&state);
 	}
 
 	Drive_Diag_Finalize(IR_Sensor.is_lost_position);
@@ -1379,18 +1422,28 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 				curve_state = 0;
 				a_type = 1;
 			} else {
-				curve_state = 1;
 				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
-				a_type = (curve_yaw < 65.0f) ? 2 : 0;
+				if (curve_yaw < 25.0f) {
+					curve_state = 0;
+					a_type = 0;
+				} else {
+					curve_state = 1;
+					a_type = (curve_yaw < 65.0f) ? 2 : 0;
+				}
 			}
 		} else if (cur == CROSS_RIGHT) {
 			if (curve_state == 2) {
 				curve_state = 0;
 				a_type = 1;
 			} else {
-				curve_state = 2;
 				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
-				a_type = (curve_yaw < 65.0f) ? 2 : 0;
+				if (curve_yaw < 25.0f) {
+					curve_state = 0;
+					a_type = 0;
+				} else {
+					curve_state = 2;
+					a_type = (curve_yaw < 65.0f) ? 2 : 0;
+				}
 			}
 		}
 
@@ -1574,13 +1627,24 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 
 		if (state->end_mps > state->target_mps)
 			state->end_mps = state->target_mps;
-		g_target_base_mps = state->target_mps;
+
+		uint8_t prev_was_curve = (state->idx >= 1 && seg_plan_4[state->idx - 1].curve_dir != 0);
+		if (state->idx == 0 || !prev_was_curve) {
+			g_target_base_mps = state->target_mps;
+		} else {
+			g_target_base_mps = driveData.base_mps; // 코너 탈출 직후 차체 직진 정렬 완료까지 base_mps 유지
+		}
 
 	} else {
 		state->accel_active = 0;
 		state->target_mps = driveData.base_mps;
 		state->end_mps = driveData.base_mps;
 		g_target_base_mps = driveData.base_mps;
+		if (state->idx < ref_log_count && seg_plan_3[state->idx].curve_dir == 0) {
+			g_is_straight = 1;
+		} else {
+			g_is_straight = 0;
+		}
 	}
 
 	state->marker_start_dist = g_odom_distance_m;
@@ -1609,15 +1673,20 @@ __STATIC_INLINE void Check_Distance_And_Brake_Fourth(DriveFourthState_t *state) 
 			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 			const float_t tau_sys = 0.045f;
 			brake_dist += v1 * tau_sys;
-			if (v1 > 3.5f) brake_dist += 0.06f;
+			if (v1 > 3.5f) brake_dist += (v1 - 3.5f) * 0.15f + 0.10f;
 		}
 
 		if (remaining <= brake_dist) {
 			g_target_base_mps = state->end_mps;
 			state->braking_started = 1;
-			g_is_straight = 0;
 		} else {
-			if (traveled >= ACCEL_START_MARGIN_M) {
+			uint8_t prev_was_curve = (state->idx >= 2 && seg_plan_4[state->idx - 2].curve_dir != 0);
+			float_t yaw_rate = fabsf(imu_data.Gyro_Z - imu_data.Gyro_Z_Offset);
+			float_t line_err = fabsf(Sensor_Get_Last_Position());
+			uint8_t is_settled = (traveled >= ACCEL_START_MARGIN_M) &&
+			                     (!prev_was_curve || (traveled >= 0.50f) || (yaw_rate < 40.0f && line_err < 0.20f));
+
+			if (is_settled) {
 				g_target_base_mps = state->target_mps;
 				if (state->target_mps == driveData.max_mps) g_is_straight = 1;
 			}
@@ -1792,18 +1861,28 @@ __STATIC_INLINE void Build_Segment_Plan_Fifth(void) {
 				curve_state = 0;
 				a_type = 1;
 			} else {
-				curve_state = 1;
 				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
-				a_type = (curve_yaw < 65.0f) ? 2 : 0;
+				if (curve_yaw < 25.0f) {
+					curve_state = 0;
+					a_type = 0;
+				} else {
+					curve_state = 1;
+					a_type = (curve_yaw < 65.0f) ? 2 : 0;
+				}
 			}
 		} else if (cur == CROSS_RIGHT) {
 			if (curve_state == 2) {
 				curve_state = 0;
 				a_type = 1;
 			} else {
-				curve_state = 2;
 				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
-				a_type = (curve_yaw < 65.0f) ? 2 : 0;
+				if (curve_yaw < 25.0f) {
+					curve_state = 0;
+					a_type = 0;
+				} else {
+					curve_state = 2;
+					a_type = (curve_yaw < 65.0f) ? 2 : 0;
+				}
 			}
 		}
 
@@ -1952,6 +2031,11 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fifth(CrossEvent_t cross, DriveFift
 		state->target_mps = driveData.base_mps;
 		state->end_mps = driveData.base_mps;
 		g_target_base_mps = driveData.base_mps;
+		if (state->idx < ref_log_count && seg_plan_3[state->idx].curve_dir == 0) {
+			g_is_straight = 1;
+		} else {
+			g_is_straight = 0;
+		}
 	}
 
 	state->marker_start_dist = g_odom_distance_m;
@@ -1979,13 +2063,12 @@ __STATIC_INLINE void Check_Distance_And_Brake_Fifth(DriveFifthState_t *state) {
 			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
 			const float_t tau_sys = 0.045f;
 			brake_dist += v1 * tau_sys;
-			if (v1 > 3.5f) brake_dist += 0.06f;
+			if (v1 > 3.5f) brake_dist += (v1 - 3.5f) * 0.15f + 0.10f;
 		}
 
 		if (remaining <= brake_dist) {
 			g_target_base_mps = state->end_mps;
 			state->braking_started = 1;
-			g_is_straight = 0;
 		} else {
 			if (traveled >= ACCEL_START_MARGIN_M) {
 				g_target_base_mps = state->target_mps;

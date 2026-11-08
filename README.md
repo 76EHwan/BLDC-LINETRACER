@@ -110,13 +110,14 @@ TIM3는 카운터 0, TIM4는 4800에서 출발시켜 **좌우 모터의 전류 �
   (`scan_group1/2` — 크로스토크 저감). 마커 센서 16/17번은 두 그룹 모두에 포함되어 2배 빠르게 갱신됩니다.
 - 캘리브레이션에서 채널별 `whitemax` / `blackmax` 를 수집하고, 정규화 계수를
   `(255 << 8) / (white - black)` 로 미리 계산해 런타임에는 정수 곱/시프트만 수행합니다.
-- **위치 추정** `Sensor_Get_Position()`
+- **위치 추정** `Sensor_Get_Position()` 및 `Sensor_Get_Last_Position()`
   - 직전 피크 인덱스 주변 ±3 창에서만 피크를 탐색해 노이즈/분기에 강인하게 처리
-  - 창 안에서 7개 센서의 정규화 값으로 **가중 평균(무게중심)** → −1.0 ~ +1.0 의 위치 반환
-  - 창 밖에 켜진 센서가 있으면 좌/우 **마커 후보**(`mark_left` / `mark_right`)로 분리
-  - 창 안이 과도하게 켜지면 교차선(cross) 상태로 판단해 직전 위치를 유지
+  - 창 안에서 7개 센서의 정규화 값으로 **가중 평균(무게중심)** → −1.5 ~ +1.5 의 위치 반환
+  - 창 안이 과도하게 켜지면(6개 이상 점등 또는 합산 밝기 임계 초과) 교차선(`IR_Sensor.is_cross = 1`)으로 판단해 직전 피크와 위치를 동결하여 크로스 구간 위치 스파이크 원천 차단
+  - 메인 루프에서 상태 변수를 오염시키지 않고 직전 측정 위치만 안전하게 조회할 수 있는 `Sensor_Get_Last_Position()` 제공
   - 총 밝기 합이 `line_lost_sum_min` 이하인 상태가 50회 연속되면 **라인 로스트** 판정 → 주행 종료
 - **마커 검출** `Cross_Detect_Update()` — 마커 진입 시 상태를 누적하고 이탈하는 순간 판정합니다.
+  - 교차로(`CROSS_CROSS`) 통과 직후 15 cm(`g_post_cross_lockout_dist`) 동안 잔류 대각선 테이프에 의한 좌/우 고스트 마커 오검출을 방지하고, 15 cm 주행 후 자동 해제합니다.
 
   | 누적 결과 | 이벤트 |
   |---|---|
@@ -131,17 +132,40 @@ TIM3는 카운터 0, TIM4는 4800에서 출발시켜 **좌우 모터의 전류 �
 
 ---
 
-## 6. 조향 및 속도 배분 (`Steer_Motor`, `motor.c`)
+## 6. 조향 및 속도 배분 (`Steer_Motor`, `motor.c`) — Geometric Pure Pursuit + $R=0.25\,\text{m}$ 곡률 제어
+
+전방 $L_d = 132.13\,\text{mm}$ 원호 센서바의 기하학적 특성과 대회 규격 고정 곡률($R = 0.25\,\text{m} \implies \kappa_{\text{rule}} = 4.0\,\text{m}^{-1}$)을 결합한 **Adaptive Pure Pursuit + 캐스케이드 요레이트 제어기**를 사용합니다.
 
 ```
-error      = line_pos - target_pos
-steer      = PD(error)                       // CMSIS arm_pid_f32, Ki = 0
-atten      = clamp(1 - |error| * pos_atten_gain, 0.4, 1.0)   // 비대칭 필터 (감속 즉시 / 복귀 완만)
-active_mps = g_current_base_mps * atten
-mps_L      = active_mps * (1 + steer * THREAD/2)
-mps_R      = active_mps * (1 - steer * THREAD/2)
-target_omega = mps * (2/TIRE_DIA) * POLE_PAIRS * GEAR_RATIO
+smooth_target = LPF(target_pos)                  // tau ≈ 12ms 완충 필터 (target_pos 급변 충격 방지)
+error         = line_pos - smooth_target
+alpha         = 0.4145 * error                   // 정규화 센서 오차 → 전방 원호 방위각 [rad] (23.75 deg/unit)
+
+// 1) 기본 Pure Pursuit 곡률 (중심 기울기 ≈ 6.27 m^-1/unit, 기존 PD 대비 1/3 강성으로 직선 헌팅 원천 억제)
+kappa_pp      = (2 * sin(alpha)) / L_d           // L_d = 0.13213 m
+
+// 2) R = 0.25m (kappa = 4.0 m^-1) 코너 곡률 및 슬립각 비선형 보상 (중심에서 값·미분값 모두 0)
+corner_weight = error^2 / (error^2 + 0.12^2)
+kappa_corner  = sign(error) * 4.0 * corner_weight * (1 + 1.85 * error^2)
+
+// 3) Adaptive Look-Ahead 속도 스케일링 (고속 직선 L_eff(v) = L_d * sqrt(v / v_base))
+p_term        = (kappa_pp * sqrt(v_base / v) + kappa_corner * (v_base / v)) * (Kp / 20.4)
+
+// 4) 측정값 미분(Derivative-on-Measurement) + 크로스 통과 시 미분 동결(Hold-off)
+deriv         = LPF(line_pos - prev_line_pos)    // target_pos 변경 시 인위적 미분 킥 차단
+d_term        = (Kd * kd_scale) * deriv * (v_base / v)
+
+// 5) 내부 루프: 자이로 각속도(Gyro Z) 캐스케이드 피드백
+yaw_ref       = active_mps * (p_term + d_term)
+yaw_cmd       = yaw_ref + p_yaw * (yaw_ref - yaw_meas) / (1 + p_yaw) + yaw_integ
+mps_L         = active_mps + yaw_cmd * (THREAD / 2)
+mps_R         = active_mps - yaw_cmd * (THREAD / 2)
 ```
+
+- **핵심 특징**:
+  1. **직선 및 코너 탈출 진동 억제**: 중심 부근(`|error| -> 0`)에서는 순수 기하학적 Pure Pursuit 곡률($6.27\,\text{m}^{-1}/\text{unit}$)만 작용하여 기존 선형 PD($20.4$) 대비 중심 강성을 약 $1/3$로 낮추고, 코너 진입 시(`|error| >= 0.12`)에만 $R=0.25\,\text{m}$ 곡률 보상이 매끄럽게 결합됩니다.
+  2. **측정값 미분 및 크로스 홀드오프**: `error` 대신 `line_pos` 측정값만 미분하여 3·4차 주행에서 `target_pos` 시프트 시 발생하던 미분 킥을 제거하고, 교차로(`is_cross`) 진입 및 탈출 후 4주기(2.0 ms) 동안 미분항을 `0`으로 유지합니다.
+  3. **코너 탈출 동적 자세 정렬 후 가속 (`drive.c`)**: 2·3·4차 주행에서 곡선 탈출 마커 통과 직후 $0.25\,\text{m}$ 마진 및 차체 자세 정렬(`|yaw_rate| < 40 dps && |line_err| < 0.20`)이 완료될 때까지 `base_mps`를 유지한 뒤 직선 풀 가속을 래치(latch)하여 코너 탈출 직후 잔류 슬립이 직선 사행 진동으로 번지는 현상을 차단합니다.
 
 가감속은 TIM14 램프에서 `accel` / `decel` [m/s²] 로 선형 처리하며,
 `Drive_Stop_At_Distance(d)` 는 `decel = v² / 2d` 를 역산해 **지정한 거리 안에서 정지**시킵니다(피트인).

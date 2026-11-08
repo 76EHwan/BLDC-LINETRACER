@@ -198,17 +198,21 @@ void Steer_Motor() {
 	//    크로스 라인 진입/탈출 시 불연속 스텝으로 인한 Kd 폭주/발산 완전 차단
 	float32_t raw_deriv;
 	if (IR_Sensor.is_cross) {
-		g_prev_was_cross = 1;
+		g_prev_was_cross = 4; // 크로스 탈출 후 잔류 꼬리 테이프 통과까지 4주기(2.0ms) 동안 미분 0 유지
 		raw_deriv = 0.0f;
 		g_prev_steer_error = line_pos;
 		g_filtered_deriv = 0.0f;
-	} else if (g_prev_was_cross) {
-		g_prev_was_cross = 0;
+	} else if (g_prev_was_cross > 0) {
+		g_prev_was_cross--;
 		raw_deriv = 0.0f;
 		g_prev_steer_error = line_pos;
 		g_filtered_deriv = 0.0f;
 	} else {
 		raw_deriv = line_pos - g_prev_steer_error;
+		// 물리적 한계 초과 미분 스파이크 클램핑 (0.5ms당 0.010 units = 횡속도 약 1.1 m/s 상당)
+		const float32_t MAX_RAW_DERIV = 0.010f;
+		if (raw_deriv > MAX_RAW_DERIV) raw_deriv = MAX_RAW_DERIV;
+		else if (raw_deriv < -MAX_RAW_DERIV) raw_deriv = -MAX_RAW_DERIV;
 		g_prev_steer_error = line_pos;
 	}
 
@@ -240,24 +244,69 @@ void Steer_Motor() {
 	//    곡선에서 미끄러지지 않게(엔코더 거리, 마커 인식이 깨끗하게). 빨리 내리고 천천히(약 0.1 s) 올린다.
 
 
-	// 5. 속도 스케일링 및 직선 사행(Hunting Oscillation) 원천 억제
-	float32_t current_kp = steer_pid.Kp;
-	float32_t current_kd = steer_pid.Kd;
-	if (g_is_straight) {
-		// 직선 구간: 센서 편차에 의한 과도한 좌우 반작용(3.4Hz 공진) 억제 및 차체 감쇠 극대화
-		current_kp *= 0.50f;
-		current_kd *= 1.40f;
-	}
+	// 5. 기하학적 Pure Pursuit (L_d = 132.13mm 원호 센서바) + R = 0.25m (kappa = 4.0 m^-1) 곡률 제어
+	//    - 원호 센서바 반경 L_d = 0.13213m, 정규화 위치 1.0 unit 당 방위각 = 0.4145 rad (23.75 deg)
+	//    - 중심 부근(|error| -> 0): 순수 Pure Pursuit 곡률 kappa_pp = 2*sin(alpha)/L_d (기울기 ~6.27 m^-1/unit)로
+	//      기존 선형 PD(Kp=20.4) 대비 중심 부근 강성을 1/3로 낮춰 직선/코너 탈출 헌팅(사행 진동) 원천 억제
+	//    - 코너 구간(|error| 증가): 대회 규격 고정 곡률 R = 0.25m (kappa_rule = 4.0 m^-1) 및 슬립각 보상을
+	//      매끄러운 비선형 가중치 W(alpha) = alpha^2 / (alpha^2 + alpha_0^2)로 결합
+	const float32_t PP_LOOKAHEAD_M  = 0.13213f; // 전방 센서 아크 거리 L_d [m]
+	const float32_t PP_RAD_PER_UNIT = 0.41450f; // 센서 정규화 위치 -> 방위각 변환 계수 [rad/unit]
+	const float32_t CORNER_KAPPA    = 4.00000f; // 고정 곡률 반경 R = 0.25m -> kappa = 1 / 0.25 = 4.0 [m^-1]
 
-	float32_t p_term = current_kp * error;
-	float32_t d_term = current_kd * g_filtered_deriv;
+	float32_t alpha = PP_RAD_PER_UNIT * error;
+	if (alpha > 1.2f) alpha = 1.2f;
+	else if (alpha < -1.2f) alpha = -1.2f;
+
+	// 기본 Pure Pursuit 곡률: kappa_pp = 2 * sin(alpha) / L_d
+	float32_t kappa_pp = (2.0f * sinf(alpha)) / PP_LOOKAHEAD_M;
+
+	// R = 0.25m 코너 곡률 보정 및 외곽 복원력 (중심에서는 값과 미분값이 모두 0이어서 직선 사행 유발 없음)
+	float32_t abs_err = fabsf(error);
+	float32_t err_sq  = abs_err * abs_err;
+	const float32_t E0_SQ = 0.12f * 0.12f; // 코너 진입 전이 임계값 (e_0 = 0.12 -> 약 6.6mm)
+	float32_t corner_weight = err_sq / (err_sq + E0_SQ);
+
+	// S자 연속 코너 및 target_pos 시프트(Drive 3) 시 외곽 원호 추종을 위한 단축 보정
+	float32_t rejoin_gain = 1.0f + 1.85f * err_sq;
+	float32_t sign_err = (error >= 0.0f) ? 1.0f : -1.0f;
+	float32_t kappa_corner = sign_err * CORNER_KAPPA * corner_weight * rejoin_gain;
 
 	float32_t v_base = driveData.base_mps > 0.5f ? driveData.base_mps : 1.0f;
-	if (active_mps > v_base) {
-		float32_t speed_ratio = v_base / active_mps;
-		p_term *= speed_ratio;
-		d_term *= speed_ratio;
+	float32_t eff_speed = active_mps;
+	float32_t speed_ratio = 1.0f;
+	float32_t pp_speed_ratio = 1.0f;
+	if (eff_speed > v_base) {
+		speed_ratio = v_base / eff_speed;
+		// Adaptive Pure Pursuit: 고속 주행 시 유효 룩어헤드 거리 L_eff(v) = L_d * sqrt(v / v_base)
+		// - 저속/코너 탈출(v = v_base): kappa_pp 기울기 = 6.27 m^-1/unit (기존 PD 20.4 대비 1/3 수준으로 진동 원천 차단)
+		// - 고속 직선(v = 7.0 m/s): kappa_pp * sqrt(v_base/v) 기울기 = 3.18 m^-1/unit (직선 복원력 유지 및 슬립 발진 차단)
+		pp_speed_ratio = sqrtf(speed_ratio);
 	}
+
+	if (g_is_straight) {
+		// 직선 구간: 고속 직선 주행 중에는 R=0.25m 코너 곡률 보정을 억제하고 순수 Pure Pursuit 위주로 추종
+		if (g_current_base_mps > driveData.base_mps + 0.30f) {
+			kappa_corner *= 0.20f;
+		} else {
+			kappa_corner *= 0.60f;
+		}
+	}
+
+	// UI의 steer_kp (기본 20.4) 조작 시 전체 조향 게인이 비례 스케일링되도록 정규화 연동
+	float32_t kp_scale = steer_pid.Kp * (1.0f / 20.4f);
+	float32_t p_term = ((kappa_pp * pp_speed_ratio) + (kappa_corner * speed_ratio)) * kp_scale;
+
+	// 룩어헤드 각속도 위상 리드(Phase-Lead Damping):
+	// 저속 코너 탈출 시에는 낮아진 Pure Pursuit 강성(6.27)에 맞춰 Kd를 0.65배로 완충하고,
+	// 고속 직선(speed_ratio 감소)이나 깊은 코너(corner_weight 증가)에서는 안정적 위상 리드 감쇠 확보
+	float32_t high_speed_weight = 1.0f - speed_ratio; // v=v_base일 때 0, 고속일수록 1에 수렴
+	float32_t kd_scale = 0.65f + 0.35f * corner_weight + 0.60f * high_speed_weight;
+	if (g_is_straight && (g_target_base_mps < g_current_base_mps)) {
+		// 직선 급감속 구간: 제동 슬립 중 과도한 미분 스파이크 억제 및 안정 추종
+		kd_scale *= 1.05f;
+	}
+	float32_t d_term = (steer_pid.Kd * kd_scale) * g_filtered_deriv * speed_ratio;
 
 	g_current_steer = p_term + d_term;
 
@@ -266,20 +315,29 @@ void Steer_Motor() {
 	float32_t yaw_cmd = yaw_ref;
 	if (driveData.yaw_gain_p > 0.0f || driveData.yaw_gain_i > 0.0f) {
 		float32_t yaw_err = yaw_ref - yaw_meas;
-		if (active_mps > 0.05f) {
+		if (active_mps > 0.05f && !(g_is_straight && (g_target_base_mps < g_current_base_mps))) {
 			g_yaw_integ += driveData.yaw_gain_i * yaw_err * RAMP_DT;
 			g_yaw_integ = fminf(fmaxf(g_yaw_integ, -YAW_INTEG_MAX), YAW_INTEG_MAX);
 		} else {
-			g_yaw_integ = 0.0f;
+			g_yaw_integ = 0.0f; // 직선 급감속 중 위상 지연 및 오버슈트 방지를 위해 적분 동결
 		}
-		// yaw_ref에 (1 + kp)가 곱해지는 기존의 이득 증폭 버그 차단:
-		// 목표치 yaw_ref는 그대로 유지하고 자이로 피드백 감쇠만 순수하게 가산
-		yaw_cmd = yaw_ref + driveData.yaw_gain_p * (yaw_ref - yaw_meas) / (1.0f + driveData.yaw_gain_p) + g_yaw_integ;
+		float32_t p_yaw = driveData.yaw_gain_p;
+		if (g_is_straight && (g_target_base_mps < g_current_base_mps)) {
+			// 직선 감속 중에는 자이로 오차에 의한 급격한 차등 토크 반작용 완화
+			p_yaw *= 0.7f;
+		}
+		yaw_cmd = yaw_ref + p_yaw * (yaw_ref - yaw_meas) / (1.0f + p_yaw) + g_yaw_integ;
 	} else {
 		g_yaw_integ = 0.0f;
 	}
 
-	// 양쪽 모터 목표 속도 산출: 바퀴 속도차 = 요레이트 x 바퀴 간격
+	// 직선 감속 구간 요레이트 지령 상한 (과도한 휠 록업/스핀 방지 및 안정 추종)
+	if (g_is_straight && (g_target_base_mps < g_current_base_mps)) {
+		const float32_t MAX_DECEL_YAW_CMD = 5.0f; // ~286 dps
+		if (yaw_cmd > MAX_DECEL_YAW_CMD) yaw_cmd = MAX_DECEL_YAW_CMD;
+		else if (yaw_cmd < -MAX_DECEL_YAW_CMD) yaw_cmd = -MAX_DECEL_YAW_CMD;
+	}
+
 	float32_t mps_L = active_mps + yaw_cmd * THREAD_DIV2;
 	float32_t mps_R = active_mps - yaw_cmd * THREAD_DIV2;
 

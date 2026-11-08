@@ -84,6 +84,7 @@ void Sensor_Stop();
 void Sensor_Printf(uint8_t idx, volatile uint16_t *sensor_data);
 
 float Sensor_Get_Position(void);
+float Sensor_Get_Last_Position(void);
 void Sensor_Reset_Position(void);
 
 void Cross_Detect_Reset(void);

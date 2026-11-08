@@ -178,30 +178,31 @@ void ADC3_IRQ_Cplt_Handler() {
 }
 
 typedef enum {
-	MARKER_STATE_IDLE = 0, MARKER_STATE_READING,
+	MARKER_STATE_IDLE = 0,
+	MARKER_STATE_READING,
+	MARKER_STATE_WAIT_CLEAR,
 } MarkerState_t;
 
 static MarkerState_t g_marker_state = MARKER_STATE_IDLE;
-static uint8_t g_accum_left = 0;
-static uint8_t g_accum_right = 0;
-static uint8_t g_both_marker_coincident = 0;
+static uint16_t g_left_on_count = 0;
+static uint16_t g_right_on_count = 0;
+static uint8_t g_left_src_mask = 0;
+static uint8_t g_right_src_mask = 0;
 static uint16_t g_accum_center_state = 0;
+static uint8_t g_both_marker_coincident = 0;
 static uint8_t g_is_curve_state = 0;
 static uint16_t g_marker_on_count = 0;
 static uint16_t g_marker_off_count = 0;
-#define MARKER_MIN_BLIND_DIST_M 0.080f  // 최소 마커 두께(20mm): 마커 통과 직후 20mm 이내의 노이즈 재트리거(고스트) 차단
+static int8_t g_marker_min_peak = 15;
+static int8_t g_marker_max_peak = 0;
 
 static int8_t prev_peak_idx = LINE_N_SENSORS / 2;
 static float32_t prev_position = 0.0f; // 직전 절대 물리 위치 기억
 static uint16_t lost_counter = 0;
 static uint8_t force_full_scan = 0;
 static uint8_t cross_state = 0;
-
-// 시간축 1D Convolution을 위한 링버퍼 (마커 후보 강도 저장)
-#define TIME_RING_LEN 8
-static uint8_t left_ring[TIME_RING_LEN] = {0};
-static uint8_t right_ring[TIME_RING_LEN] = {0};
-static uint8_t ring_idx = 0;
+static uint16_t g_cross_accum_mask = 0;
+static uint8_t g_cross_event_pending = 0;
 
 void Sensor_Reset_Position(void) {
 	prev_peak_idx = LINE_N_SENSORS / 2;
@@ -209,12 +210,13 @@ void Sensor_Reset_Position(void) {
 	lost_counter = 0;
 	force_full_scan = 1;
 	cross_state = 0;
+	g_cross_accum_mask = 0;
+	g_cross_event_pending = 0;
 	IR_Sensor.is_cross = 0;
-	for (int i = 0; i < 8; i++) {
-		left_ring[i] = 0;
-		right_ring[i] = 0;
-	}
-	ring_idx = 0;
+}
+
+float32_t Sensor_Get_Last_Position(void) {
+	return prev_position;
 }
 
 float32_t Sensor_Get_Position(void) {
@@ -245,17 +247,53 @@ float32_t Sensor_Get_Position(void) {
 
 		uint8_t window_len = search_end - search_start + 1;
 		uint32_t window_mask = ((1U << window_len) - 1) << search_start;
-		uint8_t active_in_window = __builtin_popcount(state16 & window_mask);
-		uint8_t active_out_window = __builtin_popcount(state16 & ~window_mask);
+
+		// 메인 라인과 갭(검은색 공간)으로 독립된 외곽 마커 비트 분리
+		uint16_t left_marker_bits = 0;
+		if (search_start >= 2) {
+			uint8_t has_gap = 0;
+			for (int8_t i = search_start - 1; i >= 0; i--) {
+				if ((state16 & (1U << i)) == 0) {
+					has_gap = 1;
+				} else if (has_gap) {
+					left_marker_bits |= (1U << i);
+				}
+			}
+		}
+		uint16_t right_marker_bits = 0;
+		if (search_end <= 13) {
+			uint8_t has_gap = 0;
+			for (int8_t i = search_end + 1; i < LINE_N_SENSORS; i++) {
+				if ((state16 & (1U << i)) == 0) {
+					has_gap = 1;
+				} else if (has_gap) {
+					right_marker_bits |= (1U << i);
+				}
+			}
+		}
+
+		// 교차로 판정 시에는 갭으로 분리된 독립 사이드 마커 비트를 제외한 순수 라인 영역만 검사
+		uint16_t line_check_state = state16 & ~(left_marker_bits | right_marker_bits);
+		uint8_t active_in_window = __builtin_popcount(line_check_state & window_mask);
+		uint8_t active_out_window = __builtin_popcount(line_check_state & ~window_mask);
 		uint8_t total_active = active_in_window + active_out_window;
 
+		uint8_t left_adjacent = 0, right_adjacent = 0;
+		if (search_start >= 1 && (state16 & (1U << (search_start - 1)))) left_adjacent = 1;
+		if (search_start >= 2 && (state16 & (1U << (search_start - 2)))) left_adjacent = 1;
+		if (search_end + 1 < LINE_N_SENSORS && (state16 & (1U << (search_end + 1)))) right_adjacent = 1;
+		if (search_end + 2 < LINE_N_SENSORS && (state16 & (1U << (search_end + 2)))) right_adjacent = 1;
+
+		uint8_t has_continuous_cross = (left_adjacent || right_adjacent);
+
 		// 크로스(교차로) 감지 조건:
-		// 단일 라인은 테이프 폭 19mm로 센서 1~3개(최대 4개)만 활성화됨.
-		// 교차선이 진입하면 16개 센서 중 5개 이상 켜지거나, 윈도우 내 포화 및 외곽 활성화 발생.
-		uint8_t cross_condition = (total_active >= 5) ||
-		                          (active_in_window >= 5) ||
-		                          (active_in_window >= 4 && active_out_window >= 1) ||
-		                          (active_out_window >= 3);
+		// 1) total_active >= 5: 단일 20mm 라인은 센서 간격(10.9mm)상 최대 3~4개만 켤 수 있으므로 5개 이상은 100% 교차선
+		// 2) active_out_window >= 3: 윈도우 외곽 센서 3개 이상 활성은 교차선 통과
+		// 3) has_continuous_cross와 결합된 윈도우 확장 조건
+		uint8_t cross_condition = (total_active >= 5) || (active_out_window >= 3) ||
+		                          (has_continuous_cross && (
+		                              (total_active >= 4) ||
+		                              (active_in_window >= 4)));
 
 		if (cross_state == 0) {
 			if (cross_condition) {
@@ -263,6 +301,7 @@ float32_t Sensor_Get_Position(void) {
 				cross_state = 1;
 				is_cross_line = 1;
 				current_peak_idx = prev_peak_idx; // 메인 라인 피크 위치 보존 (zero position shift 시에도 피크 불변)
+				g_cross_accum_mask = state16;
 			} else {
 				// 정상 단일 라인: 윈도우 내 피크 탐색
 				for (int8_t i = search_start; i <= search_end; i++) {
@@ -274,14 +313,24 @@ float32_t Sensor_Get_Position(void) {
 				is_cross_line = 0;
 			}
 		} else {
-			// 크로스 상태 유지 중:
-			// 탈출 조건: 교차선이 완전히 통과하여 단일 라인으로 복귀했는지 확인
-			// - 전체 켜진 센서가 3개 이하이거나,
-			// - 윈도우 바깥이 완전히 꺼지고 윈도우 내부 센서가 정상 수준(3개 이하)
-			if (total_active <= 3 || (active_out_window == 0 && active_in_window <= 3) ||
-			    (active_out_window <= 1 && total_active <= 4 && active_in_window <= 3)) {
+			// 크로스 상태 유지 중: 교차선 통과 중 센서 누적
+			g_cross_accum_mask |= state16;
+
+			uint8_t markers_active = (IR_Sensor.data->state & ((1U << LEFT_MARK_SENSOR_INDEX) | (1U << RIGHT_MARK_SENSOR_INDEX))) != 0;
+			uint8_t raw_out_window = __builtin_popcount(state16 & ~window_mask);
+
+			// 탈출 조건: 교차선이 완전히 통과하여 단일 라인으로 복귀하고 외곽 마커 센서 및 메인바 외곽 센서(IR_0..15)가 완전히 꺼졌는지 확인
+			if (!markers_active && raw_out_window == 0 && active_in_window <= 3) {
 				cross_state = 0;
 				is_cross_line = 0;
+
+				// 교차로 통과 완료 판정: 교차선은 센서바 전역(0~15)을 가로지르므로 누적 센서 수 >= 12
+				uint8_t cross_pop = __builtin_popcount(g_cross_accum_mask);
+				if (cross_pop >= 12) {
+					g_cross_event_pending = 1;
+				}
+				g_cross_accum_mask = 0;
+
 				for (int8_t i = search_start; i <= search_end; i++) {
 					if (IR_Sensor.data->normalized[i] > max_val) {
 						max_val = IR_Sensor.data->normalized[i];
@@ -306,60 +355,24 @@ float32_t Sensor_Get_Position(void) {
 	if (calc_end >= LINE_N_SENSORS)
 		calc_end = LINE_N_SENSORS - 1;
 
-	uint8_t raw_mark_left = 0, raw_mark_right = 0;
-	const int32_t CONV_PEAK_MIN = 50; // 바닥 노이즈(±1~3) 출력(최대 ~6) 대비 8배 이상의 피크 마진
-
-	// 1. 공간(Spatial) 1D Convolution 기반 마커 검출 (커널: [-1, 2, -1])
-	// 왼쪽 외곽 영역 탐색 (0 <= i < calc_start)
-	for (int8_t i = 0; i < calc_start; i++) {
-		int32_t prev_v = (i > 0) ? (int32_t)IR_Sensor.data->normalized[i - 1] : (int32_t)IR_Sensor.data->normalized[16];
-		int32_t curr_v = (int32_t)IR_Sensor.data->normalized[i];
-		int32_t next_v = (i < LINE_N_SENSORS - 1) ? (int32_t)IR_Sensor.data->normalized[i + 1] : (int32_t)IR_Sensor.data->normalized[17];
-		int32_t conv = -prev_v + 2 * curr_v - next_v;
-
-		if (conv > CONV_PEAK_MIN && curr_v > IR_Sensor.data->threshold) {
-			raw_mark_left = 1;
-			break;
-		}
-	}
-
-	// 오른쪽 외곽 영역 탐색 (calc_end + 1 <= i < LINE_N_SENSORS)
-	for (int8_t i = calc_end + 1; i < LINE_N_SENSORS; i++) {
-		int32_t prev_v = (i > 0) ? (int32_t)IR_Sensor.data->normalized[i - 1] : (int32_t)IR_Sensor.data->normalized[16];
-		int32_t curr_v = (int32_t)IR_Sensor.data->normalized[i];
-		int32_t next_v = (i < LINE_N_SENSORS - 1) ? (int32_t)IR_Sensor.data->normalized[i + 1] : (int32_t)IR_Sensor.data->normalized[17];
-		int32_t conv = -prev_v + 2 * curr_v - next_v;
-
-		if (conv > CONV_PEAK_MIN && curr_v > IR_Sensor.data->threshold) {
-			raw_mark_right = 1;
-			break;
-		}
-	}
-
-	// 2. 링버퍼 기반 시간축 1D Convolution
-	// 최근 샘플들을 링버퍼에 저장하고 시간축 커널을 적용하여 펄스 신호인지 판정
-	left_ring[ring_idx] = raw_mark_left;
-	right_ring[ring_idx] = raw_mark_right;
-	ring_idx = (ring_idx + 1) % TIME_RING_LEN;
-
-	// 시간축 필터링: 연속된 노이즈 스파이크나 급커브 시 단발성 유입을 방어하기 위해
-	// 최근 N샘플 중 유효 펄스 패턴을 시간축 convolution으로 확인
 	uint8_t mark_left = 0, mark_right = 0;
-	int32_t t_conv_l = 0, t_conv_r = 0;
-	// 가중치 커널 (시간축 중심 강조 필터)
-	static const int8_t time_kernel[TIME_RING_LEN] = {1, 1, 2, 2, 2, 2, 1, 1};
-	for (uint8_t k = 0; k < TIME_RING_LEN; k++) {
-		uint8_t r_pos = (ring_idx + k) % TIME_RING_LEN;
-		t_conv_l += (int32_t)left_ring[r_pos] * time_kernel[k];
-		t_conv_r += (int32_t)right_ring[r_pos] * time_kernel[k];
+
+	// 1. 전용 외곽 마커 센서 (16: M_L, 17: M_R) - Bit 0
+	if (IR_Sensor.data->state & (1U << LEFT_MARK_SENSOR_INDEX)) {
+		mark_left |= 0x01;
+	}
+	if (IR_Sensor.data->state & (1U << RIGHT_MARK_SENSOR_INDEX)) {
+		mark_right |= 0x01;
 	}
 
-	// 시간축 펄스 지속성 기준 (일정 누적 가중치 이상일 때 마커로 확정)
-	if (t_conv_l >= 4) {
-		mark_left = 1;
-	}
-	if (t_conv_r >= 4) {
-		mark_right = 1;
+	// 2. 센서바 최외곽 끝단(IR_0..2, IR_13..15) 보조 - Bit 1
+	if (!is_cross_line && cross_state == 0) {
+		if (current_peak_idx >= 3 && (state16 & 0x0007)) {
+			mark_left |= 0x02;
+		}
+		if (current_peak_idx <= 12 && (state16 & 0xE000)) {
+			mark_right |= 0x02;
+		}
 	}
 
 	IR_Sensor.data->mark_left = mark_left;
@@ -402,9 +415,9 @@ float32_t Sensor_Get_Position(void) {
 		float32_t current_position = (total_weight > 0.0f) ? (weighted_sum / total_weight) : line_sensor_pos[current_peak_idx];
 
 		// 교차로 통과 직후 잔류 노이즈나 고주파 센서 스파이크에 대한 변화율 제한(Slew Rate Limiter)
-		// 500us(2kHz) 제어 주기 기준 최대 0.0525f (초당 105 units/s, 물리적 한계 약 5.6 m/s)
+		// 500us(2kHz) 제어 주기 기준 최대 0.015f (초당 약 30 units/s, 물리적 한계 약 1.6 m/s)
 		float32_t pos_diff = current_position - prev_position;
-		const float32_t MAX_POS_STEP = 0.0525f;
+		const float32_t MAX_POS_STEP = 0.015f;
 		if (pos_diff > MAX_POS_STEP) {
 			current_position = prev_position + MAX_POS_STEP;
 		} else if (pos_diff < -MAX_POS_STEP) {
@@ -445,15 +458,24 @@ static float32_t g_segment_start_yaw = 0.0f;
 static float32_t g_max_yaw_change = 0.0f;
 static int16_t g_pending_log_idx = -1;
 static float32_t g_pending_target_dist = 0.10f;
-
-void Cross_Detect_Reset(void) {
+static float32_t g_post_cross_lockout_dist = 0.0f;
+static void Marker_FSM_Reset(void) {
 	g_marker_state = MARKER_STATE_IDLE;
-	g_accum_left = 0;
-	g_accum_right = 0;
-	g_both_marker_coincident = 0;
+	g_left_on_count = 0;
+	g_right_on_count = 0;
+	g_left_src_mask = 0;
+	g_right_src_mask = 0;
 	g_accum_center_state = 0;
 	g_marker_on_count = 0;
 	g_marker_off_count = 0;
+	g_marker_min_peak = 15;
+	g_marker_max_peak = 0;
+	g_both_marker_coincident = 0;
+	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+}
+
+void Cross_Detect_Reset(void) {
+	Marker_FSM_Reset();
 
 	g_prev_imu_yaw = imu_data.Yaw_Angle;
 	g_continuous_yaw = 0.0f;
@@ -461,6 +483,7 @@ void Cross_Detect_Reset(void) {
 	g_max_yaw_change = 0.0f;
 	g_pending_log_idx = -1;
 	g_pending_target_dist = 0.10f;
+	g_post_cross_lockout_dist = 0.0f;
 }
 
 CrossEvent_t Cross_Detect_Update(void) {
@@ -495,69 +518,93 @@ CrossEvent_t Cross_Detect_Update(void) {
 	uint16_t current_center_state = (uint16_t) (IR_Sensor.data->state & 0xFFFF);
 	CrossEvent_t event = CROSS_NONE;
 
-	switch (g_marker_state) {
-	case MARKER_STATE_IDLE:
-		if (left_marker || right_marker) {
-			g_marker_state = MARKER_STATE_READING;
-			g_accum_left = left_marker;
-			g_accum_right = right_marker;
-			g_both_marker_coincident = (left_marker && right_marker);
-			g_accum_center_state = current_center_state;
-			g_marker_on_count = 1;
-			g_marker_off_count = 0;
-			HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+	// 1. 교차로 통과 완료 이벤트 최우선 처리
+	if (g_cross_event_pending) {
+		g_cross_event_pending = 0;
+		Marker_FSM_Reset();
+		g_post_cross_lockout_dist = 0.15f; // 크로스 통과 후 최소 15cm 동안 교차선 꼬리/대각선 잔여물로 인한 사이드 마커 오인식 차단
+		event = CROSS_CROSS;
+	} else if (cross_state) {
+		Marker_FSM_Reset();
+	} else if (g_post_cross_lockout_dist > 0.0f) {
+		Marker_FSM_Reset();
+		if (g_odom_distance_m >= g_post_cross_lockout_dist) {
+			g_post_cross_lockout_dist = 0.0f; // 15cm 경과 완료 -> 락아웃 해제
 		}
-		break;
-	case MARKER_STATE_READING:
-		if (left_marker)
-			g_accum_left = 1;
-		if (right_marker)
-			g_accum_right = 1;
-		if (left_marker && right_marker)
-			g_both_marker_coincident = 1;
-		if (left_marker || right_marker) {
-			g_marker_on_count++;
-			g_marker_off_count = 0;
-		}
-		g_accum_center_state |= current_center_state;
+	} else {
+		// 2. 일반 사이드 마커 FSM (출발선/정지선 STOP 포함)
+		switch (g_marker_state) {
+		case MARKER_STATE_IDLE:
+			if (left_marker || right_marker) {
+				g_marker_state = MARKER_STATE_READING;
+				g_left_on_count = left_marker ? 1 : 0;
+				g_right_on_count = right_marker ? 1 : 0;
+				g_left_src_mask = left_marker;
+				g_right_src_mask = right_marker;
+				g_marker_on_count = 1;
+				g_marker_off_count = 0;
+				g_marker_min_peak = prev_peak_idx;
+				g_marker_max_peak = prev_peak_idx;
+				HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+			}
+			break;
+		case MARKER_STATE_READING:
+			if (left_marker) {
+				g_left_on_count++;
+				g_left_src_mask |= left_marker;
+			}
+			if (right_marker) {
+				g_right_on_count++;
+				g_right_src_mask |= right_marker;
+			}
 
-		if (!left_marker && !right_marker) {
-			g_marker_off_count++;
-			// 순간 노이즈 딥으로 인한 조기 분할 방지: 최소 2사이클 연속 오프 시에만 마커 종료로 판정
-			if (g_marker_off_count >= 4) {
-				// 최소 감지 펄스 폭 검증: 1사이클짜리 순간 노이즈 스파이크는 무시
-				if (g_marker_on_count >= 2) {
-					if (g_accum_left && g_accum_right && g_both_marker_coincident) {
-						uint8_t center_on_count = 0;
-						for (int i = 0; i < 16; i++) {
-							if (g_accum_center_state & (1 << i))
-								center_on_count++;
-						}
-						if (center_on_count >= 12) {
-							event = CROSS_CROSS;
-						} else {
-							event = CROSS_STOP;
-							g_last_stop_state = g_accum_center_state;
-							g_last_stop_count = center_on_count;
-						}
-					} else if (g_accum_left) {
+			if (prev_peak_idx < g_marker_min_peak) g_marker_min_peak = prev_peak_idx;
+			if (prev_peak_idx > g_marker_max_peak) g_marker_max_peak = prev_peak_idx;
+
+			if (left_marker || right_marker) {
+				g_marker_on_count++;
+				g_marker_off_count = 0;
+			} else {
+				g_marker_off_count++;
+				// 마커 통과 완료 디바운스: 센서간 핸드오프 및 대각선 진입 깜빡임 방지 (60사이클 = 3ms 연속 오프 시 확정)
+				if (g_marker_off_count >= 60) {
+					const uint16_t MIN_VALID_ON = 80; // 최소 4ms 지속 감지 시에만 정규 마커로 인정 (잔류 스파이크 차단)
+					// 인접 트랙 스침(Ghost) 방어:
+					// 차체가 중앙에 있을 때(peak <= 8) 발생한 M_R 단독 감지는 85mm 밖 인접 트랙을 스친 것이므로 기각.
+					// 차체가 우측으로 쏠려(max_peak >= 9) 메인바 끝단을 벗어났을 때의 M_R 감지이거나,
+					// 메인바(IR_13..15)가 함께 감지된 경우(src_mask & 0x02)는 정규 마커로 인정.
+					uint8_t left_ok  = ((g_left_src_mask & 0x02) != 0) || (g_marker_min_peak <= 6);
+					uint8_t right_ok = ((g_right_src_mask & 0x02) != 0) || (g_marker_max_peak >= 9);
+
+					uint8_t valid_left = (g_left_on_count >= MIN_VALID_ON) && left_ok;
+					uint8_t valid_right = (g_right_on_count >= MIN_VALID_ON) && right_ok;
+
+					if (valid_left && valid_right) {
+						event = CROSS_STOP;
+						g_last_stop_state = current_center_state;
+					} else if (valid_left) {
 						event = CROSS_LEFT;
-					} else if (g_accum_right) {
+					} else if (valid_right) {
 						event = CROSS_RIGHT;
 					}
-				}
 
-				g_marker_state = MARKER_STATE_IDLE;
-				g_accum_left = 0;
-				g_accum_right = 0;
-				g_both_marker_coincident = 0;
-				g_accum_center_state = 0;
-				g_marker_on_count = 0;
-				g_marker_off_count = 0;
-				HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+					// 마커 통과 후 센서가 테이프를 완전히 벗어날 때까지 대기 (동일 마커 중복 트리거 원천 차단)
+					g_marker_state = MARKER_STATE_WAIT_CLEAR;
+					g_marker_off_count = 0;
+				}
 			}
+			break;
+		case MARKER_STATE_WAIT_CLEAR:
+			if (left_marker || right_marker) {
+				g_marker_off_count = 0;
+			} else {
+				g_marker_off_count++;
+				if (g_marker_off_count >= 20) { // 1ms 연속 클린 플로어 확인 후 IDLE 복귀
+					Marker_FSM_Reset();
+				}
+			}
+			break;
 		}
-		break;
 	}
 
 	if (event != CROSS_NONE) {
