@@ -27,7 +27,7 @@
 #include "adc.h"
 #include "tim.h"
 #include "foc.h"
-#include "lsm6ds3tr-c.h"
+#include "lsm6ds.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/

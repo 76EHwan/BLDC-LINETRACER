@@ -25,6 +25,15 @@
 
 #define LPTIM_TICK_DT 0.001f
 
+// 1D convolution 기반 라인 state (0.0f = 기존 단순 threshold 방식)
+#ifndef SENSOR_CONV_GAIN_DEFAULT
+#define SENSOR_CONV_GAIN_DEFAULT 0.05f
+#endif
+
+#define CONV_KERNEL_LEN	3
+#define CONV_IN_LEN		(LINE_N_SENSORS + 2)                    // M_L, IR_0..15, M_R
+#define CONV_OUT_LEN	(CONV_IN_LEN + CONV_KERNEL_LEN - 1)     // full convolution length
+
 // @formatter:off
 static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1, 16, 17 };
 static const uint8_t scan_group2[SCAN_GROUP_LEN] = { 9, 6, 4, 11, 13, 2, 0, 15, 16, 17 };
@@ -60,6 +69,8 @@ volatile SensorData_TypeDef sensorData = {
         .line_lost_sum_min = 20,
 		.mark_left = 0,
 		.mark_right = 0,
+		.conv = { 0 },
+		.conv_gain = SENSOR_CONV_GAIN_DEFAULT,
 };
 
 volatile Sensor_TypeDef IR_Sensor = {
@@ -141,6 +152,34 @@ __STATIC_INLINE uint16_t Sensor_Normalize(uint8_t idx) {
 	return (result > 255U) ? 255U : (uint8_t) result;
 }
 
+// ==============================================
+// 1D Convolution (CMSIS-DSP arm_conv_f32)
+// ==============================================
+// 입력: [M_L(16), IR_0 .. IR_15, M_R(17)] (LineSim 뷰어 및 실제 센서 배치 일치)
+// 커널: [-1, 2, -1] (1D 라플라시안: 라인 피크는 +, 완만한 어깨/배경 오프셋은 <= 0)
+// arm_conv_f32를 통해 16개 메인 라인 센서의 공간 2차 미분(샤프닝) 신호를 고속 연산
+static const float32_t conv_kernel[CONV_KERNEL_LEN] = { -1.0f, 2.0f, -1.0f };
+
+static void Sensor_Conv_Update(void) {
+	float32_t conv_in[CONV_IN_LEN];
+	float32_t conv_out[CONV_OUT_LEN];
+	volatile SensorData_TypeDef *d = IR_Sensor.data;
+
+	conv_in[0] = (float32_t) d->normalized[LEFT_MARK_SENSOR_INDEX];
+	for (uint8_t i = 0; i < LINE_N_SENSORS; i++) {
+		conv_in[i + 1] = (float32_t) d->normalized[i];
+	}
+	conv_in[CONV_IN_LEN - 1] = (float32_t) d->normalized[RIGHT_MARK_SENSOR_INDEX];
+
+	// CMSIS-DSP full convolution: out[n] = sum_k in[n-k] * h[k]
+	// IR_i (= conv_in[i+1])에 대응하는 출력은 out[i+2]
+	arm_conv_f32(conv_in, CONV_IN_LEN, conv_kernel, CONV_KERNEL_LEN, conv_out);
+
+	for (uint8_t i = 0; i < LINE_N_SENSORS; i++) {
+		d->conv[i] = (int16_t) conv_out[i + 2];
+	}
+}
+
 void TIM7_IRQ_Handler() {
 	uint8_t slot = IR_Sensor.data->idx % SCAN_CYCLE_LEN_HALF;
 	if (slot < SCAN_GROUP_LEN) {
@@ -175,6 +214,11 @@ void ADC3_IRQ_Cplt_Handler() {
 	IR_Sensor.data->raw[phys] = raw;
 	idx = (idx + 1) % SCAN_CYCLE_LEN;
 	IR_Sensor.data->idx = idx;
+
+	// 스캔 그룹(반주기, 라인 센서 8개 + 마크 센서 2개) 완료 시점마다 CMSIS-DSP convolution 갱신
+	if (IR_Sensor.is_calibration && (idx % SCAN_CYCLE_LEN_HALF) == 0) {
+		Sensor_Conv_Update();
+	}
 }
 
 typedef enum {
@@ -221,16 +265,22 @@ float32_t Sensor_Get_Last_Position(void) {
 
 float32_t Sensor_Get_Position(void) {
 
-	uint16_t max_val = 0;
 	int8_t current_peak_idx = LINE_N_SENSORS / 2;
 	uint8_t is_cross_line = 0;
 
 	uint16_t state16 = (uint16_t) (IR_Sensor.data->state & 0xFFFF);
 
+	float32_t best_metric = -1e9f;
+	const float32_t cgain = IR_Sensor.data->conv_gain;
+
 	if (force_full_scan || IR_Sensor.is_lost_position) {
 		for (int8_t i = 0; i < LINE_N_SENSORS; i++) {
-			if (IR_Sensor.data->normalized[i] > max_val) {
-				max_val = IR_Sensor.data->normalized[i];
+			float32_t metric = (float32_t) IR_Sensor.data->normalized[i];
+			if (cgain > 0.0f) {
+				metric += cgain * (float32_t) IR_Sensor.data->conv[i];
+			}
+			if (metric > best_metric) {
+				best_metric = metric;
 				current_peak_idx = i;
 			}
 		}
@@ -305,8 +355,12 @@ float32_t Sensor_Get_Position(void) {
 			} else {
 				// 정상 단일 라인: 윈도우 내 피크 탐색
 				for (int8_t i = search_start; i <= search_end; i++) {
-					if (IR_Sensor.data->normalized[i] > max_val) {
-						max_val = IR_Sensor.data->normalized[i];
+					float32_t metric = (float32_t) IR_Sensor.data->normalized[i];
+					if (cgain > 0.0f) {
+						metric += cgain * (float32_t) IR_Sensor.data->conv[i];
+					}
+					if (metric > best_metric) {
+						best_metric = metric;
 						current_peak_idx = i;
 					}
 				}
@@ -331,9 +385,14 @@ float32_t Sensor_Get_Position(void) {
 				}
 				g_cross_accum_mask = 0;
 
+				best_metric = -1e9f;
 				for (int8_t i = search_start; i <= search_end; i++) {
-					if (IR_Sensor.data->normalized[i] > max_val) {
-						max_val = IR_Sensor.data->normalized[i];
+					float32_t metric = (float32_t) IR_Sensor.data->normalized[i];
+					if (cgain > 0.0f) {
+						metric += cgain * (float32_t) IR_Sensor.data->conv[i];
+					}
+					if (metric > best_metric) {
+						best_metric = metric;
 						current_peak_idx = i;
 					}
 				}
@@ -395,8 +454,12 @@ float32_t Sensor_Get_Position(void) {
 	for (int8_t i = calc_start; i <= calc_end; i++) {
 		int32_t net_val = (int32_t) IR_Sensor.data->normalized[i] - (int32_t) min_noise;
 		if (net_val > 0) {
+			float32_t net_f = (float32_t) net_val;
+			if (cgain > 0.0f && IR_Sensor.data->conv[i] > 0) {
+				net_f += cgain * (float32_t) IR_Sensor.data->conv[i];
+			}
 			// 노이즈 플로어 차감 및 제곱 가중으로 계단형 점프(윈도우 경계 불연속) 제거
-			float32_t w = (float32_t) (net_val * net_val);
+			float32_t w = net_f * net_f;
 			weighted_sum += w * line_sensor_pos[i];
 			total_weight += w;
 		}
@@ -792,6 +855,19 @@ void Sensor_State_Printf() {
 		if (i == 17)
 			LCD_Printf(15, 3, "%c", state);
 		i = (i + 1) % 18;
+	}
+	LCD_Clear();
+	Sensor_Stop();
+	Button_Wait_Release(&btn_k);
+}
+
+void Sensor_Conv_Printf() {
+	Sensor_Start();
+	uint8_t i = 0;
+	LCD_Printf(0, 0, "Sensor Conv");
+	while (Button_Get_Input() != INPUT_CMD_K_HOLD) {
+		LCD_Printf(8 * (i & 0x1), i / 2 + 1, "%+04d", (int) IR_Sensor.data->conv[i]);
+		i = (i + 1) % LINE_N_SENSORS;
 	}
 	LCD_Clear();
 	Sensor_Stop();

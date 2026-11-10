@@ -70,6 +70,7 @@ MenuItem_t sensor_menu_items[] = {
     { .name = "Raw",          .pfnActionCallback = Sensor_Raw_Printf },
     { .name = "Normalized",   .pfnActionCallback = Sensor_Normalize_Printf },
     { .name = "State",        .pfnActionCallback = Sensor_State_Printf },
+    { .name = "Convolution",  .pfnActionCallback = Sensor_Conv_Printf },
 	{ .name = "Position",     .pfnActionCallback = Sensor_Position_Printf },
     { .name = "Update Thres", .pfnActionCallback = Update_Threshold },
     { .name = "IMU Test",     .pfnActionCallback = IMU_Test },

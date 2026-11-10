@@ -269,6 +269,7 @@ void Steer_Motor() {
 
 	// S자 연속 코너 및 target_pos 시프트(Drive 3) 시 외곽 원호 추종을 위한 단축 보정
 	float32_t rejoin_gain = 1.0f + 1.85f * err_sq;
+	if (rejoin_gain > 1.30f) rejoin_gain = 1.30f;
 	float32_t sign_err = (error >= 0.0f) ? 1.0f : -1.0f;
 	float32_t kappa_corner = sign_err * CORNER_KAPPA * corner_weight * rejoin_gain;
 
@@ -285,11 +286,11 @@ void Steer_Motor() {
 	}
 
 	if (g_is_straight) {
-		// 직선 구간: 고속 직선 주행 중에는 R=0.25m 코너 곡률 보정을 억제하고 순수 Pure Pursuit 위주로 추종
-		if (g_current_base_mps > driveData.base_mps + 0.30f) {
-			kappa_corner *= 0.20f;
-		} else {
-			kappa_corner *= 0.60f;
+		// 직선 구간: 코너 전용 곡률(R=0.25m) 보정을 완전 차단(0.0)하여 비선형 헌팅 발진 원천 제거
+		kappa_corner = 0.0f;
+		// 고속 직선: 속도에 완전 비례 스케일링(speed_ratio)하여 고속(7.0m/s)에서도 저속과 동일한 안정 감쇠 유지
+		if (eff_speed > v_base) {
+			pp_speed_ratio = speed_ratio;
 		}
 	}
 
@@ -323,19 +324,19 @@ void Steer_Motor() {
 		}
 		float32_t p_yaw = driveData.yaw_gain_p;
 		if (g_is_straight && (g_target_base_mps < g_current_base_mps)) {
-			// 직선 감속 중에는 자이로 오차에 의한 급격한 차등 토크 반작용 완화
-			p_yaw *= 0.7f;
+			// 직선 감속 중에는 타이어 횡력 저하 및 피치다운 하중 이동에 따른 사행 진동을 억제하기 위해 자이로 감쇠 강화
+			p_yaw *= 1.3f;
 		}
 		yaw_cmd = yaw_ref + p_yaw * (yaw_ref - yaw_meas) / (1.0f + p_yaw) + g_yaw_integ;
 	} else {
 		g_yaw_integ = 0.0f;
 	}
 
-	// 직선 감속 구간 요레이트 지령 상한 (과도한 휠 록업/스핀 방지 및 안정 추종)
-	if (g_is_straight && (g_target_base_mps < g_current_base_mps)) {
-		const float32_t MAX_DECEL_YAW_CMD = 5.0f; // ~286 dps
-		if (yaw_cmd > MAX_DECEL_YAW_CMD) yaw_cmd = MAX_DECEL_YAW_CMD;
-		else if (yaw_cmd < -MAX_DECEL_YAW_CMD) yaw_cmd = -MAX_DECEL_YAW_CMD;
+	// 고속 감속 및 코너 진입 제동 구간 요레이트 지령 상한 (과도한 휠 록업 방지하되 조향 복원력 포화 없도록 여유 확보)
+	if ((g_is_straight && (g_target_base_mps < g_current_base_mps)) || (active_mps > driveData.base_mps + 0.8f)) {
+		float32_t max_decel_yaw = (active_mps > driveData.base_mps + 1.2f) ? 12.0f : 15.0f;
+		if (yaw_cmd > max_decel_yaw) yaw_cmd = max_decel_yaw;
+		else if (yaw_cmd < -max_decel_yaw) yaw_cmd = -max_decel_yaw;
 	}
 
 	float32_t mps_L = active_mps + yaw_cmd * THREAD_DIV2;
