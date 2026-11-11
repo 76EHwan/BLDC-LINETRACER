@@ -1697,14 +1697,14 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 							break;
 						}
 						if (fabsf(cy) >= 20.0f) {
-							cur_yaw_sum += cy;
+							cur_yaw_sum += (cy > 0.0f ? 45.0f : -45.0f);
 							c_count++;
 							last_cand = cur;
 						} else if (cd > 0.40f) {
 							break;
 						}
 						cur++;
-						if (c_count >= 3 && fabsf(cur_yaw_sum) <= 18.0f) {
+						if (c_count >= 3 && fabsf(cur_yaw_sum) <= 5.0f) {
 							last_curve_idx = last_cand;
 							tot_yaw = cur_yaw_sum;
 							num_curves = c_count;
@@ -1717,35 +1717,31 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 					uint16_t land_idx = last_curve_idx + 1;
 					uint16_t corner_idx = land_idx;
 					float exit_dist = 0.0f;
-					uint8_t valid_exit = 1;
-
 					while (corner_idx + 1 < ref_log_count) {
-						float cy = fabsf(ref_log[corner_idx + 1].yaw_angle);
-						if (cy >= 70.0f || ref_log[corner_idx + 1].type == CROSS_STOP || ref_log[corner_idx + 1].type == CROSS_CROSS) {
-							break;
-						}
-						if (cy >= 18.0f) {
-							valid_exit = 0;
-							break;
-						}
 						exit_dist += ref_log[corner_idx + 1].dist_from_prev_m;
 						corner_idx++;
+						float cy = fabsf(ref_log[corner_idx].yaw_angle);
+						CrossEvent_t ct = ref_log[corner_idx].type;
+						if (cy >= 18.0f || ct == CROSS_STOP || ct == CROSS_CROSS) {
+							break;
+						}
 					}
 
-					float corner_yaw = (corner_idx + 1 < ref_log_count) ? fabsf(ref_log[corner_idx + 1].yaw_angle) : 0.0f;
-
-					if (valid_exit && exit_dist >= 0.18f && corner_yaw >= 70.0f && corner_idx < ref_log_count) {
+					if (exit_dist >= 0.18f && corner_idx < ref_log_count) {
 						// 4. 기하학적 2D 투영 및 사선 착지(land) 분석:
-						//    착지 목표 지점은 시케인이 끝나고 탈출 직선이 시작되는 land_idx (= last_curve_idx + 1)!
-						float yaw_bias = tot_yaw / (float)num_curves;
+						//    ZETIN 규격상 시케인 곡선은 정확한 45도 호(arc)이므로 참 기하학적 각도 기반 정밀 적분
 						float x_land = 0.0f, y_land = 0.0f, th = 0.0f;
 
 						for (uint16_t seg = start_idx; seg < land_idx; seg++) {
 							float d = ref_log[seg + 1].dist_from_prev_m;
 							float raw_yaw = ref_log[seg + 1].yaw_angle;
 							float dyr = 0.0f;
-							if (seg >= first_curve_idx && seg <= last_curve_idx) {
-								dyr = (fabsf(raw_yaw) >= 20.0f) ? (raw_yaw - yaw_bias) * (PI / 180.0f) : raw_yaw * (PI / 180.0f);
+							if (num_curves == 3) {
+								if (seg == first_curve_idx) dyr = (y1 > 0.0f ? 45.0f : -45.0f) * (PI / 180.0f);
+								else if (seg == first_curve_idx + 1) dyr = (y1 > 0.0f ? -90.0f : 90.0f) * (PI / 180.0f);
+								else if (seg == first_curve_idx + 2) dyr = (y1 > 0.0f ? 45.0f : -45.0f) * (PI / 180.0f);
+							} else {
+								dyr = (raw_yaw > 20.0f ? 45.0f : (raw_yaw < -20.0f ? -45.0f : 0.0f)) * (PI / 180.0f);
 							}
 							float dx = d * cosf(th + 0.5f * dyr);
 							float dy = d * sinf(th + 0.5f * dyr);
@@ -1767,8 +1763,12 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 							float d = ref_log[seg + 1].dist_from_prev_m;
 							float raw_yaw = ref_log[seg + 1].yaw_angle;
 							float dyr = 0.0f;
-							if (seg >= first_curve_idx && seg <= last_curve_idx) {
-								dyr = (fabsf(raw_yaw) >= 20.0f) ? (raw_yaw - yaw_bias) * (PI / 180.0f) : raw_yaw * (PI / 180.0f);
+							if (num_curves == 3) {
+								if (seg == first_curve_idx) dyr = (y1 > 0.0f ? 45.0f : -45.0f) * (PI / 180.0f);
+								else if (seg == first_curve_idx + 1) dyr = (y1 > 0.0f ? -90.0f : 90.0f) * (PI / 180.0f);
+								else if (seg == first_curve_idx + 2) dyr = (y1 > 0.0f ? 45.0f : -45.0f) * (PI / 180.0f);
+							} else {
+								dyr = (raw_yaw > 20.0f ? 45.0f : (raw_yaw < -20.0f ? -45.0f : 0.0f)) * (PI / 180.0f);
 							}
 							float dx = d * cosf(pth + 0.5f * dyr);
 							float dy = d * sinf(pth + 0.5f * dyr);
@@ -1789,8 +1789,8 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 
 						float total_straight = cut_dist + exit_dist;
 
-						// 사선 현 대비 트랙 최대 이탈 140mm 이하(295mm 센서바 반폭 147.5mm 이내) & 사선 각도 8도 이내 & 횡편차 80mm 이내
-						if (cut_dist >= 0.80f && total_straight >= 1.20f && max_dev <= 0.140f && fabsf(cut_angle_deg) <= 8.0f && fabsf(y_land) <= 0.080f) {
+						// 사선 현 대비 트랙 최대 이탈 200mm 이하(295mm 센서바 반폭 147.5mm + 라인 여유) & 사선 각도 6도 이내 & 횡편차 80mm 이내 & 순방위각 10도 이내
+						if (cut_dist >= 0.80f && total_straight >= 1.20f && max_dev <= 0.200f && fabsf(cut_angle_deg) <= 6.0f && fabsf(y_land) <= 0.080f && fabsf(th * (180.0f / PI)) <= 10.0f) {
 							for (uint16_t seg = start_idx; seg < corner_idx; seg++) {
 								seg_plan_4[seg].accel_type = 4;
 								seg_plan_4[seg].curve_dir = 0;
@@ -1892,14 +1892,27 @@ __STATIC_INLINE uint8_t Drive_Fourth_Init_Sequence(void) {
 // 4차 주행 마커 이벤트 및 가속 구간 계산
 __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFourthState_t *state) {
 	if (cross == CROSS_STOP) {
-		LSM6DS3_Reset_Yaw();
-		g_total_STOP++;
-		if (g_total_STOP >= 2) return 1;
-	} else {
-		if (cross == CROSS_LEFT) g_total_L++;
-		else if (cross == CROSS_RIGHT) g_total_R++;
-		else if (cross == CROSS_CROSS) g_total_C++;
+		float total_course_dist = (ref_log_count > 0) ? ref_log_cum_dist[ref_log_count - 1] : 50.0f;
+		if (g_total_STOP == 0 || g_total_odom_m >= total_course_dist - 3.0f) {
+			LSM6DS3_Reset_Yaw();
+			g_total_STOP++;
+			if (g_total_STOP >= 2) return 1;
+		} else {
+			// 코스 중간 인접 트랙 스침으로 인한 허위 STOP 마커: ref_log 상 기대되는 마커 타입으로 복원 및 g_cross_log 동기화
+			if (state->idx < ref_log_count && ref_log[state->idx].type != CROSS_STOP) {
+				cross = ref_log[state->idx].type;
+				if (g_cross_log_count > 0) {
+					g_cross_log[(g_cross_log_count - 1) % CROSS_LOG_MAX].type = cross;
+				}
+			} else {
+				return 0;
+			}
+		}
 	}
+
+	if (cross == CROSS_LEFT) g_total_L++;
+	else if (cross == CROSS_RIGHT) g_total_R++;
+	else if (cross == CROSS_CROSS) g_total_C++;
 
 	if (state->in_straight_cut) {
 		if (state->idx < state->cut_end_idx) {
@@ -1978,7 +1991,20 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 		state->in_straight_cut = 1;
 		g_straight_cut_active = 0;      // 진입 직선 정렬 완료 후 첫 45도 커브 직전에 활성화
 		g_suppress_marker_detect = 0;   // 진입 직선 정렬 중에는 물리 감지 허용 (첫 45도 커브 진입 시 1로 변경)
-		g_straight_cut_yaw_ref = imu_data.Yaw_Angle;
+
+		// 진입 직선에서 정확한 격자 방위각(grid_yaw) 및 사선 목표각 사전 산출
+		float corr_yaw = imu_data.Yaw_Angle - state->imu_grid_bias;
+		float grid_yaw = roundf(corr_yaw / 45.0f) * 45.0f;
+		if (grid_yaw > 180.0f) grid_yaw -= 360.0f;
+		else if (grid_yaw < -180.0f) grid_yaw += 360.0f;
+
+		float target_yaw = grid_yaw + seg_plan_4[state->idx].cut_angle_deg + state->imu_grid_bias;
+		if (target_yaw > 180.0f) target_yaw -= 360.0f;
+		else if (target_yaw < -180.0f) target_yaw += 360.0f;
+
+		g_straight_cut_yaw_ref = target_yaw;
+		state->cut_p1_latched = 1;
+
 		IR_Sensor.data->target_pos = 0.0f;
 		Steer_Clear_Target_Shift();
 		state->accel_active = 1;
@@ -1989,7 +2015,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 		state->cut_start_odom = g_total_odom_m;
 		state->cut_straight_dist = seg_plan_4[state->idx].cut_straight_dist;
 		state->cut_angle_deg = seg_plan_4[state->idx].cut_angle_deg;
-		state->cut_p1_latched = 0;
+		state->cut_p1_latched = 1;
 		state->seg_len_predicted = state->cut_straight_dist;
 		state->target_mps = driveData.max_mps;
 		state->end_mps = driveData.base_mps;
@@ -2195,38 +2221,29 @@ __STATIC_INLINE void Update_Target_Pos_Fourth(DriveFourthState_t *state) {
 			last_exit_dist += seg_plan_4[k].cut_seg_x;
 		}
 
-		float lock_start_dist = (first_curve_dist > 0.12f) ? (first_curve_dist - 0.05f) : (first_curve_dist * 0.70f);
+		// 센서암 길이(160mm)를 고려하여 센서바가 첫 커브에 도달하기 전에 사선 헤딩 락으로 전환
+		float lock_start_dist = (first_curve_dist > 0.20f) ? (first_curve_dist - 0.16f) : 0.02f;
 
 		if (traveled < lock_start_dist) {
 			// Phase 1 (진입 직선 정렬 구간): 일반 라인 추종(target_pos = 0)으로 차체를 진입 직선 중심에 정렬
 			g_straight_cut_active = 0;
 			g_suppress_marker_detect = 0;
 			IR_Sensor.data->target_pos = 0.0f;
-			state->cut_p1_latched = 0;
 		} else if (traveled < last_exit_dist) {
 			// Phase 2 (시케인 사선 관통 구간): 기하학적 사선 각도(cut_angle_deg)가 반영된 목표 방위각으로 사선 돌파
-			if (!state->cut_p1_latched) {
-				float corr_yaw = imu_data.Yaw_Angle - state->imu_grid_bias;
-				float grid_yaw = roundf(corr_yaw / 45.0f) * 45.0f;
-				if (grid_yaw > 180.0f) grid_yaw -= 360.0f;
-				else if (grid_yaw < -180.0f) grid_yaw += 360.0f;
-
-				// 진입 직선 기준 방위각(grid_yaw)에 기하학적 사선 각도(cut_angle_deg)를 합산하여 사선 조향각 산출!
-				float target_yaw = grid_yaw + state->cut_angle_deg + state->imu_grid_bias;
-				if (target_yaw > 180.0f) target_yaw -= 360.0f;
-				else if (target_yaw < -180.0f) target_yaw += 360.0f;
-
-				g_straight_cut_yaw_ref = target_yaw;
-				state->cut_p1_latched = 1;
-			}
 			g_straight_cut_active = 1;
 			g_suppress_marker_detect = 1;
 			IR_Sensor.data->target_pos = 0.0f;
 		} else {
-			// Phase 3 (탈출 직선 재진입 구간): 라인 복귀 후 차체 정렬 및 물리 마커 감지 즉시 재개
+			// Phase 3 (탈출 직선 재진입 구간): 라인 복귀 후 차체 정렬
 			g_straight_cut_active = 0;
-			g_suppress_marker_detect = 0;
 			IR_Sensor.data->target_pos = 0.0f;
+			// 차체가 탈출 직선 중심에 완전히 안착할 때까지(최소 12cm 주행 또는 코너 마커 직전까지) 마커 오인식 방지
+			if (traveled >= last_exit_dist + 0.12f || traveled >= state->cut_straight_dist - 0.06f) {
+				g_suppress_marker_detect = 0;
+			} else {
+				g_suppress_marker_detect = 1;
+			}
 		}
 		return;
 	}
@@ -2539,14 +2556,27 @@ __STATIC_INLINE uint8_t Drive_Fifth_Init_Sequence(void) {
 
 __STATIC_INLINE uint8_t Process_Marker_Event_Fifth(CrossEvent_t cross, DriveFifthState_t *state) {
 	if (cross == CROSS_STOP) {
-		LSM6DS3_Reset_Yaw();
-		g_total_STOP++;
-		if (g_total_STOP >= 2) return 1;
-	} else {
-		if (cross == CROSS_LEFT) g_total_L++;
-		else if (cross == CROSS_RIGHT) g_total_R++;
-		else if (cross == CROSS_CROSS) g_total_C++;
+		float total_course_dist = (ref_log_count > 0) ? ref_log_cum_dist[ref_log_count - 1] : 50.0f;
+		if (g_total_STOP == 0 || g_total_odom_m >= total_course_dist - 3.0f) {
+			LSM6DS3_Reset_Yaw();
+			g_total_STOP++;
+			if (g_total_STOP >= 2) return 1;
+		} else {
+			// 코스 중간 인접 트랙 스침으로 인한 허위 STOP 마커: ref_log 상 기대되는 마커 타입으로 복원 및 g_cross_log 동기화
+			if (state->idx < ref_log_count && ref_log[state->idx].type != CROSS_STOP) {
+				cross = ref_log[state->idx].type;
+				if (g_cross_log_count > 0) {
+					g_cross_log[(g_cross_log_count - 1) % CROSS_LOG_MAX].type = cross;
+				}
+			} else {
+				return 0;
+			}
+		}
 	}
+
+	if (cross == CROSS_LEFT) g_total_L++;
+	else if (cross == CROSS_RIGHT) g_total_R++;
+	else if (cross == CROSS_CROSS) g_total_C++;
 
 	if (state->mismatch) {
 		if (cross == CROSS_CROSS) {
