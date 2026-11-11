@@ -1632,12 +1632,12 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 	}
 
 	uint16_t k = 0;
-	while (k + 5 < ref_log_count) {
+	while (k + 3 < ref_log_count) {
 		float y1 = ref_log[k + 1].yaw_angle;
 		float ay1 = fabsf(y1);
 
-		// 첫 커브 조건: 22도 ~ 60도
-		if (ay1 >= 22.0f && ay1 <= 60.0f) {
+		// 첫 커브 조건: 20도 ~ 60도
+		if (ay1 >= 20.0f && ay1 <= 60.0f) {
 			uint16_t first_curve_idx = k;
 
 			// 1. 진입 직선 스캔 (first_curve_idx 직전부터 역방향 탐색)
@@ -1657,74 +1657,115 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 				p--;
 			}
 
-			// 2. 3-호 우회 시케인 (+45, -90, +45 또는 -45, +90, -45) 스캔
-			float y2 = ref_log[first_curve_idx + 2].yaw_angle;
-			float y3 = ref_log[first_curve_idx + 3].yaw_angle;
-			float tot_yaw_3 = y1 + y2 + y3;
+			if (entry_dist >= 0.18f) {
+				uint16_t last_curve_idx = 0;
+				float tot_yaw = 0.0f;
+				uint8_t num_curves = 0;
 
-			uint8_t is_3arc = (y1 * y2 < 0.0f) && (y1 * y3 > 0.0f) &&
-			                  (fabsf(y2) >= 65.0f && fabsf(y2) <= 105.0f) &&
-			                  (fabsf(y3) >= 22.0f && fabsf(y3) <= 60.0f) &&
-			                  (fabsf(tot_yaw_3) <= 18.0f);
+				// 패턴 A: 3-호 우회 시케인 (+45, -90, +45 또는 -45, +90, -45)
+				if (first_curve_idx + 3 < ref_log_count) {
+					float y2 = ref_log[first_curve_idx + 2].yaw_angle;
+					float y3 = ref_log[first_curve_idx + 3].yaw_angle;
+					float tot_yaw_3 = y1 + y2 + y3;
 
-			if (is_3arc && entry_dist >= 0.20f) {
-				uint16_t last_curve_idx = first_curve_idx + 2;
-
-				// 3. 탈출 직선 및 90도 이상 코너 탐색
-				uint16_t corner_idx = last_curve_idx + 1;
-				float exit_dist = 0.0f;
-				uint8_t valid_exit = 1;
-
-				while (corner_idx + 1 < ref_log_count) {
-					float cy = fabsf(ref_log[corner_idx + 1].yaw_angle);
-					if (cy >= 70.0f || ref_log[corner_idx + 1].type == CROSS_STOP || ref_log[corner_idx + 1].type == CROSS_CROSS) {
-						break;
+					if ((y1 * y2 < 0.0f) && (y1 * y3 > 0.0f) &&
+					    (fabsf(y2) >= 65.0f && fabsf(y2) <= 105.0f) &&
+					    (fabsf(y3) >= 20.0f && fabsf(y3) <= 60.0f) &&
+					    (fabsf(tot_yaw_3) <= 18.0f)) {
+						last_curve_idx = first_curve_idx + 2;
+						tot_yaw = tot_yaw_3;
+						num_curves = 3;
 					}
-					if (cy >= 18.0f) {
-						valid_exit = 0;
-						break;
-					}
-					exit_dist += ref_log[corner_idx + 1].dist_from_prev_m;
-					corner_idx++;
 				}
 
-				float corner_yaw = (corner_idx + 1 < ref_log_count) ? fabsf(ref_log[corner_idx + 1].yaw_angle) : 0.0f;
+				// 패턴 B: 다중-45도 대칭 S-시케인 (45도 연속 변위, 순요각 합 약 0도)
+				if (last_curve_idx == 0) {
+					uint16_t cur = first_curve_idx;
+					float cur_yaw_sum = 0.0f;
+					uint8_t c_count = 0;
+					uint16_t last_cand = 0;
 
-				if (valid_exit && exit_dist >= 0.18f && corner_yaw >= 70.0f && corner_idx < ref_log_count) {
-					// 4. 기하학적 2D 투영 및 직선 복귀 검증
-					float yaw_bias = tot_yaw_3 / 3.0f;
-					float x = 0.0f, y = 0.0f, th = 0.0f;
-
-					for (uint16_t seg = start_idx; seg < corner_idx; seg++) {
-						float d = ref_log[seg + 1].dist_from_prev_m;
-						float dyr = 0.0f;
-						if (seg >= first_curve_idx && seg <= last_curve_idx) {
-							dyr = (ref_log[seg + 1].yaw_angle - yaw_bias) * (PI / 180.0f);
+					while (cur + 1 < ref_log_count) {
+						float cy = ref_log[cur + 1].yaw_angle;
+						CrossEvent_t ct = ref_log[cur + 1].type;
+						float cd = ref_log[cur + 1].dist_from_prev_m;
+						if (fabsf(cy) >= 70.0f || ct == CROSS_STOP || ct == CROSS_CROSS) {
+							break;
 						}
-						float dx = d * cosf(th + 0.5f * dyr);
-						float dy = d * sinf(th + 0.5f * dyr);
-						th += dyr;
-						x += dx;
-						y += dy;
-						seg_plan_4[seg].cut_seg_x = dx;
+						if (fabsf(cy) >= 20.0f) {
+							cur_yaw_sum += cy;
+							c_count++;
+							last_cand = cur;
+						} else if (cd > 0.40f) {
+							break;
+						}
+						cur++;
+						if (c_count >= 2 && fabsf(cur_yaw_sum) <= 18.0f) {
+							last_curve_idx = last_cand;
+							tot_yaw = cur_yaw_sum;
+							num_curves = c_count;
+						}
+					}
+				}
+
+				if (last_curve_idx > 0 && num_curves >= 2) {
+					// 3. 탈출 직선 및 90도 이상 코너 탐색
+					uint16_t corner_idx = last_curve_idx + 1;
+					float exit_dist = 0.0f;
+					uint8_t valid_exit = 1;
+
+					while (corner_idx + 1 < ref_log_count) {
+						float cy = fabsf(ref_log[corner_idx + 1].yaw_angle);
+						if (cy >= 70.0f || ref_log[corner_idx + 1].type == CROSS_STOP || ref_log[corner_idx + 1].type == CROSS_CROSS) {
+							break;
+						}
+						if (cy >= 18.0f) {
+							valid_exit = 0;
+							break;
+						}
+						exit_dist += ref_log[corner_idx + 1].dist_from_prev_m;
+						corner_idx++;
 					}
 
-					float straight_dist = sqrtf(x * x + y * y);
-					float cut_angle_deg = atan2f(y, x) * (180.0f / PI);
+					float corner_yaw = (corner_idx + 1 < ref_log_count) ? fabsf(ref_log[corner_idx + 1].yaw_angle) : 0.0f;
 
-					if (straight_dist >= 1.20f && fabsf(y) <= 0.05f && fabsf(cut_angle_deg) <= 3.5f) {
+					if (valid_exit && exit_dist >= 0.18f && corner_yaw >= 70.0f && corner_idx < ref_log_count) {
+						// 4. 기하학적 2D 투영 및 직선 복귀 검증
+						float yaw_bias = tot_yaw / (float)num_curves;
+						float x = 0.0f, y = 0.0f, th = 0.0f;
+
 						for (uint16_t seg = start_idx; seg < corner_idx; seg++) {
-							seg_plan_4[seg].accel_type = 4;
-							seg_plan_4[seg].curve_dir = 0;
-							seg_plan_4[seg].is_straight_cut = 1;
-							seg_plan_4[seg].cut_start_idx = start_idx;
-							seg_plan_4[seg].cut_first_curve_idx = first_curve_idx;
-							seg_plan_4[seg].cut_last_exit_idx = last_curve_idx + 1;
-							seg_plan_4[seg].cut_end_idx = corner_idx;
-							seg_plan_4[seg].cut_straight_dist = straight_dist;
+							float d = ref_log[seg + 1].dist_from_prev_m;
+							float raw_yaw = ref_log[seg + 1].yaw_angle;
+							float dyr = 0.0f;
+							if (seg >= first_curve_idx && seg <= last_curve_idx) {
+								dyr = (fabsf(raw_yaw) >= 20.0f) ? (raw_yaw - yaw_bias) * (PI / 180.0f) : raw_yaw * (PI / 180.0f);
+							}
+							float dx = d * cosf(th + 0.5f * dyr);
+							float dy = d * sinf(th + 0.5f * dyr);
+							th += dyr;
+							x += dx;
+							y += dy;
+							seg_plan_4[seg].cut_seg_x = dx;
 						}
-						k = corner_idx;
-						continue;
+
+						float straight_dist = sqrtf(x * x + y * y);
+						float cut_angle_deg = atan2f(y, x) * (180.0f / PI);
+
+						if (straight_dist >= 1.20f && fabsf(y) <= 0.08f && fabsf(cut_angle_deg) <= 3.5f) {
+							for (uint16_t seg = start_idx; seg < corner_idx; seg++) {
+								seg_plan_4[seg].accel_type = 4;
+								seg_plan_4[seg].curve_dir = 0;
+								seg_plan_4[seg].is_straight_cut = 1;
+								seg_plan_4[seg].cut_start_idx = start_idx;
+								seg_plan_4[seg].cut_first_curve_idx = first_curve_idx;
+								seg_plan_4[seg].cut_last_exit_idx = last_curve_idx + 1;
+								seg_plan_4[seg].cut_end_idx = corner_idx;
+								seg_plan_4[seg].cut_straight_dist = straight_dist;
+							}
+							k = corner_idx;
+							continue;
+						}
 					}
 				}
 			}
@@ -1988,8 +2029,8 @@ __STATIC_INLINE void Check_Virtual_Markers_Fourth(DriveFourthState_t *state) {
 	}
 
 	// 2. 코너 마커(cut_end_idx) 안전 워치독:
-	//    물리 마커 센서가 코너 진입 시점까지 미검출되었더라도, 직선 거리에 도달하면 가상 합성 후 straight cut 안전 해제
-	if (traveled >= state->cut_straight_dist - 0.02f) {
+	//    물리 마커 센서가 코너 진입 시점까지 미검출되었을 때에만, 직선 통과 후 가상 합성으로 straight cut 안전 해제
+	if (traveled >= state->cut_straight_dist + 0.06f) {
 		if (state->idx == state->cut_end_idx && state->idx < ref_log_count) {
 			CrossEvent_t vtype = ref_log[state->idx].type;
 			if (vtype == CROSS_LEFT) g_total_L++;
