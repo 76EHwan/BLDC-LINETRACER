@@ -184,6 +184,11 @@ void Steer_Reset_State(void) {
 	g_prev_was_cross = 0;
 }
 
+void Steer_Clear_Target_Shift(void) {
+	g_smooth_target_pos = 0.0f;
+	g_yaw_integ = 0.0f;
+}
+
 void Steer_Motor() {
 	// 1. zero position shifting 완충: target_pos 동적 변경 시 급격한 스텝으로 인한 차체 흔들림 방지
 	const float32_t target_lpf_alpha = 0.96f; // dt=0.5ms 기준 시상수 약 12ms (빠른 추종과 충격 완화의 최적점)
@@ -240,6 +245,39 @@ void Steer_Motor() {
 
 	// Gyro_Z [dps]는 좌회전(CCW)이 + 이므로 부호를 뒤집는다: yaw_meas [rad/s], + = 우회전
 	float32_t yaw_meas = -(imu_data.Gyro_Z - imu_data.Gyro_Z_Offset) * (PI / 180.0f);
+
+	if (g_straight_cut_active) {
+		g_smooth_target_pos = line_pos;
+		g_prev_steer_error = line_pos;
+		g_filtered_deriv = 0.0f;
+		filtered_atten = 1.0f;
+		g_yaw_integ = 0.0f;
+		active_mps = g_current_base_mps;
+
+		float32_t heading_err_deg = imu_data.Yaw_Angle - g_straight_cut_yaw_ref;
+		if (heading_err_deg > 180.0f) heading_err_deg -= 360.0f;
+		else if (heading_err_deg < -180.0f) heading_err_deg += 360.0f;
+		float32_t heading_err_rad = heading_err_deg * (PI / 180.0f);
+		float32_t yaw_ref = 10.0f * heading_err_rad;
+		if (yaw_ref > 4.0f) yaw_ref = 4.0f;
+		else if (yaw_ref < -4.0f) yaw_ref = -4.0f;
+
+		float32_t yaw_cmd = yaw_ref + 1.5f * (yaw_ref - yaw_meas);
+		if (yaw_cmd > 8.0f) yaw_cmd = 8.0f;
+		else if (yaw_cmd < -8.0f) yaw_cmd = -8.0f;
+
+		float32_t mps_L = active_mps + yaw_cmd * THREAD_DIV2;
+		float32_t mps_R = active_mps - yaw_cmd * THREAD_DIV2;
+
+		foc_L.target_omega = mps_L * MPS_TO_OMEGA;
+		foc_R.target_omega = -mps_R * MPS_TO_OMEGA;
+		foc_L.omega_setpoint = foc_L.target_omega;
+		foc_R.omega_setpoint = foc_R.target_omega;
+
+		Drive_Diag_Update_ISR(0.0f, active_mps, yaw_meas, yaw_ref,
+				imu_data.Gyro_Z - imu_data.Gyro_Z_Offset);
+		return;
+	}
 
 	//    곡선에서 미끄러지지 않게(엔코더 거리, 마커 인식이 깨끗하게). 빨리 내리고 천천히(약 0.1 s) 올린다.
 

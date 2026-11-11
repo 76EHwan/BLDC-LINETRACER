@@ -273,7 +273,7 @@ float32_t Sensor_Get_Position(void) {
 	float32_t best_metric = -1e9f;
 	const float32_t cgain = IR_Sensor.data->conv_gain;
 
-	if (force_full_scan || IR_Sensor.is_lost_position) {
+	if (force_full_scan || IR_Sensor.is_lost_position || g_straight_cut_active) {
 		for (int8_t i = 0; i < LINE_N_SENSORS; i++) {
 			float32_t metric = (float32_t) IR_Sensor.data->normalized[i];
 			if (cgain > 0.0f) {
@@ -286,6 +286,7 @@ float32_t Sensor_Get_Position(void) {
 		}
 		force_full_scan = 0;
 		cross_state = 0;
+		is_cross_line = 0;
 	} else {
 		int8_t search_start = prev_peak_idx - POS_WINDOW_HALF;
 		int8_t search_end = prev_peak_idx + POS_WINDOW_HALF;
@@ -477,14 +478,16 @@ float32_t Sensor_Get_Position(void) {
 
 		float32_t current_position = (total_weight > 0.0f) ? (weighted_sum / total_weight) : line_sensor_pos[current_peak_idx];
 
-		// 교차로 통과 직후 잔류 노이즈나 고주파 센서 스파이크에 대한 변화율 제한(Slew Rate Limiter)
-		// 500us(2kHz) 제어 주기 기준 최대 0.015f (초당 약 30 units/s, 물리적 한계 약 1.6 m/s)
-		float32_t pos_diff = current_position - prev_position;
-		const float32_t MAX_POS_STEP = 0.015f;
-		if (pos_diff > MAX_POS_STEP) {
-			current_position = prev_position + MAX_POS_STEP;
-		} else if (pos_diff < -MAX_POS_STEP) {
-			current_position = prev_position - MAX_POS_STEP;
+		if (!g_straight_cut_active) {
+			// 교차로 통과 직후 잔류 노이즈나 고주파 센서 스파이크에 대한 변화율 제한(Slew Rate Limiter)
+			// 500us(2kHz) 제어 주기 기준 최대 0.015f (초당 약 30 units/s, 물리적 한계 약 1.6 m/s)
+			float32_t pos_diff = current_position - prev_position;
+			const float32_t MAX_POS_STEP = 0.015f;
+			if (pos_diff > MAX_POS_STEP) {
+				current_position = prev_position + MAX_POS_STEP;
+			} else if (pos_diff < -MAX_POS_STEP) {
+				current_position = prev_position - MAX_POS_STEP;
+			}
 		}
 
 		prev_position = current_position; // 정상 라인일 때 절대 위치 갱신
@@ -493,6 +496,15 @@ float32_t Sensor_Get_Position(void) {
 	} else {
 		force_full_scan = 1;
 		lost_counter++;
+
+		if (g_straight_cut_active) {
+			prev_position = 0.0f;
+			prev_peak_idx = 7;
+			lost_counter = 0;
+			IR_Sensor.is_lost_position = 0;
+			IR_Sensor.is_cross = 0;
+			return 0.0f;
+		}
 
 		if (lost_counter > 50) {
 			IR_Sensor.is_lost_position = 1;
@@ -574,6 +586,12 @@ CrossEvent_t Cross_Detect_Update(void) {
 		if (fabsf(current_yaw_change) > fabsf(g_max_yaw_change)) {
 			g_max_yaw_change = current_yaw_change;
 		}
+	}
+
+	if (g_suppress_marker_detect) {
+		g_cross_event_pending = 0;
+		Marker_FSM_Reset();
+		return CROSS_NONE;
 	}
 
 	uint8_t left_marker = IR_Sensor.data->mark_left;
@@ -726,6 +744,20 @@ void Cross_Log_Push(CrossEvent_t type) {
 
 	g_cross_log_count++;
 	Odom_Reset();
+}
+
+void Sensor_Log_Virtual_Marker(CrossEvent_t type, float yaw_deg) {
+	CrossMarkerLog_t *log = &g_cross_log[g_cross_log_count % CROSS_LOG_MAX];
+	log->type = type;
+	log->dist_from_prev_m = g_odom_distance_m;
+	log->yaw_angle = yaw_deg;
+	g_cross_log_count++;
+	Odom_Reset();
+	g_pending_log_idx = -1;
+	g_segment_start_yaw = g_continuous_yaw;
+	g_max_yaw_change = 0.0f;
+	Buzzer_Start();
+	buzzer_timer_count = (uint16_t) (g_buzzer_duration / LPTIM_TICK_DT);
 }
 
 void Sensor_Calibration() {

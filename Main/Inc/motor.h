@@ -45,5 +45,6 @@ void Battery_Check_Safe(void);
 
 void Steer_Motor(void);
 void Steer_Reset_State(void);
+void Steer_Clear_Target_Shift(void);
 
 #endif /* INC_MOTOR_H_ */

@@ -177,6 +177,7 @@ extern uint16_t adc1_dma_buf[FOC_ADC_DMA_LENGTH];
 extern uint16_t adc2_dma_buf[FOC_ADC_DMA_LENGTH];
 
 extern float_t g_odom_distance_m;
+extern float_t g_total_odom_m;
 
 extern volatile float32_t g_vbus_filt;
 

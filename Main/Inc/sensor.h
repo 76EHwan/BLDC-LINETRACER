@@ -97,6 +97,7 @@ void Sensor_Reset_Position(void);
 void Cross_Detect_Reset(void);
 CrossEvent_t Cross_Detect_Update(void);
 void Cross_Log_Push(CrossEvent_t type);
+void Sensor_Log_Virtual_Marker(CrossEvent_t type, float yaw_deg);
 
 void Sensor_Calibration();
 void Sensor_Raw_Printf();
