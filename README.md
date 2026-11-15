@@ -118,6 +118,7 @@ TIM3는 카운터 0, TIM4는 4800에서 출발시켜 **좌우 모터의 전류 �
   - 총 밝기 합이 `line_lost_sum_min` 이하인 상태가 50회 연속되면 **라인 로스트** 판정 → 주행 종료
 - **마커 검출** `Cross_Detect_Update()` — 마커 진입 시 상태를 누적하고 이탈하는 순간 판정합니다.
   - 교차로(`CROSS_CROSS`) 통과 직후 15 cm(`g_post_cross_lockout_dist`) 동안 잔류 대각선 테이프에 의한 좌/우 고스트 마커 오검출을 방지하고, 15 cm 주행 후 자동 해제합니다.
+  - 좌/우 독립 마커 비트 분리 시 직전 피크 앵커(`anchor`)를 기준으로 탐색하고, `g_min_same_side_odom_m` 이내의 동일 방향 마커 중복 검사를 억제합니다.
 
   | 누적 결과 | 이벤트 |
   |---|---|
@@ -165,7 +166,8 @@ mps_R         = active_mps - yaw_cmd * (THREAD / 2)
 - **핵심 특징**:
   1. **직선 및 코너 탈출 진동 억제**: 중심 부근(`|error| -> 0`)에서는 순수 기하학적 Pure Pursuit 곡률($6.27\,\text{m}^{-1}/\text{unit}$)만 작용하여 기존 선형 PD($20.4$) 대비 중심 강성을 약 $1/3$로 낮추고, 코너 진입 시(`|error| >= 0.12`)에만 $R=0.25\,\text{m}$ 곡률 보상이 매끄럽게 결합됩니다.
   2. **측정값 미분 및 크로스 홀드오프**: `error` 대신 `line_pos` 측정값만 미분하여 3·4차 주행에서 `target_pos` 시프트 시 발생하던 미분 킥을 제거하고, 교차로(`is_cross`) 진입 및 탈출 후 4주기(2.0 ms) 동안 미분항을 `0`으로 유지합니다.
-  3. **코너 탈출 동적 자세 정렬 후 가속 (`drive.c`)**: 2·3·4차 주행에서 곡선 탈출 마커 통과 직후 $0.25\,\text{m}$ 마진 및 차체 자세 정렬(`|yaw_rate| < 40 dps && |line_err| < 0.20`)이 완료될 때까지 `base_mps`를 유지한 뒤 직선 풀 가속을 래치(latch)하여 코너 탈출 직후 잔류 슬립이 직선 사행 진동으로 번지는 현상을 차단합니다.
+  3. **코너 탈출 동적 자세 정렬 후 가속 (`drive.c`)**: 2·3·4차 주행에서 곡선 탈출 마커 통과 직후 $0.25\,\text{m}$ 마진 및 차체 자세 정렬(`|yaw_rate| < 40 dps && |line_err| < 0.20`)이 완료될 때까지 `base_mps`를 유지한 뒤 직선 풀 가속을 래치(latch)합니다.
+  4. **인코리도 직선 컷 IMU 헤딩 홀드 (`drive.c`, `motor.c`)**: 4차 주행 직선 컷 구간(`g_straight_cut_active`)에서는 IR 라인 오차 추종 대신 목표 헤딩(`g_straight_cut_yaw_ref`)과 곡률 피드포워드(`yaw_ref = 16.0 * heading_err_rad - active_mps * g_straight_cut_kappa_ref`)로 완만한 호/직선 궤적을 추종합니다.
 
 가감속은 TIM14 램프에서 `accel` / `decel` [m/s²] 로 선형 처리하며,
 `Drive_Stop_At_Distance(d)` 는 `decel = v² / 2d` 를 역산해 **지정한 거리 안에서 정지**시킵니다(피트인).
@@ -179,7 +181,7 @@ mps_R         = active_mps - yaw_cmd * (THREAD / 2)
 | **1st Drive** | `Drive_First` | 기본 속도로 완주하며 마커·거리·yaw 로그 수집. 두 번째 STOP 마커에서 종료 후 SD 슬롯(1~10)에 저장 |
 | **2nd Drive** | `Drive_Second` | 1회차 로그로 구간 계획을 세워 **직선 구간에서만 `max_mps` 로 가속**, 제동거리 `(v1²−v2²)/2a + 마진` 을 남기고 감속 |
 | **3rd Drive** | `Drive_Third` | 직선 가속 + 다가올 코너 방향에 따라 **목표 위치(`target_pos`)를 좌우로 선형 보간 이동**시켜 인코스 주행 |
-| **4th Drive** | `Drive_Fourth` | 2회차의 가속 + 3회차의 타겟 시프트를 결합. 기록된 yaw 크기로 **15°~65° 얕은 연속 곡선(슬라롬)** 을 판별해 가속 |
+| **4th Drive** | `Drive_Fourth` | 2·3회차 가속·타겟 시프트에 더해 얕은 연속 곡선(슬라롬) 가속 및 코리도 허용 폭 내 시케인·mid-90°·다중 스텝 쉬프트 범프 구간의 완만한 호/직선 컷(`g_straight_cut_active`) + 가상 마커 추적 수행 |
 | **AI Auto-Heal** | `Drive_AutoHeal_Menu` | 주행 중 탈선/오차에 따라 조향 게인 및 속도를 자동 보정하는 AI 자가치유 주행 |
 | **Vibe Test** | `Drive_Vibration_Test` | 기본 속도 주행 중 Gyro Z를 1 ms 주기로 최대 10000 샘플 기록 → `/Drive_Data/vib_log_*.csv` |
 | **SysID Drive** | `Drive_SysID_Test` | 500 Hz 주행 동특성 데이터 SD 로깅 |
@@ -243,14 +245,14 @@ Main Menu
 
 | 항목 | 기본값 | 설명 |
 |---|---|---|
-| `base_mps` | 1.9 | 기본 주행 속도 [m/s] |
-| `max_mps` | 8.0 | 가속 구간 최고 속도 [m/s] |
-| `accel` / `decel` | 5.5 / 5.5 | 가감속도 [m/s²] |
-| `steer_gain_p` | 15.04 | 조향 P 게인 ([-1.5, +1.5] 센서 좌표계 기준) |
-| `steer_gain_d` | 431.3 | 조향 D 게인 |
-| `brake_margin_m` | 0.23 | 직선 감속 여유 거리 [m] |
+| `base_mps` | 1.80 | 기본 주행 속도 [m/s] |
+| `max_mps` | 7.00 | 가속 구간 최고 속도 [m/s] |
+| `accel` / `decel` | 8.0 / 8.0 | 가감속도 [m/s²] |
+| `steer_gain_p` | 16.400 | 조향 P 게인 ([-1.5, +1.5] 센서 좌표계 기준) |
+| `steer_gain_d` | 800.0 | 조향 D 게인 |
+| `brake_margin_m` | 0.15 | 직선 감속 여유 거리 [m] |
 | `pit_in_distance_m` | 0.15 | 정지선 통과 후 정지까지 거리 [m] |
-| `target_shift_val` | 0.40 | 3·4회차 인코스 타겟 이동량 (센서 2칸 = 20mm 라인 폭) |
+| `target_shift_val` | 0.58 | 3·4회차 인코스 타겟 이동량 [단위] |
 | `fan_en` | 0 | 흡입팬 사용 여부 |
 
 센서 임계값 `threshold = 95`, 라인 로스트 판정 합 `line_lost_sum_min = 20` (`sensor.c`).
