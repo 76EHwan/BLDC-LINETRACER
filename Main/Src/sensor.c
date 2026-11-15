@@ -299,25 +299,41 @@ float32_t Sensor_Get_Position(void) {
 		uint8_t window_len = search_end - search_start + 1;
 		uint32_t window_mask = ((1U << window_len) - 1) << search_start;
 
-		// 메인 라인과 갭(검은색 공간)으로 독립된 외곽 마커 비트 분리
+		// 메인 라인과 갭(검은색 공간)으로 독립된 외곽 마커 비트 분리 (anchor 중심 탐색으로 오프셋 시에도 마커 비트를 교차로로 오인하지 않음)
+		int8_t anchor = prev_peak_idx;
+		if (anchor < 0) anchor = 0;
+		if (anchor >= LINE_N_SENSORS) anchor = LINE_N_SENSORS - 1;
+		if ((state16 & (1U << anchor)) == 0) {
+			int8_t best_dist = LINE_N_SENSORS;
+			for (int8_t i = search_start; i <= search_end; i++) {
+				if (state16 & (1U << i)) {
+					int8_t d = (i > anchor) ? (i - anchor) : (anchor - i);
+					if (d < best_dist) {
+						best_dist = d;
+						anchor = i;
+					}
+				}
+			}
+		}
+
 		uint16_t left_marker_bits = 0;
-		if (search_start >= 2) {
+		if (anchor >= 2) {
 			uint8_t has_gap = 0;
-			for (int8_t i = search_start - 1; i >= 0; i--) {
+			for (int8_t i = anchor - 1; i >= 0; i--) {
 				if ((state16 & (1U << i)) == 0) {
 					has_gap = 1;
-				} else if (has_gap) {
+				} else if (has_gap && (i < search_start || i <= 2)) {
 					left_marker_bits |= (1U << i);
 				}
 			}
 		}
 		uint16_t right_marker_bits = 0;
-		if (search_end <= 13) {
+		if (anchor <= LINE_N_SENSORS - 3) {
 			uint8_t has_gap = 0;
-			for (int8_t i = search_end + 1; i < LINE_N_SENSORS; i++) {
+			for (int8_t i = anchor + 1; i < LINE_N_SENSORS; i++) {
 				if ((state16 & (1U << i)) == 0) {
 					has_gap = 1;
-				} else if (has_gap) {
+				} else if (has_gap && (i > search_end || i >= LINE_N_SENSORS - 3)) {
 					right_marker_bits |= (1U << i);
 				}
 			}
@@ -330,10 +346,10 @@ float32_t Sensor_Get_Position(void) {
 		uint8_t total_active = active_in_window + active_out_window;
 
 		uint8_t left_adjacent = 0, right_adjacent = 0;
-		if (search_start >= 1 && (state16 & (1U << (search_start - 1)))) left_adjacent = 1;
-		if (search_start >= 2 && (state16 & (1U << (search_start - 2)))) left_adjacent = 1;
-		if (search_end + 1 < LINE_N_SENSORS && (state16 & (1U << (search_end + 1)))) right_adjacent = 1;
-		if (search_end + 2 < LINE_N_SENSORS && (state16 & (1U << (search_end + 2)))) right_adjacent = 1;
+		if (search_start >= 1 && (line_check_state & (1U << (search_start - 1)))) left_adjacent = 1;
+		if (search_start >= 2 && (line_check_state & (1U << (search_start - 2)))) left_adjacent = 1;
+		if (search_end + 1 < LINE_N_SENSORS && (line_check_state & (1U << (search_end + 1)))) right_adjacent = 1;
+		if (search_end + 2 < LINE_N_SENSORS && (line_check_state & (1U << (search_end + 2)))) right_adjacent = 1;
 
 		uint8_t has_continuous_cross = (left_adjacent || right_adjacent);
 
@@ -427,12 +443,17 @@ float32_t Sensor_Get_Position(void) {
 
 	// 2. 센서바 최외곽 끝단(IR_0..2, IR_13..15) 보조 - Bit 1
 	if (!is_cross_line && cross_state == 0) {
-		if (current_peak_idx >= 3 && (state16 & 0x0007)) {
+		if (current_peak_idx >= 5 && (state16 & 0x0007)) {
 			mark_left |= 0x02;
 		}
-		if (current_peak_idx <= 12 && (state16 & 0xE000)) {
+		if (current_peak_idx <= 10 && (state16 & 0xE000)) {
 			mark_right |= 0x02;
 		}
+	}
+	// 큰 횡이탈(|lat| > ~39mm) 시 반대편 외곽 센서가 트랙 중심선 자체를 마커로 오인하지 않도록 반대/중앙부 라인 존재 시에만 허용
+	if (!is_cross_line) {
+		if (!(state16 & 0xFFE0)) mark_left = 0;
+		if (!(state16 & 0x07FF)) mark_right = 0;
 	}
 
 	IR_Sensor.data->mark_left = mark_left;
@@ -561,6 +582,10 @@ void Cross_Detect_Reset(void) {
 	g_post_cross_lockout_dist = 0.0f;
 }
 
+uint8_t Cross_Is_Reading(void) {
+	return (g_marker_state == MARKER_STATE_READING) ? 1 : 0;
+}
+
 CrossEvent_t Cross_Detect_Update(void) {
 	float32_t dyaw = imu_data.Yaw_Angle - g_prev_imu_yaw;
 	if (dyaw > 180.0f) dyaw -= 360.0f;
@@ -647,9 +672,9 @@ CrossEvent_t Cross_Detect_Update(void) {
 				g_marker_off_count = 0;
 			} else {
 				g_marker_off_count++;
-				// 마커 통과 완료 디바운스: 센서간 핸드오프 및 대각선 진입 깜빡임 방지 (60사이클 = 3ms 연속 오프 시 확정)
+				// 마커 통과 완료 디바운스: 센서간 핸드오프 및 대각선 진입 깜빡임 방지 (60사이클 연속 오프 시 확정)
 				if (g_marker_off_count >= 60) {
-					const uint16_t MIN_VALID_ON = 80; // 최소 4ms 지속 감지 시에만 정규 마커로 인정 (잔류 스파이크 차단)
+					const uint16_t MIN_VALID_ON = 50; // IR 끝단 단독(bit1)도 ~8ms@6kHz로 편향 코너 진입 시 누락 방지
 					// 인접 트랙 스침(Ghost) 방어:
 					// 차체가 중앙에 있을 때(peak <= 8) 발생한 M_R 단독 감지는 85mm 밖 인접 트랙을 스친 것이므로 기각.
 					// 차체가 우측으로 쏠려(max_peak >= 9) 메인바 끝단을 벗어났을 때의 M_R 감지이거나,
@@ -657,16 +682,24 @@ CrossEvent_t Cross_Detect_Update(void) {
 					uint8_t left_ok  = ((g_left_src_mask & 0x02) != 0) || (g_marker_min_peak <= 6);
 					uint8_t right_ok = ((g_right_src_mask & 0x02) != 0) || (g_marker_max_peak >= 9);
 
-					uint8_t valid_left = (g_left_on_count >= MIN_VALID_ON) && left_ok;
-					uint8_t valid_right = (g_right_on_count >= MIN_VALID_ON) && right_ok;
+					uint8_t valid_left = (g_left_on_count >= ((g_left_src_mask & 0x01) ? 25 : MIN_VALID_ON)) && left_ok;
+					uint8_t valid_right = (g_right_on_count >= ((g_right_src_mask & 0x01) ? 25 : MIN_VALID_ON)) && right_ok;
 
 					if (valid_left && valid_right) {
 						event = CROSS_STOP;
 						g_last_stop_state = current_center_state;
 					} else if (valid_left) {
-						event = CROSS_LEFT;
+						if (!(g_cross_log_count > 0 &&
+						      g_cross_log[(g_cross_log_count - 1) % CROSS_LOG_MAX].type == CROSS_LEFT &&
+						      g_odom_distance_m < g_min_same_side_odom_m)) {
+							event = CROSS_LEFT;
+						}
 					} else if (valid_right) {
-						event = CROSS_RIGHT;
+						if (!(g_cross_log_count > 0 &&
+						      g_cross_log[(g_cross_log_count - 1) % CROSS_LOG_MAX].type == CROSS_RIGHT &&
+						      g_odom_distance_m < g_min_same_side_odom_m)) {
+							event = CROSS_RIGHT;
+						}
 					}
 
 					// 마커 통과 후 센서가 테이프를 완전히 벗어날 때까지 대기 (동일 마커 중복 트리거 원천 차단)
@@ -753,6 +786,16 @@ void Sensor_Log_Virtual_Marker(CrossEvent_t type, float yaw_deg) {
 	log->yaw_angle = yaw_deg;
 	g_cross_log_count++;
 	Odom_Reset();
+	g_marker_state = MARKER_STATE_WAIT_CLEAR;
+	g_left_on_count = 0;
+	g_right_on_count = 0;
+	g_left_src_mask = 0;
+	g_right_src_mask = 0;
+	g_accum_center_state = 0;
+	g_both_marker_coincident = 0;
+	g_is_curve_state = 0;
+	g_marker_on_count = 0;
+	g_marker_off_count = 0;
 	g_pending_log_idx = -1;
 	g_segment_start_yaw = g_continuous_yaw;
 	g_max_yaw_change = 0.0f;

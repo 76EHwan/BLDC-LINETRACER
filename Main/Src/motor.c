@@ -258,9 +258,9 @@ void Steer_Motor() {
 		if (heading_err_deg > 180.0f) heading_err_deg -= 360.0f;
 		else if (heading_err_deg < -180.0f) heading_err_deg += 360.0f;
 		float32_t heading_err_rad = heading_err_deg * (PI / 180.0f);
-		float32_t yaw_ref = 10.0f * heading_err_rad;
-		if (yaw_ref > 4.0f) yaw_ref = 4.0f;
-		else if (yaw_ref < -4.0f) yaw_ref = -4.0f;
+		float32_t yaw_ref = 16.0f * heading_err_rad - active_mps * g_straight_cut_kappa_ref;
+		if (yaw_ref > 6.0f) yaw_ref = 6.0f;
+		else if (yaw_ref < -6.0f) yaw_ref = -6.0f;
 
 		float32_t yaw_cmd = yaw_ref + 1.5f * (yaw_ref - yaw_meas);
 		if (yaw_cmd > 8.0f) yaw_cmd = 8.0f;

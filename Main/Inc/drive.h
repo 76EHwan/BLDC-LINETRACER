@@ -49,7 +49,9 @@ extern volatile uint8_t g_is_braking;
 extern volatile uint8_t g_is_straight;
 extern volatile uint8_t g_straight_cut_active;
 extern volatile uint8_t g_suppress_marker_detect;
+extern volatile float g_min_same_side_odom_m;
 extern volatile float g_straight_cut_yaw_ref;
+extern volatile float g_straight_cut_kappa_ref;
 extern volatile float g_target_base_mps;
 extern volatile float g_current_base_mps;
 
