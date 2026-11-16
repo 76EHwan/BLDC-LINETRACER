@@ -31,8 +31,10 @@
 #endif
 
 #define CONV_KERNEL_LEN	3
+#define CONV_TEMP_LEN	3
 #define CONV_IN_LEN		(LINE_N_SENSORS + 2)                    // M_L, IR_0..15, M_R
 #define CONV_OUT_LEN	(CONV_IN_LEN + CONV_KERNEL_LEN - 1)     // full convolution length
+#define CONV_TEMP_OUT_LEN	(CONV_TEMP_LEN + CONV_TEMP_LEN - 1) // temporal full convolution length
 
 // @formatter:off
 static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1, 16, 17 };
@@ -100,9 +102,12 @@ void Sensor_Printf(uint8_t idx, volatile uint16_t *sensor_data) {
 	LCD_Printf(8 * (idx & 0x1), idx / 2 + 1, "0x%03X", *(sensor_data + idx));
 }
 
+static void Sensor_Conv_Reset(void);
+
 void Sensor_Start() {
 	IR_Sensor.data->idx = 0;
 	IR_Sensor.scan_group = 0;
+	Sensor_Conv_Reset();
 	HAL_ADCEx_Calibration_Start(SENSOR_ADC_HANDLE, ADC_CALIB_OFFSET,
 	ADC_SINGLE_ENDED);
 	HAL_StatusTypeDef ret = HAL_ADC_Start_DMA(SENSOR_ADC_HANDLE,
@@ -153,16 +158,23 @@ __STATIC_INLINE uint16_t Sensor_Normalize(uint8_t idx) {
 }
 
 // ==============================================
-// 1D Convolution (CMSIS-DSP arm_conv_f32)
+// 시공간 분리형 Convolution (공간 [-1, 2, -1] × 시간 [1, 2, 7] / 10)
 // ==============================================
-// 입력: [M_L(16), IR_0 .. IR_15, M_R(17)] (LineSim 뷰어 및 실제 센서 배치 일치)
-// 커널: [-1, 2, -1] (1D 라플라시안: 라인 피크는 +, 완만한 어깨/배경 오프셋은 <= 0)
-// arm_conv_f32를 통해 16개 메인 라인 센서의 공간 2차 미분(샤프닝) 신호를 고속 연산
+// 공간 입력: [M_L(16), IR_0 .. IR_15, M_R(17)], 커널: [-1, 2, -1] (1D 라플라시안)
+// 시간 인과적 임펄스 응답: h[0..2] = [7, 2, 1] / 10 -> [t-2, t-1, t]와 arm_conv_f32 (지연 ~0.20ms)
 static const float32_t conv_kernel[CONV_KERNEL_LEN] = { -1.0f, 2.0f, -1.0f };
+static const float32_t conv_time_kernel[CONV_TEMP_LEN] = { 7.0f, 2.0f, 1.0f };
+static float32_t g_conv_hist[LINE_N_SENSORS][CONV_TEMP_LEN];
+static uint8_t g_conv_hist_primed = 0;
+
+static void Sensor_Conv_Reset(void) {
+	g_conv_hist_primed = 0;
+}
 
 static void Sensor_Conv_Update(void) {
 	float32_t conv_in[CONV_IN_LEN];
 	float32_t conv_out[CONV_OUT_LEN];
+	float32_t temp_out[CONV_TEMP_OUT_LEN];
 	volatile SensorData_TypeDef *d = IR_Sensor.data;
 
 	conv_in[0] = (float32_t) d->normalized[LEFT_MARK_SENSOR_INDEX];
@@ -175,9 +187,23 @@ static void Sensor_Conv_Update(void) {
 	// IR_i (= conv_in[i+1])에 대응하는 출력은 out[i+2]
 	arm_conv_f32(conv_in, CONV_IN_LEN, conv_kernel, CONV_KERNEL_LEN, conv_out);
 
+	// 시간축도 CMSIS-DSP arm_conv_f32 적용:
+	// hist[i] = [x[t-2], x[t-1], x[t]], h = [7, 2, 1] -> temp_out[2] = 1*x[t-2] + 2*x[t-1] + 7*x[t]
 	for (uint8_t i = 0; i < LINE_N_SENSORS; i++) {
-		d->conv[i] = (int16_t) conv_out[i + 2];
+		const float32_t cur = conv_out[i + 2];
+		if (!g_conv_hist_primed) {
+			g_conv_hist[i][0] = cur;
+			g_conv_hist[i][1] = cur;
+			g_conv_hist[i][2] = cur;
+		} else {
+			g_conv_hist[i][0] = g_conv_hist[i][1];
+			g_conv_hist[i][1] = g_conv_hist[i][2];
+			g_conv_hist[i][2] = cur;
+		}
+		arm_conv_f32(g_conv_hist[i], CONV_TEMP_LEN, conv_time_kernel, CONV_TEMP_LEN, temp_out);
+		d->conv[i] = (int16_t) (temp_out[CONV_TEMP_LEN - 1] * 0.1f);
 	}
+	g_conv_hist_primed = 1;
 }
 
 void TIM7_IRQ_Handler() {
@@ -215,8 +241,8 @@ void ADC3_IRQ_Cplt_Handler() {
 	idx = (idx + 1) % SCAN_CYCLE_LEN;
 	IR_Sensor.data->idx = idx;
 
-	// 스캔 그룹(반주기, 라인 센서 8개 + 마크 센서 2개) 완료 시점마다 CMSIS-DSP convolution 갱신
-	if (IR_Sensor.is_calibration && (idx % SCAN_CYCLE_LEN_HALF) == 0) {
+	// 풀스캔 완료 시점(idx == 0, 20슬롯 = 2kHz)마다 시공간 분리형 convolution 갱신
+	if (IR_Sensor.is_calibration && idx == 0) {
 		Sensor_Conv_Update();
 	}
 }
@@ -257,6 +283,7 @@ void Sensor_Reset_Position(void) {
 	g_cross_accum_mask = 0;
 	g_cross_event_pending = 0;
 	IR_Sensor.is_cross = 0;
+	Sensor_Conv_Reset();
 }
 
 float32_t Sensor_Get_Last_Position(void) {

@@ -46,10 +46,10 @@ typedef struct {
 	uint8_t mark_left;
 	uint8_t mark_right;
 
-	// 1D convolution (CMSIS-DSP arm_conv_f32, kernel [-1, 2, -1]) over the 16 line sensors.
-	// conv[i]: Laplacian of normalized[] (mark sensors 16/17 are the outer neighbours of IR_0/IR_15).
-	// conv_gain > 0: line state bit = (normalized + conv_gain * conv > threshold), refreshed per scan half-cycle.
-	// conv_gain = 0: legacy per-sample (normalized > threshold) state.
+	// Spatio-temporal separable convolution: spatial [-1, 2, -1] x causal temporal [1, 2, 7] / 10.
+	// conv[i]: low-lag temporally smoothed Laplacian of normalized[] (mark sensors 16/17 are outer neighbours of IR_0/IR_15).
+	// conv_gain > 0: blended into peak metric and centroid weights, refreshed every full scan (idx == 0).
+	// conv_gain = 0: legacy raw normalized[] weights only.
 	int16_t conv[LINE_N_SENSORS];
 	float32_t conv_gain;
 } SensorData_TypeDef;

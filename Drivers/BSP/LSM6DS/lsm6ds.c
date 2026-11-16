@@ -10,6 +10,13 @@
 volatile LSM6DS_Data_t imu_data;
 volatile uint8_t imu_dma_busy = 0;
 volatile uint8_t imu_gyro_z_ready = 0;
+volatile uint8_t imu_straight_bias_track = 0;
+
+static float_t s_gyro_z_cal_offset = 0.0f;
+static float_t s_gyro_z_lpf = 0.0f;
+static float_t s_straight_hold_s = 0.0f;
+static uint32_t s_spi_last_cyccnt = 0;
+static uint32_t s_i2c_last_cyccnt = 0;
 
 #ifndef IMU_INT_Pin
 #ifdef IMU_INT1_Pin
@@ -216,6 +223,12 @@ HAL_StatusTypeDef LSM6DS_Init(void) {
 
     imu_dma_busy = 0;
     imu_gyro_z_ready = 0;
+    imu_straight_bias_track = 0;
+    s_gyro_z_cal_offset = 0.0f;
+    s_gyro_z_lpf = 0.0f;
+    s_straight_hold_s = 0.0f;
+    s_spi_last_cyccnt = 0;
+    s_i2c_last_cyccnt = 0;
     imu_data.Model = detected_model;
     return HAL_OK;
 }
@@ -239,18 +252,17 @@ void LSM6DS_INT1_IRQHandler(void) {
     imu_data.Gyro_Y = imu_data.Gyro_Y_Raw * GYRO_SENSITIVITY_2000DPS;
     imu_data.Gyro_Z = imu_data.Gyro_Z_Raw * GYRO_SENSITIVITY_2000DPS;
 
-    static uint32_t last_cyccnt = 0;
     uint32_t now_cyccnt = DWT->CYCCNT;
 
-    if (last_cyccnt != 0) {
-        uint32_t diff = now_cyccnt - last_cyccnt;
+    if (s_spi_last_cyccnt != 0) {
+        uint32_t diff = now_cyccnt - s_spi_last_cyccnt;
         float_t dt = (float_t)diff / (float_t)SystemCoreClock;
 
         if (dt > 0.0002f && dt < 0.05f) {
             LSM6DS_UpdateYaw(&imu_data, dt);
         }
     }
-    last_cyccnt = now_cyccnt;
+    s_spi_last_cyccnt = now_cyccnt;
 
     imu_gyro_z_ready = 1;
 #endif
@@ -296,8 +308,29 @@ HAL_StatusTypeDef LSM6DS3_ReadGyroZ_DMA_Wait(uint32_t timeout_ms) {
 void LSM6DS_UpdateYaw(volatile LSM6DS_Data_t *data, float_t dt) {
     float_t gyro_z_corrected = data->Gyro_Z - data->Gyro_Z_Offset;
 
-    if (gyro_z_corrected > -GYRO_DEADBAND && gyro_z_corrected < GYRO_DEADBAND) {
-        gyro_z_corrected = 0.0f;
+    /* Low-pass gate (~62 ms) prevents high-frequency gyro noise from resetting straight hold */
+    float_t lpf_alpha = dt * 16.0f;
+    if (lpf_alpha > 1.0f) lpf_alpha = 1.0f;
+    s_gyro_z_lpf += lpf_alpha * (gyro_z_corrected - s_gyro_z_lpf);
+
+    /* Online residual gyro bias observer active only when caller confirms mapped straight (Drive_Fourth) */
+    if (imu_straight_bias_track &&
+        s_gyro_z_lpf > -3.5f && s_gyro_z_lpf < 3.5f &&
+        gyro_z_corrected > -20.0f && gyro_z_corrected < 20.0f) {
+        s_straight_hold_s += dt;
+        if (s_straight_hold_s >= 0.08f) {
+            float_t alpha = dt * 0.50f; /* tau = 2.0 s, sample-rate invariant */
+            if (alpha > 0.005f) alpha = 0.005f;
+            float_t next_off = data->Gyro_Z_Offset + alpha * gyro_z_corrected;
+            float_t min_off = s_gyro_z_cal_offset - GYRO_BIAS_TRACK_MAX_DELTA;
+            float_t max_off = s_gyro_z_cal_offset + GYRO_BIAS_TRACK_MAX_DELTA;
+            if (next_off < min_off) next_off = min_off;
+            else if (next_off > max_off) next_off = max_off;
+            data->Gyro_Z_Offset = next_off;
+            gyro_z_corrected = data->Gyro_Z - data->Gyro_Z_Offset;
+        }
+    } else {
+        s_straight_hold_s = 0.0f;
     }
 
     data->Yaw_Angle += gyro_z_corrected * dt;
@@ -311,17 +344,27 @@ void LSM6DS_UpdateYaw(volatile LSM6DS_Data_t *data, float_t dt) {
 
 void LSM6DS_Reset_Yaw(void) {
     imu_data.Yaw_Angle = 0.0f;
+    imu_straight_bias_track = 0;
+    s_gyro_z_lpf = 0.0f;
+    s_straight_hold_s = 0.0f;
 }
 
 void LSM6DS_Gyro_Calibrate_Z_Only(void) {
+    imu_straight_bias_track = 0;
+    s_gyro_z_cal_offset = 0.0f;
+    s_gyro_z_lpf = 0.0f;
+    s_straight_hold_s = 0.0f;
+
     if (imu_data.Model == LSM6DS_MODEL_UNKNOWN) {
         imu_data.Gyro_Z_Offset = 0.0f;
         imu_data.Yaw_Angle = 0.0f;
         return;
     }
 
-    float_t sum = 0.0f;
-    const int sample_count = 1000;
+    double sum = 0.0;
+    const int warmup_samples = 50;
+    const int sample_count = 2000;
+    int skipped_samples = 0;
     int valid_samples = 0;
 
     imu_data.Gyro_Z_Offset = 0.0f;
@@ -331,18 +374,23 @@ void LSM6DS_Gyro_Calibrate_Z_Only(void) {
     while (valid_samples < sample_count) {
         if (imu_gyro_z_ready) {
             imu_gyro_z_ready = 0;
-            sum += imu_data.Gyro_Z;
-            valid_samples++;
+            if (skipped_samples < warmup_samples) {
+                skipped_samples++;
+            } else {
+                sum += (double)imu_data.Gyro_Z;
+                valid_samples++;
+            }
         }
-        // Timeout protection (max 2500 ms)
-        if ((HAL_GetTick() - start_tick) > 2500) {
+        // Timeout protection (max 3500 ms)
+        if ((HAL_GetTick() - start_tick) > 3500) {
             break;
         }
     }
 
     if (valid_samples > 0) {
-        imu_data.Gyro_Z_Offset = sum / (float_t)valid_samples;
+        imu_data.Gyro_Z_Offset = (float_t)(sum / (double)valid_samples);
     }
+    s_gyro_z_cal_offset = imu_data.Gyro_Z_Offset;
     imu_data.Yaw_Angle = 0.0f;
 }
 
@@ -436,18 +484,17 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) {
     imu_data.Gyro_Z_Raw = (int16_t)((gyro_z_dma_buf[1] << 8) | gyro_z_dma_buf[0]);
     imu_data.Gyro_Z = imu_data.Gyro_Z_Raw * GYRO_SENSITIVITY_2000DPS;
 
-    static uint32_t last_cyccnt = 0;
     uint32_t now_cyccnt = DWT->CYCCNT;
 
-    if (last_cyccnt != 0) {
-        uint32_t diff = now_cyccnt - last_cyccnt;
+    if (s_i2c_last_cyccnt != 0) {
+        uint32_t diff = now_cyccnt - s_i2c_last_cyccnt;
         float_t dt = (float_t)diff / (float_t)SystemCoreClock;
 
         if (dt > 0.0001f && dt < 0.1f) {
             LSM6DS_UpdateYaw(&imu_data, dt);
         }
     }
-    last_cyccnt = now_cyccnt;
+    s_i2c_last_cyccnt = now_cyccnt;
 
     imu_gyro_z_ready = 1;
     imu_dma_busy = 0;

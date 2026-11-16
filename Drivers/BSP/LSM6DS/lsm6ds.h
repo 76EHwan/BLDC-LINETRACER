@@ -75,8 +75,10 @@
 #define ACCEL_SENSITIVITY_4G       0.000122f
 #define ACCEL_SENSITIVITY          0.122f
 
-/* Deadband for Gyro Z noise filter in dps */
-#define GYRO_DEADBAND              0.25f
+/* Deadband removed (0.0f): unbiased integration + mapped straight-line bias observer */
+#define GYRO_DEADBAND              0.0f
+/* Maximum allowed online bias tracking excursion around static calibration [dps] */
+#define GYRO_BIAS_TRACK_MAX_DELTA  1.50f
 
 typedef enum {
     LSM6DS_MODEL_UNKNOWN = 0,
@@ -118,6 +120,7 @@ typedef LSM6DS_Data_t LSM6DS3_Data_t;
 extern volatile LSM6DS_Data_t imu_data;
 extern volatile uint8_t imu_dma_busy;
 extern volatile uint8_t imu_gyro_z_ready;
+extern volatile uint8_t imu_straight_bias_track;
 
 /* Core Function Declarations */
 HAL_StatusTypeDef LSM6DS_Init(void);
