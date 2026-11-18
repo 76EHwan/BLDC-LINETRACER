@@ -30,7 +30,7 @@ DriveParam_t driveData = {
 	.yaw_gain_i = 0.0f,
 	.target_curve_gain = 1.25f,
 	.slalom_ratio = 0.03f,
-	.brake_margin_m = 0.15f,
+	.brake_margin_m = 0.12f,
 };
 // @formatter:on
 
@@ -828,10 +828,13 @@ __STATIC_INLINE void Check_Distance_And_Brake(DriveSecondState_t *state) {
 
 		float_t brake_dist = (driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M;
 		if (v1 > v2) {
-			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
-			const float_t tau_sys = 0.045f;
-			brake_dist += v1 * tau_sys;
-			if (v1 > 3.5f) brake_dist += (v1 - 3.5f) * 0.15f + 0.10f;
+			const float_t tau_sys = (g_target_base_mps > v1 + 0.30f && v1 < 4.0f) ? 0.120f : 0.060f;
+			float_t v_eff = (g_target_base_mps > v1) ? (v1 + driveData.accel * 0.055f) : v1;
+			if (v_eff > g_target_base_mps) v_eff = g_target_base_mps;
+			brake_dist += (v_eff * v_eff - v2 * v2) / (2.0f * driveData.decel);
+			brake_dist += v_eff * tau_sys;
+			/* linear tau_sys=0.085f replaces excess mid-speed penalty */
+			/* high-speed aero drag already aids decel; no extra >4.5f penalty */
 		}
 
 		if (remaining <= brake_dist) {
@@ -1234,10 +1237,13 @@ __STATIC_INLINE void Check_Distance_And_Brake_Third(DriveThirdState_t *state) {
 
 		float_t brake_dist = (driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M;
 		if (v1 > v2) {
-			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
-			const float_t tau_sys = 0.045f;
-			brake_dist += v1 * tau_sys;
-			if (v1 > 3.5f) brake_dist += (v1 - 3.5f) * 0.15f + 0.10f;
+			const float_t tau_sys = (g_target_base_mps > v1 + 0.30f && v1 < 4.0f) ? 0.120f : 0.060f;
+			float_t v_eff = (g_target_base_mps > v1) ? (v1 + driveData.accel * 0.055f) : v1;
+			if (v_eff > g_target_base_mps) v_eff = g_target_base_mps;
+			brake_dist += (v_eff * v_eff - v2 * v2) / (2.0f * driveData.decel);
+			brake_dist += v_eff * tau_sys;
+			/* linear tau_sys=0.085f replaces excess mid-speed penalty */
+			/* high-speed aero drag already aids decel; no extra >4.5f penalty */
 		}
 
 		if (remaining <= brake_dist) {
@@ -1357,9 +1363,14 @@ __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 			// 일반 단독 곡선(다음이 직선이거나 동일 방향):
 			// 마커 부근은 edge_shift 유지, 코너 내부(15%~85%)에서 target_curve_gain으로 apex 심화
 			float apex_cur = Compute_Corner_Apex_Shift(shift_cur, total_dist, 0);
-			if (apex_cur > shift_cur && ratio > 0.15f && ratio < 0.85f) {
+			float sign_cur = (cur_curve_dir == 1) ? 1.0f : -1.0f;
+			float marker_safe = (shift_cur > 0.50f) ? 0.50f : shift_cur;
+			if (ratio < 0.15f) {
+				IR_Sensor.data->target_pos = sign_cur * (marker_safe + (shift_cur - marker_safe) * (ratio / 0.15f));
+			} else if (ratio > 0.85f) {
+				IR_Sensor.data->target_pos = sign_cur * (marker_safe + (shift_cur - marker_safe) * ((1.0f - ratio) / 0.15f));
+			} else if (apex_cur > shift_cur) {
 				float um = (ratio - 0.15f) / 0.70f;
-				float sign_cur = (cur_curve_dir == 1) ? 1.0f : -1.0f;
 				IR_Sensor.data->target_pos = sign_cur * (shift_cur + (apex_cur - shift_cur) * sinf(um * PI));
 			} else {
 				IR_Sensor.data->target_pos = cur_in_target;
@@ -1387,6 +1398,11 @@ __STATIC_INLINE void Update_Target_Pos_Third(DriveThirdState_t *state) {
 			if (next_curve_dir == 1) end_target = shift_n;
 			else if (next_curve_dir == 2) end_target = -shift_n;
 		}
+
+		if (start_target > 0.50f) start_target = 0.50f;
+		else if (start_target < -0.50f) start_target = -0.50f;
+		if (end_target > 0.50f) end_target = 0.50f;
+		else if (end_target < -0.50f) end_target = -0.50f;
 
 		if (total_dist > 0.001f) {
 			// 마커가 반대면 대각선 사행 주행, 마커가 같으면 영점이동 상태 균일 유지
@@ -1466,7 +1482,7 @@ void Drive_Third(void) {
 // 4회차 주행 함수 모음 (한국 ZETIN FULL 16.8V 전용: IN-편향 가상 코리도 + 직선화 4th)
 // ============================================================================
 
-#define DRIVE4_CORRIDOR_CUT_HALF_M   0.100f // 가상 코리도 반폭 100mm (폭 200mm, 140mm보다 충분한 추적 지연 여유 확보)
+#define DRIVE4_CORRIDOR_CUT_HALF_M   0.105f // 가상 코리도 반폭 105mm (순수 직선 컷 시 150mm 경계 내 45mm 여유 확보)
 #define DRIVE4_IN_MARKER_SHIFT_MAX   1.450f // target_shift_val 락 해제 (물리/제어 한계 TARGET_POS_LIMIT=1.45f만 적용)
 #define DRIVE4_IN_SAME45_EDGE_MAX    0.240f // 동일방향 45-직-45 마커 구간 시프트 상한 (M_L/M_R [50,100] 안전 보장)
 #define DRIVE4_IN_SAME45_BRIDGE_MID  0.560f // 동일방향 45-직-45 중간부 인코스 브릿징 (IR +-80mm 폐루프 유지)
@@ -1490,6 +1506,7 @@ typedef struct {
 	float cut_lock_dist;         // 컷 시작 마커 기준 Phase 2 조향 잠금 개시 거리 [m]
 	float cut_exit_yaw_off;      // 컷 탈출 시 진입 격자 기준 순 각도 변화량 [deg] (우회=0, 편측레그=+-45, 오메가=180)
 	uint8_t is_omega_cut;        // Ω 루프(+-45 / -+270 / +-45) 단일 U턴 컷 여부
+	uint8_t is_corner90_chained; // 연쇄 45도 원호 컷 조기 전환 여부
 	int8_t omega_dir;            // 진입 45도 방향 (+1: +45/-270/+45 -> CW -180도, -1: -45/+270/-45 -> CCW +180도)
 	float omega_r_arc;           // 동심 U턴 원호 반경 [m]
 	float omega_tan1_len;        // 진입 접선 직선 길이 [m]
@@ -1499,10 +1516,20 @@ typedef struct {
 	float omega_tan2_deg;        // 탈출 접선 각도 [deg] (진입 직선 기준)
 	float omega_sweep_deg;       // 원호 회전 각도 크기 [deg]
 	float omega_arc_mps;         // U턴 원호 안전 주행 속도 [m/s]
+	uint8_t is_wave180_cut;      // 연속 180도 웨이브 코리도 평탄화 컷 여부
+	uint8_t wave_count;          // 연속 180도 반파 개수 N (>= 2)
+	int8_t wave_first_dir;       // 첫 번째 180도 반파 회전 방향 (+1: CCW +180, -1: CW -180)
+	float wave_half_len;         // 컷 반파 원호 길이 [m]
+	float wave_r_arc;            // 컷 반파 원호 반경 [m]
+	float wave_alpha_deg;        // 컷 반파 반각 [deg]
+	float wave_mps;              // 웨이브 컷 목표 속도 [m/s]
 } SegmentPlanFourth_t;
 
 static SegmentPlanFourth_t seg_plan_4[CROSS_LOG_MAX];
 static float ref_log_cum_dist[CROSS_LOG_MAX];
+static float ref_pose_x[CROSS_LOG_MAX];
+static float ref_pose_y[CROSS_LOG_MAX];
+static float ref_pose_th[CROSS_LOG_MAX];
 
 typedef struct {
 	uint16_t idx;
@@ -1546,6 +1573,13 @@ typedef struct {
 	float omega_tan2_deg;
 	float omega_sweep_deg;
 	float omega_arc_mps;
+	uint8_t is_wave180_cut;
+	uint8_t wave_count;
+	int8_t wave_first_dir;
+	float wave_half_len;
+	float wave_r_arc;
+	float wave_alpha_deg;
+	float wave_mps;
 } DriveFourthState_t;
 
 __STATIC_INLINE float Chicane_Mps(void) {
@@ -1698,7 +1732,7 @@ static float Cut_Tail_Max_Dev(uint16_t tail_start, uint16_t tail_last) {
 static uint8_t Cut_Eval_Candidate(
     uint16_t start_idx, uint16_t first_curve_idx, float entry_dist, float y1,
     uint16_t last_curve_idx, uint8_t num_curves, uint8_t last_is_split, uint8_t ext_has_mid90,
-    uint8_t is_pattern_a, uint8_t is_apex_leg1, uint8_t is_apex_leg2, CutEval_t *out) {
+    uint8_t is_pattern_a, uint8_t is_apex_leg1, uint8_t is_apex_leg2, uint8_t is_chained_cut, CutEval_t *out) {
 	if (last_curve_idx == 0 || num_curves < 2) {
 		return 0;
 	}
@@ -1726,7 +1760,7 @@ static uint8_t Cut_Eval_Candidate(
 			}
 		}
 	}
-	if (!(is_apex_leg1 || exit_dist >= 0.18f) || corner_idx >= ref_log_count) {
+	if (!(is_apex_leg1 || exit_dist >= 0.16f) || corner_idx >= ref_log_count) {
 		return 0;
 	}
 
@@ -1747,12 +1781,14 @@ static uint8_t Cut_Eval_Candidate(
 	float th_deg = fabsf(th_deg_signed);
 	uint8_t is_step_shift = (!is_pattern_a && ((is_apex_leg1 || is_apex_leg2) || (th_deg <= 12.0f && fabsf(y_land) > 0.040f))) ? 1 : 0;
 	float lock_dist;
-	if (is_apex_leg2) {
+	if (is_apex_leg2 || is_chained_cut) {
 		lock_dist = 0.02f;
 	} else if (is_step_shift && num_curves >= 3) {
 		lock_dist = (entry_dist > 0.28f) ? (entry_dist - 0.22f) : ((entry_dist > 0.18f) ? (entry_dist - 0.16f) : 0.02f);
-	} else if (is_step_shift && entry_dist > 0.42f) {
-		lock_dist = entry_dist - 0.36f;
+	} else if (is_step_shift) {
+		lock_dist = (entry_dist > 0.42f) ? (entry_dist - 0.36f)
+		          : ((entry_dist > 0.24f) ? (entry_dist - 0.20f)
+		          : ((entry_dist > 0.16f) ? (entry_dist - 0.13f) : 0.02f));
 	} else {
 		lock_dist = (entry_dist > 0.12f) ? (entry_dist - 0.05f) : 0.02f;
 	}
@@ -1829,9 +1865,9 @@ static uint8_t Cut_Eval_Candidate(
 	} else if ((!is_step_shift && max_dev <= DRIVE4_CORRIDOR_CUT_HALF_M + 0.220f &&
 	            opp_dev <= 0.080f && L_cut >= 0.65f) ||
 	           allow_wide_bulge) {
-		float mag = allow_wide_bulge ? (max_dev - ((L_cut >= 2.20f) ? 0.120f : 0.150f)) : (max_dev - 0.068f);
+		float mag = allow_wide_bulge ? (max_dev - 0.075f) : (max_dev - 0.068f);
 		float min_mag = allow_wide_bulge ? 0.050f : 0.020f;
-		float max_mag = allow_wide_bulge ? ((L_cut >= 2.20f) ? 0.380f : 0.360f) : 0.252f;
+		float max_mag = allow_wide_bulge ? 0.420f : 0.252f;
 		if (mag < min_mag) mag = min_mag;
 		else if (mag > max_mag) mag = max_mag;
 		bulge_offset = sign * mag;
@@ -1856,6 +1892,30 @@ static uint8_t Cut_Eval_Candidate(
 			bulge_mps = sqrtf(6.5f * r_min);
 			if (bulge_mps < driveData.base_mps) bulge_mps = driveData.base_mps;
 			if (bulge_mps > driveData.max_mps) bulge_mps = driveData.max_mps;
+			float bx = 0.0f, by = 0.0f, bth = 0.0f, max_b_err = 0.0f, b_cum = 0.0f;
+			for (uint16_t seg = start_idx; seg < land_idx; seg++) {
+				float d = ref_log[seg + 1].dist_from_prev_m;
+				float dyr = Cut_Seg_Dyr_Rad(seg, first_curve_idx, last_curve_idx, is_pattern_a, y1);
+				float d_sub = d * 0.25f, dyr_sub = dyr * 0.25f;
+				for (int sub = 0; sub < 4; sub++) {
+					bx += d_sub * cosf(bth + 0.5f * dyr_sub);
+					by += d_sub * sinf(bth + 0.5f * dyr_sub);
+					bth += dyr_sub;
+					if (seg >= first_curve_idx || b_cum + (sub + 1) * d_sub > lock_dist) {
+						float u_c = ((bx - lock_dist) * cos_ca + by * sin_ca) * inv_L;
+						if (u_c < 0.0f) u_c = 0.0f;
+						else if (u_c > 1.0f) u_c = 1.0f;
+						float tau = u_c + bulge_warp * sinf(PI * u_c);
+						float y_plan = bulge_offset * sinf(PI * tau);
+						float sd = (bx - lock_dist) * chord_norm_x + by * chord_norm_y;
+						float err = fabsf(sd - y_plan);
+						if (err > max_b_err) max_b_err = err;
+					}
+				}
+				if (seg < first_curve_idx) b_cum += d;
+			}
+			if (max_b_err > 0.088f) return 0;
+			else dev_ok = 1;
 			dev_ok = 1;
 		}
 	}
@@ -1864,16 +1924,16 @@ static uint8_t Cut_Eval_Candidate(
 	uint8_t geom_ok = 0;
 	if (is_apex_leg1) {
 		geom_ok = (dev_ok && bulge_offset == 0.0f && total_straight >= 0.55f &&
-		           fabsf(cut_angle_deg) <= 24.0f && fabsf(y_land) <= 0.900f && th_deg <= 12.0f);
+		           fabsf(cut_angle_deg) <= ((bulge_offset == 0.0f && num_curves >= 3) ? 28.0f : 24.0f) && fabsf(y_land) <= ((bulge_offset == 0.0f) ? 2.500f : 1.200f) && th_deg <= 12.0f);
 	} else if (is_apex_leg2) {
 		geom_ok = (dev_ok && bulge_offset == 0.0f && exit_dist >= 0.20f && total_straight >= 0.85f &&
 		           fabsf(cut_angle_deg) <= 26.0f && fabsf(y_land) <= 0.900f && fabsf(th_deg - 45.0f) <= 12.0f);
 	} else if (is_step_shift) {
 		geom_ok = (dev_ok && (bulge_offset == 0.0f || allow_wide_bulge) &&
-		           exit_dist >= 0.20f && total_straight >= 0.90f &&
-		           fabsf(cut_angle_deg) <= 24.0f && fabsf(y_land) <= 0.900f && th_deg <= 12.0f);
+		           exit_dist >= 0.16f && total_straight >= (is_chained_cut ? 0.80f : 0.90f) &&
+		           fabsf(cut_angle_deg) <= ((bulge_offset == 0.0f && num_curves >= 3) ? 28.0f : 24.0f) && fabsf(y_land) <= ((bulge_offset == 0.0f) ? 2.500f : 1.200f) && th_deg <= 12.0f);
 	} else {
-		geom_ok = (dev_ok && cut_dist_total >= 0.70f && total_straight >= 1.05f &&
+		geom_ok = (dev_ok && cut_dist_total >= (is_chained_cut ? 0.65f : 0.70f) && total_straight >= (is_chained_cut ? 0.85f : 1.05f) &&
 		           fabsf(cut_angle_deg) <= (allow_wide_bulge ? 8.0f : 6.0f) &&
 		           fabsf(y_land) <= 0.080f && th_deg <= 10.0f);
 	}
@@ -2045,8 +2105,8 @@ static uint8_t Omega_Eval_Candidate(
 	float y4_pos = 2.0f * cy;
 
 	// 동심 U턴 반경: 외곽 벌브 라인 안쪽 ~55mm 유지 (오프트랙 및 IR 센서 여유 확보)
-	float r_arc = R_omega - 0.055f;
-	if (r_arc < 0.180f) r_arc = 0.180f;
+	float r_arc = R_omega - 0.045f;
+	if (r_arc < 0.195f) r_arc = 0.195f;
 	if (r_arc > 0.235f) r_arc = 0.235f;
 
 	float lock_dist;
@@ -2154,6 +2214,7 @@ static void Omega_Apply_Plan(
 		seg_plan_4[seg].curve_dir = 0;
 		seg_plan_4[seg].is_straight_cut = 1;
 		seg_plan_4[seg].is_omega_cut = 1;
+		seg_plan_4[seg].is_corner90_chained = 0;
 		seg_plan_4[seg].omega_dir = res->dir;
 		seg_plan_4[seg].omega_r_arc = res->r_arc;
 		seg_plan_4[seg].omega_tan1_len = res->tan1_len;
@@ -2176,6 +2237,198 @@ static void Omega_Apply_Plan(
 		seg_plan_4[seg].cut_lock_dist = res->lock_dist;
 		seg_plan_4[seg].cut_exit_yaw_off = 180.0f;
 	}
+}
+
+static void Wave180_Apply_Plan(uint16_t start_idx, uint8_t count, int8_t first_dir) {
+	const float r_arc = 0.3125f;
+	const float alpha_deg = 53.1301f;
+	const float half_len = 0.595f;
+	float wave_mps = Fourth_Corner_Mps() + 0.25f;
+	if (wave_mps > driveData.max_mps) wave_mps = driveData.max_mps;
+
+	uint16_t end_idx = start_idx + count;
+	for (uint16_t seg = start_idx; seg < end_idx; seg++) {
+		seg_plan_4[seg].accel_type = 4;
+		seg_plan_4[seg].curve_dir = 0;
+		seg_plan_4[seg].is_straight_cut = 1;
+		seg_plan_4[seg].is_wave180_cut = 1;
+		seg_plan_4[seg].wave_count = count;
+		seg_plan_4[seg].wave_first_dir = first_dir;
+		seg_plan_4[seg].wave_half_len = half_len;
+		seg_plan_4[seg].wave_r_arc = r_arc;
+		seg_plan_4[seg].wave_alpha_deg = alpha_deg;
+		seg_plan_4[seg].wave_mps = wave_mps;
+		seg_plan_4[seg].cut_start_idx = start_idx;
+		seg_plan_4[seg].cut_first_curve_idx = start_idx;
+		seg_plan_4[seg].cut_last_exit_idx = end_idx - 1;
+		seg_plan_4[seg].cut_end_idx = end_idx;
+		seg_plan_4[seg].cut_seg_x = half_len;
+		seg_plan_4[seg].cut_straight_dist = (float)count * half_len;
+		seg_plan_4[seg].cut_angle_deg = 0.0f;
+		seg_plan_4[seg].cut_bulge_offset = 0.0f;
+		seg_plan_4[seg].cut_bulge_mps = wave_mps;
+		seg_plan_4[seg].cut_bulge_warp = 0.0f;
+		seg_plan_4[seg].cut_land_blend = half_len;
+		seg_plan_4[seg].cut_lock_dist = 0.0f;
+		seg_plan_4[seg].cut_exit_yaw_off = (count & 1U) ? 180.0f : 0.0f;
+	}
+}
+
+#if 0
+static void Corner90_Apply_Plan(uint16_t start_idx, uint16_t corner_idx, uint16_t end_idx,
+                                float entry_dist, float exit_dist, float yaw_deg, uint8_t chained) {
+	float min_leg = (entry_dist < exit_dist) ? entry_dist : exit_dist;
+	float lead = min_leg * 0.50f;
+	if (lead > 0.22f) lead = 0.22f;
+	if (lead < 0.12f) lead = 0.12f;
+	float r_arc = 0.25f + lead;
+	float arc_mps = Fourth_Corner_Mps() + 0.35f + lead * 0.90f;
+	const float arc_len = r_arc * (PI * 0.5f);
+	if (arc_mps > driveData.max_mps) arc_mps = driveData.max_mps;
+
+	int8_t odir = (yaw_deg > 0.0f) ? -1 : 1; // +90(L, CCW) -> omega_dir = -1; -90(R, CW) -> +1
+	float lock_dist = entry_dist - lead;
+	float exit_rem = exit_dist - lead;
+	if (exit_rem < 0.05f) exit_rem = 0.05f;
+	float total_straight = lock_dist + arc_len + exit_rem;
+
+	if (!chained) {
+		for (uint16_t seg = start_idx; seg < corner_idx; seg++) {
+			seg_plan_4[seg].cut_seg_x = ref_log[seg + 1].dist_from_prev_m;
+		}
+	}
+	seg_plan_4[corner_idx].cut_seg_x = arc_len - 2.0f * lead;
+
+	uint16_t plan_start = chained ? corner_idx : start_idx;
+	uint16_t plan_end = corner_idx + 1;
+	for (uint16_t seg = plan_start; seg < plan_end; seg++) {
+		seg_plan_4[seg].accel_type = 4;
+		seg_plan_4[seg].curve_dir = 0;
+		seg_plan_4[seg].is_straight_cut = chained ? 0 : 1;
+		seg_plan_4[seg].is_omega_cut = 1;
+		seg_plan_4[seg].is_corner90_chained = 0;
+		seg_plan_4[seg].is_corner90_cut = 1;
+		seg_plan_4[seg].is_corner90_chained = chained;
+		seg_plan_4[seg].omega_dir = odir;
+		seg_plan_4[seg].omega_r_arc = r_arc;
+		seg_plan_4[seg].omega_tan1_len = 0.0f;
+		seg_plan_4[seg].omega_arc_len = arc_len;
+		seg_plan_4[seg].is_corner90_chained = is_chained;
+		seg_plan_4[seg].omega_tan2_len = 0.0f;
+		seg_plan_4[seg].omega_tan1_deg = 0.0f;
+		seg_plan_4[seg].omega_tan2_deg = -(float)odir * 90.0f;
+		seg_plan_4[seg].omega_sweep_deg = 90.0f;
+		seg_plan_4[seg].omega_arc_mps = arc_mps;
+		seg_plan_4[seg].cut_start_idx = plan_start;
+		seg_plan_4[seg].cut_first_curve_idx = corner_idx;
+		seg_plan_4[seg].cut_last_exit_idx = corner_idx + 1;
+		seg_plan_4[seg].cut_end_idx = end_idx;
+		seg_plan_4[seg].cut_straight_dist = total_straight;
+		seg_plan_4[seg].cut_angle_deg = 0.0f;
+		seg_plan_4[seg].cut_bulge_offset = 0.0f;
+		seg_plan_4[seg].cut_bulge_mps = arc_mps;
+		seg_plan_4[seg].cut_bulge_warp = 0.0f;
+		seg_plan_4[seg].cut_land_blend = lead;
+		seg_plan_4[seg].cut_lock_dist = lock_dist;
+		seg_plan_4[seg].cut_exit_yaw_off = -(float)odir * 90.0f;
+	}
+}
+
+#endif
+// 고립된 단독 직-45-직 코너: 진입/탈출 직선을 활용해 선회 반경 R_arc를 확대(인코스 대원호 주행)
+static uint16_t Corner45_Try_Apply(uint16_t start_idx, uint16_t curve_idx, float entry_dist, float y1, uint8_t is_chained) {
+	if (entry_dist < (is_chained ? 0.22f : 0.16f) || fabsf(y1) < 28.0f || fabsf(y1) > 62.0f || curve_idx + 2 >= ref_log_count) {
+		return 0;
+	}
+	uint16_t land_idx = curve_idx + 1;
+	uint16_t corner_idx = land_idx;
+	float exit_dist = 0.0f;
+	while (corner_idx + 1 < ref_log_count) {
+		if (ref_log[corner_idx].type == CROSS_STOP || ref_log[corner_idx].type == CROSS_CROSS) {
+			break;
+		}
+		if (fabsf(ref_log[corner_idx + 1].yaw_angle) >= 18.0f) {
+			break;
+		}
+		exit_dist += ref_log[corner_idx + 1].dist_from_prev_m;
+		corner_idx++;
+		if (ref_log[corner_idx].type == CROSS_STOP || ref_log[corner_idx].type == CROSS_CROSS) {
+			break;
+		}
+	}
+	if (exit_dist < 0.16f || corner_idx >= ref_log_count) {
+		return 0;
+	}
+	float min_leg = fminf(entry_dist - (is_chained ? 0.06f : 0.16f), exit_dist - 0.10f);
+	if (min_leg < 0.08f) {
+		return 0;
+	}
+	float lead = min_leg;
+	if (lead > (is_chained ? 0.25f : 0.30f)) lead = is_chained ? 0.25f : 0.30f;
+	if (!is_chained && corner_idx + 1 < ref_log_count && exit_dist >= 0.36f) {
+		float ny = fabsf(ref_log[corner_idx + 1].yaw_angle);
+		if (ny >= 28.0f && ny <= 62.0f && lead > exit_dist * 0.42f) {
+			lead = exit_dist * 0.42f;
+		}
+	}
+
+	float r0 = ref_log[curve_idx + 1].dist_from_prev_m / (45.0f * (PI / 180.0f));
+	if (r0 < 0.20f) r0 = 0.20f;
+	else if (r0 > 0.30f) r0 = 0.30f;
+
+	// tan(22.5 deg) = 0.41421356, sec(22.5 deg) - 1 = 0.08239220 -> dev_max <= 70mm
+	float dR = lead / 0.41421356f;
+	float r_arc = r0 + dR;
+	const float arc_len = r_arc * (45.0f * (PI / 180.0f));
+	float arc_mps = sqrtf(8.5f * r_arc);
+	float min_c = Fourth_Corner_Mps() + 0.15f;
+	if (arc_mps < min_c) arc_mps = min_c;
+	if (arc_mps > 3.30f) arc_mps = 3.30f;
+	if (arc_mps > driveData.max_mps) arc_mps = driveData.max_mps;
+
+	int8_t odir = (y1 > 0.0f) ? -1 : 1; // +45(L) -> -1, -45(R) -> +1
+	float lock_dist = is_chained ? 0.0f : (entry_dist - lead);
+	float exit_rem = exit_dist - lead;
+	float total_straight = lock_dist + arc_len + exit_rem;
+
+	for (uint16_t seg = start_idx; seg < curve_idx; seg++) {
+		seg_plan_4[seg].cut_seg_x = ref_log[seg + 1].dist_from_prev_m;
+	}
+	seg_plan_4[curve_idx].cut_seg_x = is_chained ? (arc_len - lead) : (arc_len - 2.0f * lead);
+	for (uint16_t seg = land_idx; seg < corner_idx; seg++) {
+		seg_plan_4[seg].cut_seg_x = ref_log[seg + 1].dist_from_prev_m;
+	}
+
+	for (uint16_t seg = start_idx; seg < corner_idx; seg++) {
+		seg_plan_4[seg].accel_type = 4;
+		seg_plan_4[seg].curve_dir = 0;
+		seg_plan_4[seg].is_straight_cut = 1;
+		seg_plan_4[seg].is_omega_cut = 1;
+		seg_plan_4[seg].is_corner90_chained = 0;
+		seg_plan_4[seg].omega_dir = odir;
+		seg_plan_4[seg].omega_r_arc = r_arc;
+		seg_plan_4[seg].omega_tan1_len = 0.0f;
+		seg_plan_4[seg].omega_arc_len = arc_len;
+		seg_plan_4[seg].is_corner90_chained = is_chained;
+		seg_plan_4[seg].omega_tan2_len = 0.0f;
+		seg_plan_4[seg].omega_tan1_deg = 0.0f;
+		seg_plan_4[seg].omega_tan2_deg = -(float)odir * 45.0f;
+		seg_plan_4[seg].omega_sweep_deg = 45.0f;
+		seg_plan_4[seg].omega_arc_mps = arc_mps;
+		seg_plan_4[seg].cut_start_idx = start_idx;
+		seg_plan_4[seg].cut_first_curve_idx = curve_idx;
+		seg_plan_4[seg].cut_last_exit_idx = land_idx;
+		seg_plan_4[seg].cut_end_idx = corner_idx;
+		seg_plan_4[seg].cut_straight_dist = total_straight;
+		seg_plan_4[seg].cut_angle_deg = 0.0f;
+		seg_plan_4[seg].cut_bulge_offset = 0.0f;
+		seg_plan_4[seg].cut_bulge_mps = arc_mps;
+		seg_plan_4[seg].cut_bulge_warp = 0.0f;
+		seg_plan_4[seg].cut_land_blend = lead;
+		seg_plan_4[seg].cut_lock_dist = lock_dist;
+		seg_plan_4[seg].cut_exit_yaw_off = -(float)odir * 45.0f;
+	}
+	return corner_idx;
 }
 
 // 4차 주행용 구간 계획 빌드 (마커 페어링 기반 직선/곡선 판별 및 직선-45도 연속-직선 통합 관통 브릿징)
@@ -2308,6 +2561,7 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 		seg_plan_4[i].cut_lock_dist = 0.0f;
 		seg_plan_4[i].cut_exit_yaw_off = 0.0f;
 		seg_plan_4[i].is_omega_cut = 0;
+		seg_plan_4[i].is_corner90_chained = 0;
 		seg_plan_4[i].omega_dir = 0;
 		seg_plan_4[i].omega_r_arc = 0.0f;
 		seg_plan_4[i].omega_tan1_len = 0.0f;
@@ -2317,12 +2571,47 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 		seg_plan_4[i].omega_tan2_deg = 0.0f;
 		seg_plan_4[i].omega_sweep_deg = 0.0f;
 		seg_plan_4[i].omega_arc_mps = driveData.base_mps;
+		seg_plan_4[i].is_wave180_cut = 0;
+		seg_plan_4[i].wave_count = 0;
+		seg_plan_4[i].wave_first_dir = 0;
+		seg_plan_4[i].wave_half_len = 0.0f;
+		seg_plan_4[i].wave_r_arc = 0.0f;
+		seg_plan_4[i].wave_alpha_deg = 0.0f;
+		seg_plan_4[i].wave_mps = driveData.base_mps;
 	}
 
 	uint16_t k = 0;
 	while (k + 2 < ref_log_count) {
 		float y1 = ref_log[k + 1].yaw_angle;
 		float ay1 = fabsf(y1);
+
+		// 연속 180도 웨이브 (교대 ±180도, 직선 없이 또는 아주 짧게 직결된 N >= 2 반파)
+		if (ay1 >= 150.0f && ay1 <= 210.0f &&
+		    ref_log[k].type != CROSS_CROSS && ref_log[k].type != CROSS_STOP &&
+		    ref_log[k + 1].dist_from_prev_m >= 0.65f && ref_log[k + 1].dist_from_prev_m <= 1.00f) {
+			uint8_t w_cnt = 1;
+			float prev_wy = y1;
+			while (k + w_cnt + 1 < ref_log_count && w_cnt < 30) {
+				uint16_t wi = k + w_cnt;
+				float wy = ref_log[wi + 1].yaw_angle;
+				float awy = fabsf(wy);
+				float wd = ref_log[wi + 1].dist_from_prev_m;
+				if (ref_log[wi].type == CROSS_CROSS || ref_log[wi].type == CROSS_STOP ||
+				    awy < 150.0f || awy > 210.0f || (prev_wy * wy >= 0.0f) ||
+				    wd < 0.65f || wd > 1.00f) {
+					break;
+				}
+				prev_wy = wy;
+				w_cnt++;
+			}
+			if (w_cnt >= 2) {
+				Wave180_Apply_Plan(k, w_cnt, (y1 > 0.0f) ? 1 : -1);
+				k += w_cnt;
+				continue;
+			}
+		}
+
+
 
 		// 첫 커브 조건: 18도 ~ 62도 (45도 커브의 주행 중 요 오차 여유 포함)
 		if (ay1 >= 18.0f && ay1 <= 62.0f) {
@@ -2368,7 +2657,25 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 				}
 			}
 
-			if (is_apex_leg2 || entry_dist >= 0.18f) {
+			uint8_t is_chained_cut = 0;
+			float chained_exit_dist = 0.0f;
+			if (!is_apex_leg2 && entry_dist < 0.18f && k >= 1 &&
+			    seg_plan_4[k - 1].is_straight_cut && seg_plan_4[k - 1].cut_end_idx == k &&
+			    !seg_plan_4[k - 1].is_wave180_cut) {
+				float prev_exit_dist = 0.0f;
+				uint16_t ple = seg_plan_4[k - 1].cut_last_exit_idx;
+				for (uint16_t s = ple; s < k; s++) {
+					prev_exit_dist += ref_log[s + 1].dist_from_prev_m;
+				}
+				prev_exit_dist -= seg_plan_4[k - 1].cut_land_blend;
+				if (prev_exit_dist >= 0.14f) {
+					is_chained_cut = 1;
+					chained_exit_dist = prev_exit_dist;
+					start_idx = first_curve_idx;
+					entry_dist = 0.0f;
+				}
+			}
+			if (is_apex_leg2 || is_chained_cut || entry_dist >= 0.12f) {
 				uint16_t last_curve_idx = 0;
 				float tot_yaw = 0.0f;
 				uint8_t num_curves = 0;
@@ -2432,14 +2739,14 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 					uint16_t last_cand = 0;
 					float expect_sign = (y1 > 0.0f) ? 1.0f : -1.0f;
 					uint8_t mid90_used = 0;
-					float max_internal_straight = is_apex_leg2 ? 0.35f : 0.58f;
+					float max_internal_straight = is_apex_leg2 ? 0.35f : 0.72f;
 
 					while (cur + 1 < ref_log_count) {
 						float cy = ref_log[cur + 1].yaw_angle;
 						CrossEvent_t ct = ref_log[cur + 1].type;
 						float cd = ref_log[cur + 1].dist_from_prev_m;
 						uint8_t split_exit = 0;
-						if (fabsf(cy) >= 65.0f || ct == CROSS_STOP || ct == CROSS_CROSS) {
+						if (fabsf(cy) >= 65.0f || ct == CROSS_STOP || (ct == CROSS_CROSS && c_count == 0)) {
 							// 연속 S-시케인 내부의 동방향 45+45(+-90도) 정점은 1회 통과 허용 후 순 각도 0도 복귀 여부 확인
 							if (!is_apex_leg2 && !mid90_used && c_count >= 1 &&
 							    fabsf(cy) >= 65.0f && fabsf(cy) <= 115.0f &&
@@ -2496,7 +2803,7 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 							if (ex_next + 1 < ref_log_count &&
 							    ref_log[ex_next].type != CROSS_STOP && ref_log[ex_next].type != CROSS_CROSS &&
 							    fabsf(ref_log[ex_next + 1].yaw_angle) < 18.0f &&
-							    ref_log[ex_next + 1].dist_from_prev_m >= 0.18f) {
+							    ref_log[ex_next + 1].dist_from_prev_m >= 0.16f) {
 								if (zc_len < CUT_MAX_ZC && (zc_len == 0 || last_cand != zc_last[zc_len - 1])) {
 									zc_last[zc_len] = last_cand;
 									zc_yaw[zc_len] = cur_yaw_sum;
@@ -2560,7 +2867,7 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 					CutEval_t res = {0};
 					if (!Cut_Eval_Candidate(start_idx, first_curve_idx, entry_dist, y1,
 					                        last_curve_idx, num_curves, last_is_split, ext_has_mid90,
-					                        is_pattern_a, is_apex_leg1, is_apex_leg2, &res)) {
+					                        is_pattern_a, is_apex_leg1, is_apex_leg2, is_chained_cut, &res)) {
 						continue;
 					}
 
@@ -2572,7 +2879,7 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 							CutEval_t sub1 = {0};
 							if (Cut_Eval_Candidate(start_idx, first_curve_idx, entry_dist, y1,
 							                       zc_last[sj], zc_count_arr[sj], zc_split[sj], zc_mid90[sj],
-							                       0, 0, 0, &sub1) &&
+							                       0, 0, 0, is_chained_cut, &sub1) &&
 							    sub1.bulge_offset == 0.0f && sub1.exit_dist >= 0.35f) {
 								if (Cut_Tail_Max_Dev(sub1.corner_idx, last_curve_idx) <= 0.060f) {
 									split_clean = 1;
@@ -2590,6 +2897,21 @@ __STATIC_INLINE void Build_Segment_Plan_Fourth(void) {
 					cut_applied = 1;
 					break;
 				}
+					if (!cut_applied && !is_apex_leg2) {
+						uint16_t c45_end = 0;
+						if (!is_chained_cut && entry_dist >= 0.16f) {
+							c45_end = Corner45_Try_Apply(start_idx, first_curve_idx, entry_dist, y1, 0);
+						} else if (is_chained_cut && k >= 1 &&
+						           seg_plan_4[k - 1].is_omega_cut &&
+						           fabsf(seg_plan_4[k - 1].cut_exit_yaw_off) <= 60.0f &&
+						           chained_exit_dist >= 0.22f) {
+							c45_end = Corner45_Try_Apply(first_curve_idx, first_curve_idx, chained_exit_dist, y1, 1);
+						}
+						if (c45_end > 0) {
+							k = c45_end;
+							continue;
+						}
+					}
 					if (cut_applied) {
 						continue;
 					}
@@ -2656,6 +2978,22 @@ __STATIC_INLINE uint8_t Drive_Fourth_Init_Sequence(void) {
 		cum += ref_log[i].dist_from_prev_m;
 		ref_log_cum_dist[i] = cum;
 	}
+	{
+		float px = 0.0f, py = 0.0f, pth = 0.0f;
+		ref_pose_x[0] = 0.0f;
+		ref_pose_y[0] = 0.0f;
+		ref_pose_th[0] = 0.0f;
+		for (uint16_t i = 1; i < ref_log_count; i++) {
+			float dyaw = ref_log[i].yaw_angle;
+			float mid_rad = (pth + 0.5f * dyaw) * (PI / 180.0f);
+			px += ref_log[i].dist_from_prev_m * cosf(mid_rad);
+			py += ref_log[i].dist_from_prev_m * sinf(mid_rad);
+			pth = Wrap_Angle_Deg(pth + dyaw);
+			ref_pose_x[i] = px;
+			ref_pose_y[i] = py;
+			ref_pose_th[i] = pth;
+		}
+	}
 
 	Drive_IMU_Auto_Calibrate();
 
@@ -2707,6 +3045,127 @@ __STATIC_INLINE uint8_t Drive_Fourth_Init_Sequence(void) {
 	return 1;
 }
 
+// 최근 10개 마커 시퀀스 상관 + 2D 벡터/방향 유사도 기반 재동기화 (교차로 없는 구간 포함)
+static void Resync_Marker_Sequence_Fourth(CrossEvent_t cross, DriveFourthState_t *state, float eff_odom) {
+	uint16_t n_cur = g_cross_log_count;
+	if (n_cur > CROSS_LOG_MAX) n_cur = CROSS_LOG_MAX;
+	if (n_cur < 3 || ref_log_count < 3) {
+		int best_k = -1;
+		float min_dist_err = 0.45f;
+		int search_start = (int)state->idx - 2;
+		if (search_start < 0) search_start = 0;
+		int search_end = (int)state->idx + 8;
+		if (search_end > (int)ref_log_count) search_end = (int)ref_log_count;
+		for (int k = search_start; k < search_end; k++) {
+			if (ref_log[k].type == cross) {
+				float d_err = fabsf(eff_odom - ref_log_cum_dist[k]);
+				if (d_err < min_dist_err) {
+					min_dist_err = d_err;
+					best_k = k;
+				}
+			}
+		}
+		if (best_k >= 0) {
+			state->idx = (uint16_t)best_k;
+			state->mismatch = 0;
+		}
+		return;
+	}
+
+	uint16_t W = (n_cur < 10) ? n_cur : 10;
+	float cur_yaw = Wrap_Angle_Deg(imu_data.Yaw_Angle - state->imu_grid_bias);
+
+	// 최근 W개 마커의 현재 헤딩 기준 역방향 상대 2D 벡터 (cx, cy) 적분
+	float cx = 0.0f, cy = 0.0f, cth = 0.0f;
+	for (uint16_t w = 0; w + 1 < W; w++) {
+		uint16_t c = n_cur - 1 - w;
+		float d = g_cross_log[c].dist_from_prev_m;
+		float y = g_cross_log[c].yaw_angle;
+		float mid = (cth - 0.5f * y) * (PI / 180.0f);
+		cx -= d * cosf(mid);
+		cy -= d * sinf(mid);
+		cth = Wrap_Angle_Deg(cth - y);
+	}
+
+	int search_start = (int)state->idx - 6;
+	if (search_start < 1) search_start = 1;
+	int search_end = (int)state->idx + 28;
+	if (search_end > (int)ref_log_count) search_end = (int)ref_log_count;
+
+	int best_k = -1;
+	float best_score = -1e9f;
+	float second_score = -1e9f;
+
+	for (int k = search_start; k < search_end; k++) {
+		if (ref_log[k].type != cross) continue;
+		if (fabsf(eff_odom - ref_log_cum_dist[k]) > 2.50f) continue;
+		if (fabsf(Wrap_Angle_Deg(cur_yaw - ref_pose_th[k])) > 45.0f) continue;
+
+		float score = 0.0f;
+		int r = k;
+		for (uint16_t w = 0; w < W; w++) {
+			if (r < 0) {
+				score -= 1.0f;
+				continue;
+			}
+			uint16_t c = n_cur - 1 - w;
+			CrossEvent_t ctype = g_cross_log[c].type;
+			float cd = g_cross_log[c].dist_from_prev_m;
+			float cyaw = g_cross_log[c].yaw_angle;
+
+			if (ref_log[r].type == ctype) {
+				float dd = fabsf(cd - ref_log[r].dist_from_prev_m);
+				float dy = fabsf(Wrap_Angle_Deg(cyaw - ref_log[r].yaw_angle));
+				float d_sim = 1.0f - Clamp_F32(dd / 0.35f, 0.0f, 1.0f);
+				float y_sim = 1.0f - Clamp_F32(dy / 40.0f, 0.0f, 1.0f);
+				score += 1.0f + d_sim + y_sim;
+				r--;
+			} else if (r >= 2 && ref_log[r - 1].type == ctype) {
+				float md = ref_log[r].dist_from_prev_m + ref_log[r - 1].dist_from_prev_m;
+				float my = Wrap_Angle_Deg(ref_log[r].yaw_angle + ref_log[r - 1].yaw_angle);
+				float dd = fabsf(cd - md);
+				float dy = fabsf(Wrap_Angle_Deg(cyaw - my));
+				float d_sim = 1.0f - Clamp_F32(dd / 0.45f, 0.0f, 1.0f);
+				float y_sim = 1.0f - Clamp_F32(dy / 45.0f, 0.0f, 1.0f);
+				score += 0.6f + d_sim + y_sim;
+				r -= 2;
+			} else if (r >= 3 && ref_log[r - 2].type == ctype) {
+				score += 0.3f;
+				r -= 3;
+			} else {
+				score -= 1.0f;
+				r--;
+			}
+		}
+
+		int r_start = r + 1;
+		if (r_start < 0) r_start = 0;
+		float dx_w = ref_pose_x[r_start] - ref_pose_x[k];
+		float dy_w = ref_pose_y[r_start] - ref_pose_y[k];
+		float th_rad = -ref_pose_th[k] * (PI / 180.0f);
+		float rx_loc = dx_w * cosf(th_rad) - dy_w * sinf(th_rad);
+		float ry_loc = dx_w * sinf(th_rad) + dy_w * cosf(th_rad);
+		float vec_err = hypotf(cx - rx_loc, cy - ry_loc);
+		score += 2.0f * (1.0f - Clamp_F32(vec_err / 0.60f, 0.0f, 1.0f));
+		score -= 0.20f * fabsf(eff_odom - ref_log_cum_dist[k]);
+
+		if (score > best_score) {
+			second_score = best_score;
+			best_score = score;
+			best_k = k;
+		} else if (score > second_score) {
+			second_score = score;
+		}
+	}
+
+	if (best_k >= 0 && best_score >= (float)W * 1.45f &&
+	    (second_score < -1e8f || (best_score - second_score) >= 0.70f)) {
+		state->idx = (uint16_t)best_k;
+		state->mismatch = 0;
+		state->odom_offset_m = ref_log_cum_dist[best_k] - g_total_odom_m;
+	}
+}
+
 // 4차 주행 마커 이벤트 및 가속 구간 계산
 __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFourthState_t *state) {
 	float eff_odom = g_total_odom_m + state->odom_offset_m;
@@ -2736,6 +3195,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 
 	if (state->in_straight_cut) {
 		float traveled = g_total_odom_m - state->cut_start_odom;
+
 		float last_exit_dist = Cut_Milestone_Dist(state->cut_start_idx, state->cut_last_exit_idx);
 		// 탈출 직선 이후 교차로(CROSS_CROSS) 물리 감지 시 코너 마커 미검출 상태여도 즉시 Straight-Cut 종료 후 재동기화
 		if (state->idx < state->cut_end_idx && !(cross == CROSS_CROSS && traveled >= last_exit_dist)) {
@@ -2748,6 +3208,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 			// Straight-Cut 모드를 즉시 해제하고 아래의 일반 마커 처리 로직으로 폴스루하여 코너 감속/조향 진입
 			state->in_straight_cut = 0;
 			state->is_omega_cut = 0;
+			state->is_wave180_cut = 0;
 			g_straight_cut_active = 0;
 			g_suppress_marker_detect = 0;
 			g_straight_cut_kappa_ref = 0.0f;
@@ -2776,6 +3237,9 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 	}
 
 	if (state->mismatch) {
+		Resync_Marker_Sequence_Fourth(cross, state, eff_odom);
+	}
+	if (0) {
 		// 2. 보정된 누적 주행거리 및 마커 타입 기반 동적 재동기화 (Resynchronization)
 		int best_k = -1;
 		float min_dist_err = 0.45f;
@@ -2873,10 +3337,34 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 		state->omega_tan2_deg = seg_plan_4[state->idx].omega_tan2_deg;
 		state->omega_sweep_deg = seg_plan_4[state->idx].omega_sweep_deg;
 		state->omega_arc_mps = seg_plan_4[state->idx].omega_arc_mps;
+		state->is_wave180_cut = seg_plan_4[state->idx].is_wave180_cut;
+		state->wave_count = seg_plan_4[state->idx].wave_count;
+		state->wave_first_dir = seg_plan_4[state->idx].wave_first_dir;
+		state->wave_half_len = seg_plan_4[state->idx].wave_half_len;
+		state->wave_r_arc = seg_plan_4[state->idx].wave_r_arc;
+		state->wave_alpha_deg = seg_plan_4[state->idx].wave_alpha_deg;
+		state->wave_mps = seg_plan_4[state->idx].wave_mps;
 		state->cut_p1_latched = (state->cut_lock_dist <= 0.03f) ? 1 : 0; // 정점 직후 즉시 진입 레그는 진입 마커에서 격자각 즉시 확정
 		state->seg_len_predicted = state->cut_straight_dist;
 		state->target_mps = driveData.max_mps;
-		if (state->is_omega_cut && state->cut_end_idx < ref_log_count &&
+		if (state->is_wave180_cut) {
+			state->target_mps = state->wave_mps;
+			state->end_mps = Fourth_Corner_Mps();
+		} else if (state->is_omega_cut && fabsf(state->cut_exit_yaw_off) <= 60.0f &&
+		           state->cut_end_idx < ref_log_count &&
+		           seg_plan_4[state->cut_end_idx].is_corner90_chained) {
+			state->end_mps = seg_plan_4[state->cut_end_idx].omega_arc_mps;
+		} else if (!state->is_omega_cut && !state->is_wave180_cut &&
+		           state->cut_end_idx < ref_log_count &&
+		           seg_plan_4[state->cut_end_idx].is_straight_cut &&
+		           state->cut_end_idx == seg_plan_4[state->cut_end_idx].cut_start_idx &&
+		           ref_log[state->cut_end_idx].type != CROSS_STOP) {
+			float next_ca = fabsf(seg_plan_4[state->cut_end_idx].cut_angle_deg);
+			float trans_mps = (next_ca <= 10.0f) ? (Fourth_Corner_Mps() + 1.50f)
+			                : ((next_ca <= 22.0f) ? (Fourth_Corner_Mps() + 0.70f) : Fourth_Corner_Mps());
+			if (trans_mps > driveData.max_mps) trans_mps = driveData.max_mps;
+			state->end_mps = trans_mps;
+		} else if (state->is_omega_cut && fabsf(state->cut_exit_yaw_off) > 90.0f && state->cut_end_idx < ref_log_count &&
 		    seg_plan_4[state->cut_end_idx].accel_type > 0 &&
 		    ref_log[state->cut_end_idx].type != CROSS_STOP) {
 			state->end_mps = Segment_Mps_Fourth(seg_plan_4[state->cut_end_idx].accel_type);
@@ -2888,7 +3376,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 		                         ? state->cut_bulge_mps
 		                         : state->target_mps;
 
-		if (prev_curve != 0 && prev_type == 0) {
+		if (!state->is_wave180_cut && prev_curve != 0 && prev_type == 0) {
 			state->corridor_start_dist = g_total_odom_m;
 			state->zone_start_from_deep = 1;
 			g_target_base_mps = driveData.base_mps;
@@ -2927,6 +3415,17 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 
 		state->target_mps = Segment_Mps_Fourth(type);
 		state->end_mps = Segment_Mps_Fourth(next_type);
+		if (type == 1 && next_type == 0) {
+			float min_c = Fourth_Corner_Mps();
+			if (total_dist < 0.60f) {
+				state->target_mps = min_c;
+			} else if (total_dist < 1.35f) {
+				float short_cap = min_c + (total_dist - 0.60f) * 2.0f;
+				if (short_cap < state->target_mps) {
+					state->target_mps = short_cap;
+				}
+			}
+		}
 		if (next_idx < ref_log_count && seg_plan_4[next_idx].is_omega_cut) {
 			float v_arc = seg_plan_4[next_idx].omega_arc_mps;
 			float d_in = seg_plan_4[next_idx].cut_lock_dist + seg_plan_4[next_idx].omega_tan1_len;
@@ -2946,13 +3445,16 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 
 		uint8_t prev_type = (state->idx >= 1) ? seg_plan_4[state->idx - 1].accel_type : 1;
 		uint8_t prev_curve = (state->idx >= 1) ? seg_plan_4[state->idx - 1].curve_dir : 0;
+		float_t cur_yaw_rate = fabsf(imu_data.Gyro_Z - imu_data.Gyro_Z_Offset);
+		float_t cur_line_err = fabsf(Sensor_Get_Last_Position());
 
 		if (state->idx == 0) {
 			state->corridor_start_dist = g_odom_distance_m;
 			state->zone_start_from_deep = 0;
 			g_target_base_mps = state->target_mps;
-		} else if (prev_curve != 0 && prev_type == 0) {
-			// 90도 이상 급커브 탈출 직후: 차체 정렬 완료까지 코너 안정 속도 유지 후 가속
+		} else if ((prev_curve != 0 && prev_type == 0) ||
+		           (type == 1 && (prev_curve != 0 || cur_yaw_rate >= 35.0f || cur_line_err >= 0.18f))) {
+			// 커브 탈출 직후 또는 잔여 요레이트/횡오차가 큰 상태: 차체 정렬 완료까지 코너 안정 속도 유지 후 가속
 			state->corridor_start_dist = g_odom_distance_m;
 			state->zone_start_from_deep = 1;
 			g_target_base_mps = Fourth_Corner_Mps();
@@ -3026,6 +3528,51 @@ __STATIC_INLINE void Check_Virtual_Markers_Fourth(DriveFourthState_t *state) {
 	// 탈출 직선(Phase 3)의 기준 방위각은 사선 각도(cut_angle_deg)를 제외하고 순 각도 오프셋(cut_exit_yaw_off)을 반영한 격자 직선 각도
 	float exit_yaw_ref = Wrap_Angle_Deg(state->cut_base_yaw_ref - state->cut_angle_deg + state->cut_exit_yaw_off);
 	float yaw_diff = Wrap_Angle_Deg(imu_data.Yaw_Angle - exit_yaw_ref);
+	if (state->is_omega_cut && fabsf(state->cut_exit_yaw_off) <= 60.0f &&
+	    state->idx == state->cut_end_idx && state->cut_end_idx < ref_log_count &&
+	    seg_plan_4[state->cut_end_idx].is_corner90_chained) {
+		uint16_t ni = state->cut_end_idx;
+		float next_lead = seg_plan_4[ni].cut_land_blend;
+		if (traveled >= state->cut_straight_dist - next_lead) {
+			CrossEvent_t vtype = ref_log[ni].type;
+			if (vtype == CROSS_LEFT) g_total_L++;
+			else if (vtype == CROSS_RIGHT) g_total_R++;
+			else if (vtype == CROSS_CROSS) g_total_C++;
+			Sensor_Log_Virtual_Marker(vtype, ref_log[ni].yaw_angle);
+			state->odom_offset_m = ref_log_cum_dist[ni] - g_total_odom_m;
+			state->idx++;
+			state->cut_start_idx = seg_plan_4[ni].cut_start_idx;
+			state->cut_first_curve_idx = seg_plan_4[ni].cut_first_curve_idx;
+			state->cut_last_exit_idx = seg_plan_4[ni].cut_last_exit_idx;
+			state->cut_end_idx = seg_plan_4[ni].cut_end_idx;
+			state->cut_start_odom = g_total_odom_m;
+			state->cut_straight_dist = seg_plan_4[ni].cut_straight_dist;
+			state->cut_angle_deg = 0.0f;
+			state->cut_base_yaw_ref = exit_yaw_ref;
+			state->cut_p1_latched = 1;
+			state->cut_lock_dist = 0.0f;
+			state->cut_land_blend = next_lead;
+			state->cut_exit_yaw_off = seg_plan_4[ni].cut_exit_yaw_off;
+			state->omega_dir = seg_plan_4[ni].omega_dir;
+			state->omega_r_arc = seg_plan_4[ni].omega_r_arc;
+			state->omega_tan1_len = 0.0f;
+			state->omega_arc_len = seg_plan_4[ni].omega_arc_len;
+			state->omega_tan2_len = 0.0f;
+			state->omega_tan1_deg = 0.0f;
+			state->omega_tan2_deg = seg_plan_4[ni].omega_tan2_deg;
+			state->omega_sweep_deg = 45.0f;
+			state->omega_arc_mps = seg_plan_4[ni].omega_arc_mps;
+			state->seg_len_predicted = state->cut_straight_dist;
+			state->target_mps = driveData.max_mps;
+			state->end_mps = (state->cut_end_idx < ref_log_count && seg_plan_4[state->cut_end_idx].is_corner90_chained)
+			                     ? seg_plan_4[state->cut_end_idx].omega_arc_mps
+			                     : driveData.base_mps;
+			state->braking_started = 0;
+			g_straight_cut_active = 1;
+			g_suppress_marker_detect = 1;
+			return;
+		}
+	}
 	uint8_t reading_now = Cross_Is_Reading();
 	uint8_t end_is_cross = (state->cut_end_idx < ref_log_count && ref_log[state->cut_end_idx].type == CROSS_CROSS) ? 1 : 0;
 	float fallback_margin = end_is_cross ? 0.35f : (reading_now ? 0.09f : 0.05f);
@@ -3086,10 +3633,13 @@ __STATIC_INLINE void Check_Distance_And_Brake_Fourth(DriveFourthState_t *state) 
 
 		float_t brake_dist = (driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M;
 		if (v1 > v2) {
-			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
-			const float_t tau_sys = 0.045f;
-			brake_dist += v1 * tau_sys;
-			if (v1 > 3.5f) brake_dist += (v1 - 3.5f) * 0.15f + 0.10f;
+			const float_t tau_sys = (g_target_base_mps > v1 + 0.30f && v1 < 4.0f) ? 0.120f : 0.060f;
+			float_t v_eff = (g_target_base_mps > v1) ? (v1 + driveData.accel * 0.055f) : v1;
+			if (v_eff > g_target_base_mps) v_eff = g_target_base_mps;
+			brake_dist += (v_eff * v_eff - v2 * v2) / (2.0f * driveData.decel);
+			brake_dist += v_eff * tau_sys;
+			/* linear tau_sys=0.085f replaces excess mid-speed penalty */
+			/* high-speed aero drag already aids decel; no extra >4.5f penalty */
 		}
 
 		if (remaining <= brake_dist) {
@@ -3176,7 +3726,38 @@ __STATIC_INLINE void Update_Target_Pos_Fourth(DriveFourthState_t *state) {
 	imu_straight_bias_track = 0;
 	if (state->in_straight_cut) {
 		float traveled = g_total_odom_m - state->cut_start_odom;
+
 		float last_exit_dist = Cut_Milestone_Dist(state->cut_start_idx, state->cut_last_exit_idx);
+		if (state->is_wave180_cut) {
+			float total_wave_len = state->cut_straight_dist;
+			uint8_t on_center_line = ((IR_Sensor.data->state & 0x1FF8) != 0) ? 1 : 0;
+			if (traveled < total_wave_len && !(traveled >= total_wave_len - 0.06f && on_center_line)) {
+				g_straight_cut_active = 1;
+				g_suppress_marker_detect = (traveled >= total_wave_len - 0.14f) ? 0 : 1;
+				IR_Sensor.data->target_pos = 0.0f;
+
+				float half_len = (state->wave_half_len > 0.01f) ? state->wave_half_len : 0.57956f;
+				int j = (int)(traveled / half_len);
+				if (j < 0) j = 0;
+				if (j >= (int)state->wave_count) j = (int)state->wave_count - 1;
+				float u = (traveled - (float)j * half_len) / half_len;
+				if (u < 0.0f) u = 0.0f;
+				else if (u > 1.0f) u = 1.0f;
+				float sj = (float)(((j & 1) == 0) ? state->wave_first_dir : -state->wave_first_dir);
+				float grid_plus_bias = state->cut_base_yaw_ref;
+				float wave_axis = Wrap_Angle_Deg(grid_plus_bias + (float)state->wave_first_dir * 90.0f);
+				float u_eff = (j == 0) ? (0.14f + 0.86f * u) : u;
+				float th_deg = -sj * state->wave_alpha_deg + 2.0f * sj * state->wave_alpha_deg * u_eff;
+				g_straight_cut_yaw_ref = Wrap_Angle_Deg(wave_axis + th_deg);
+				g_straight_cut_kappa_ref = sj / state->wave_r_arc;
+			} else {
+				g_straight_cut_active = 0;
+				g_straight_cut_kappa_ref = 0.0f;
+				IR_Sensor.data->target_pos = 0.0f;
+				g_suppress_marker_detect = 0;
+			}
+			return;
+		}
 		float lock_start_dist = state->cut_lock_dist;
 		float phase2_end_dist = last_exit_dist + state->cut_land_blend;
 		uint8_t on_center_line = ((IR_Sensor.data->state & 0x1FF8) != 0) ? 1 : 0;
@@ -3829,10 +4410,13 @@ __STATIC_INLINE void Check_Distance_And_Brake_Fifth(DriveFifthState_t *state) {
 
 		float_t brake_dist = (driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M;
 		if (v1 > v2) {
-			brake_dist += (v1 * v1 - v2 * v2) / (2.0f * driveData.decel);
-			const float_t tau_sys = 0.045f;
-			brake_dist += v1 * tau_sys;
-			if (v1 > 3.5f) brake_dist += (v1 - 3.5f) * 0.15f + 0.10f;
+			const float_t tau_sys = (g_target_base_mps > v1 + 0.30f && v1 < 4.0f) ? 0.120f : 0.060f;
+			float_t v_eff = (g_target_base_mps > v1) ? (v1 + driveData.accel * 0.055f) : v1;
+			if (v_eff > g_target_base_mps) v_eff = g_target_base_mps;
+			brake_dist += (v_eff * v_eff - v2 * v2) / (2.0f * driveData.decel);
+			brake_dist += v_eff * tau_sys;
+			/* linear tau_sys=0.085f replaces excess mid-speed penalty */
+			/* high-speed aero drag already aids decel; no extra >4.5f penalty */
 		}
 
 		if (remaining <= brake_dist) {
