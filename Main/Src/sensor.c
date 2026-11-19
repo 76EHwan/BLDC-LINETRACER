@@ -26,16 +26,12 @@
 
 #define LPTIM_TICK_DT 0.001f
 
-// 1D convolution 기반 라인 state (0.0f = 기존 단순 threshold 방식)
+// 시공간 2D 분리형 Convolution 기반 라인 state (0.0f = 기존 단순 threshold 방식)
 #ifndef SENSOR_CONV_GAIN_DEFAULT
 #define SENSOR_CONV_GAIN_DEFAULT 0.05f
 #endif
 
-#define CONV_KERNEL_LEN	3
-#define CONV_TEMP_LEN	3
-#define CONV_IN_LEN		(LINE_N_SENSORS + 2)                    // M_L, IR_0..15, M_R
-#define CONV_OUT_LEN	(CONV_IN_LEN + CONV_KERNEL_LEN - 1)     // full convolution length
-#define CONV_TEMP_OUT_LEN	(CONV_TEMP_LEN + CONV_TEMP_LEN - 1) // temporal full convolution length
+#define CONV_IN_LEN		(LINE_N_SENSORS + 2) // Edge-replicated [IR_0, IR_0..15, IR_15]
 
 // @formatter:off
 static const uint8_t scan_group1[SCAN_GROUP_LEN] = { 7, 8, 10, 5, 3, 12, 14, 1, 16, 17 };
@@ -159,13 +155,21 @@ __STATIC_INLINE uint16_t Sensor_Normalize(uint8_t idx) {
 }
 
 // ==============================================
-// 시공간 분리형 Convolution (순수 함수 모듈 st_conv2d 위임)
+// 시공간 분리형 Convolution (순수 함수 모듈 st_conv2d 위임 + 핑퐁 더블 버퍼)
 // ==============================================
 static float32_t g_conv_hist[LINE_N_SENSORS][STCONV_TEMP_LEN];
 static uint8_t g_conv_hist_primed = 0;
+static volatile int16_t g_conv_buf[2][LINE_N_SENSORS];
+static volatile uint8_t g_conv_active_buf = 0;
 
 static void Sensor_Conv_Reset(void) {
 	STConv2D_Reset(&g_conv_hist_primed);
+	g_conv_active_buf = 0;
+	for (uint8_t i = 0; i < LINE_N_SENSORS; i++) {
+		g_conv_buf[0][i] = 0;
+		g_conv_buf[1][i] = 0;
+		IR_Sensor.data->conv[i] = 0;
+	}
 }
 
 static void Sensor_Conv_Update(void) {
@@ -173,17 +177,26 @@ static void Sensor_Conv_Update(void) {
 	int16_t conv_out_i16[LINE_N_SENSORS];
 	volatile SensorData_TypeDef *d = IR_Sensor.data;
 
-	conv_in[0] = (float32_t) d->normalized[LEFT_MARK_SENSOR_INDEX];
+	/* Edge Replicate boundary padding: avoids marker sensor cross-talk on IR_0 / IR_15 */
+	conv_in[0] = (float32_t) d->normalized[0];
 	for (uint8_t i = 0; i < LINE_N_SENSORS; i++) {
 		conv_in[i + 1] = (float32_t) d->normalized[i];
 	}
-	conv_in[CONV_IN_LEN - 1] = (float32_t) d->normalized[RIGHT_MARK_SENSOR_INDEX];
+	conv_in[CONV_IN_LEN - 1] = (float32_t) d->normalized[LINE_N_SENSORS - 1];
 
-	const STConv2D_Config_t cfg = STConv2D_DefaultConfig();
+	static const STConv2D_Config_t cfg = {
+		{ -1.0f, 2.0f, -1.0f },
+		{ 7.0f, 2.0f, 1.0f },
+		0.1f
+	};
 	STConv2D_Update(&cfg, conv_in, LINE_N_SENSORS, g_conv_hist, &g_conv_hist_primed, conv_out_i16);
+
+	const uint8_t back = (uint8_t) (g_conv_active_buf ^ 1U);
 	for (uint8_t i = 0; i < LINE_N_SENSORS; i++) {
+		g_conv_buf[back][i] = conv_out_i16[i];
 		d->conv[i] = conv_out_i16[i];
 	}
+	g_conv_active_buf = back;
 }
 
 void TIM7_IRQ_Handler() {
@@ -279,12 +292,13 @@ float32_t Sensor_Get_Position(void) {
 
 	float32_t best_metric = -1e9f;
 	const float32_t cgain = IR_Sensor.data->conv_gain;
+	const volatile int16_t *conv_snap = g_conv_buf[g_conv_active_buf];
 
 	if (force_full_scan || IR_Sensor.is_lost_position || g_straight_cut_active) {
 		for (int8_t i = 0; i < LINE_N_SENSORS; i++) {
 			float32_t metric = (float32_t) IR_Sensor.data->normalized[i];
 			if (cgain > 0.0f) {
-				metric += cgain * (float32_t) IR_Sensor.data->conv[i];
+				metric += cgain * (float32_t) conv_snap[i];
 			}
 			if (metric > best_metric) {
 				best_metric = metric;
@@ -381,7 +395,7 @@ float32_t Sensor_Get_Position(void) {
 				for (int8_t i = search_start; i <= search_end; i++) {
 					float32_t metric = (float32_t) IR_Sensor.data->normalized[i];
 					if (cgain > 0.0f) {
-						metric += cgain * (float32_t) IR_Sensor.data->conv[i];
+						metric += cgain * (float32_t) conv_snap[i];
 					}
 					if (metric > best_metric) {
 						best_metric = metric;
@@ -413,7 +427,7 @@ float32_t Sensor_Get_Position(void) {
 				for (int8_t i = search_start; i <= search_end; i++) {
 					float32_t metric = (float32_t) IR_Sensor.data->normalized[i];
 					if (cgain > 0.0f) {
-						metric += cgain * (float32_t) IR_Sensor.data->conv[i];
+						metric += cgain * (float32_t) conv_snap[i];
 					}
 					if (metric > best_metric) {
 						best_metric = metric;
@@ -484,8 +498,8 @@ float32_t Sensor_Get_Position(void) {
 		int32_t net_val = (int32_t) IR_Sensor.data->normalized[i] - (int32_t) min_noise;
 		if (net_val > 0) {
 			float32_t net_f = (float32_t) net_val;
-			if (cgain > 0.0f && IR_Sensor.data->conv[i] > 0) {
-				net_f += cgain * (float32_t) IR_Sensor.data->conv[i];
+			if (cgain > 0.0f && conv_snap[i] > 0) {
+				net_f += cgain * (float32_t) conv_snap[i];
 			}
 			// 노이즈 플로어 차감 및 제곱 가중으로 계단형 점프(윈도우 경계 불연속) 제거
 			float32_t w = net_f * net_f;

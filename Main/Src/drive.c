@@ -281,15 +281,15 @@ void Drive_AutoHeal_Apply(void) {
 	base.target_shift_val = 0.85f * driveData.target_shift_val + 0.15f * g_heal_anchor.target_shift_val;
 	base.target_curve_gain = 0.85f * driveData.target_curve_gain + 0.15f * g_heal_anchor.target_curve_gain;
 
-	// D게인 과포화(> 390) 및 P게인 과소(< 12.2) 감지 및 해소
-	uint8_t kd_oversaturated = (driveData.steer_gain_d > 260.0f) ? 1 : 0;
+	// D게인 과포화(anchor 대비 1.6배 초과) 및 P게인 과소 감지 및 해소
+	const float_t anchor_kd_ref = (g_heal_anchor.steer_gain_d > 50.0f) ? g_heal_anchor.steer_gain_d : driveData.steer_gain_d;
+	uint8_t kd_oversaturated = (driveData.steer_gain_d > anchor_kd_ref * 1.60f) ? 1 : 0;
 	if (kd_oversaturated) {
-		float_t anchor_kd = (g_heal_anchor.steer_gain_d < 220.0f) ? g_heal_anchor.steer_gain_d : 220.0f;
-		base.steer_gain_d = Clamp_F32(0.65f * driveData.steer_gain_d + 0.35f * anchor_kd, 160.0f, 280.0f);
+		base.steer_gain_d = fmaxf(0.0f, 0.65f * driveData.steer_gain_d + 0.35f * anchor_kd_ref);
 	}
 	if (driveData.steer_gain_p < 8.13f) {
 		float_t anchor_kp = (g_heal_anchor.steer_gain_p > 9.47f) ? g_heal_anchor.steer_gain_p : 9.47f;
-		base.steer_gain_p = Clamp_F32(0.65f * driveData.steer_gain_p + 0.35f * anchor_kp, 8.53f, 16.0f);
+		base.steer_gain_p = Clamp_F32(0.65f * driveData.steer_gain_p + 0.35f * anchor_kp, 8.53f, 25.0f);
 	}
 
 	// 2. 주행 텔레메트리 기반 정규화 심각도(0.0 ~ 1.5) 비례 계산
@@ -306,18 +306,17 @@ void Drive_AutoHeal_Apply(void) {
 
 	// 3. 실패 원인별 비례 처방 계산
 	if (kd_oversaturated && osc_sev > 0.30f) {
-		// [DeSat] D게인 과포화로 인한 고주파 노이즈 발진 -> KD 하향 및 기준점 복원
+		// [DeSat] D게인 과포화로 인한 고주파 노이즈 발진 -> Anchor 기준 복원
 		role = "DeSat";
-		float_t nom_kd = Clamp_F32(g_heal_anchor.steer_gain_d, 180.0f, 235.0f);
-		healed.steer_gain_p = Clamp_F32(roundf((0.55f * driveData.steer_gain_p + 0.45f * g_heal_anchor.steer_gain_p + 0.23f * under_sev) * 1000.0f) / 1000.0f, 8.13f, 15.67f);
-		healed.steer_gain_d = Clamp_F32(0.50f * driveData.steer_gain_d + 0.50f * nom_kd - 11.0f, 133.0f, 267.0f);
+		healed.steer_gain_p = fmaxf(0.0f, roundf((0.55f * driveData.steer_gain_p + 0.45f * g_heal_anchor.steer_gain_p + 0.23f * under_sev) * 1000.0f) / 1000.0f);
+		healed.steer_gain_d = fmaxf(0.0f, 0.50f * driveData.steer_gain_d + 0.50f * anchor_kd_ref);
 	} else if (speed_sev > 0.45f && g_drive_diag.drive_mode >= 2) {
-		// [Entry] 직선 고속 가속 후 코너 진입 감속 부족 -> 진입 초과 속도에 비례해 브레이크 마진 증가 & 횡가속도 하향
+		// [Entry] 직선 고속 가속 후 코너 진입 감속 부족 -> 진입 초과 속도에 비례해 브레이크 마진 증가
 		role = "Entry";
 		float_t entry_sev = (speed_sev > slip_sev) ? speed_sev : slip_sev;
-		healed.steer_gain_p = Clamp_F32(roundf((base.steer_gain_p + (g_drive_diag.was_oversteer ? -0.17f * slip_sev : +0.27f * under_sev)) * 1000.0f) / 1000.0f, 7.87f, 15.67f);
-		float_t ideal_kd = Clamp_F32(healed.steer_gain_p * 28.68f, 147.0f, 293.0f);
-		healed.steer_gain_d = Clamp_F32(0.60f * base.steer_gain_d + 0.40f * ideal_kd, 133.0f, 293.0f);
+		healed.steer_gain_p = fmaxf(0.0f, roundf((base.steer_gain_p + (g_drive_diag.was_oversteer ? -0.17f * slip_sev : +0.27f * under_sev)) * 1000.0f) / 1000.0f);
+		float_t target_kd = (anchor_kd_ref > healed.steer_gain_p * 28.68f) ? anchor_kd_ref : (healed.steer_gain_p * 28.68f);
+		healed.steer_gain_d = fmaxf(0.0f, 0.70f * base.steer_gain_d + 0.30f * target_kd);
 		healed.brake_margin_m = Clamp_F32(base.brake_margin_m + (0.015f + 0.030f * entry_sev), 0.07f, 0.24f);
 	} else if (g_drive_diag.was_oversteer) {
 		// [PropOVS] 오버스티어/드리프트 과다 -> 슬립각 및 진동량에 비례해 KP 감쇠 & KD 보강
@@ -335,12 +334,12 @@ void Drive_AutoHeal_Apply(void) {
 			healed.brake_margin_m = Clamp_F32(base.brake_margin_m + (0.012f * slip_sev + 0.022f * speed_sev), 0.06f, 0.24f);
 		}
 	} else {
-		// [PropUND] 언더스티어/조향 부족 이탈 -> 이탈 심각도에 비례해 KP 상향 & KD는 최적 댐핑비(22.4*KP)로 정렬
+		// [PropUND] 언더스티어/조향 부족 이탈 -> 이탈 심각도에 비례해 KP 상향 & KD 정렬
 		role = "PropUND";
 		float_t dkp = 0.43f * under_sev - 0.17f * osc_sev;
 		healed.steer_gain_p = fmaxf(0.0f, roundf((base.steer_gain_p + dkp) * 1000.0f) / 1000.0f);
-		float_t ideal_kd = fmaxf(0.0f, healed.steer_gain_p * 28.68f);
-		healed.steer_gain_d = fmaxf(0.0f, 0.65f * base.steer_gain_d + 0.35f * ideal_kd + 6.7f * osc_sev);
+		float_t ideal_kd = (anchor_kd_ref > healed.steer_gain_p * 28.68f) ? anchor_kd_ref : (healed.steer_gain_p * 28.68f);
+		healed.steer_gain_d = fmaxf(0.0f, 0.70f * base.steer_gain_d + 0.30f * ideal_kd + 6.7f * osc_sev);
 		if (g_drive_diag.drive_mode >= 3) {
 			healed.target_shift_val = Clamp_F32(base.target_shift_val + 0.030f * under_sev, 0.20f, 1.45f);
 			healed.target_curve_gain = Clamp_F32(base.target_curve_gain + 0.050f * under_sev, 1.00f, 5.00f);

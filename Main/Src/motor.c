@@ -284,7 +284,16 @@ void Steer_Motor() {
 
 
 	// 5. 기하학적 Pure Pursuit + R = 0.25m 곡률 제어 (순수 함수 모듈 pp_steer 위임)
-	const PPSteer_Config_t pp_cfg = PPSteer_DefaultConfig();
+	static const PPSteer_Config_t pp_cfg = {
+		0.13213f, /* lookahead_m */
+		0.41450f, /* rad_per_unit */
+		4.00000f, /* corner_kappa (1 / 0.25m) */
+		0.12f,    /* corner_e0 */
+		1.85f,    /* rejoin_gain_k */
+		1.30f,    /* rejoin_gain_max */
+		20.4f,    /* kp_ref */
+		1.2f      /* max_alpha_rad */
+	};
 	PPSteer_Input_t pp_in;
 	pp_in.error = error;
 	pp_in.filtered_deriv = g_filtered_deriv;
