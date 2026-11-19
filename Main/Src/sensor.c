@@ -8,6 +8,7 @@
 #include "foc.h"
 #include "motor.h"
 #include "sensor.h"
+#include "st_conv2d.h"
 #include "sd_ui.h"
 #include "user_init.h"
 #include "drive.h"
@@ -158,23 +159,18 @@ __STATIC_INLINE uint16_t Sensor_Normalize(uint8_t idx) {
 }
 
 // ==============================================
-// 시공간 분리형 Convolution (공간 [-1, 2, -1] × 시간 [1, 2, 7] / 10)
+// 시공간 분리형 Convolution (순수 함수 모듈 st_conv2d 위임)
 // ==============================================
-// 공간 입력: [M_L(16), IR_0 .. IR_15, M_R(17)], 커널: [-1, 2, -1] (1D 라플라시안)
-// 시간 인과적 임펄스 응답: h[0..2] = [7, 2, 1] / 10 -> [t-2, t-1, t]와 arm_conv_f32 (지연 ~0.20ms)
-static const float32_t conv_kernel[CONV_KERNEL_LEN] = { -1.0f, 2.0f, -1.0f };
-static const float32_t conv_time_kernel[CONV_TEMP_LEN] = { 7.0f, 2.0f, 1.0f };
-static float32_t g_conv_hist[LINE_N_SENSORS][CONV_TEMP_LEN];
+static float32_t g_conv_hist[LINE_N_SENSORS][STCONV_TEMP_LEN];
 static uint8_t g_conv_hist_primed = 0;
 
 static void Sensor_Conv_Reset(void) {
-	g_conv_hist_primed = 0;
+	STConv2D_Reset(&g_conv_hist_primed);
 }
 
 static void Sensor_Conv_Update(void) {
 	float32_t conv_in[CONV_IN_LEN];
-	float32_t conv_out[CONV_OUT_LEN];
-	float32_t temp_out[CONV_TEMP_OUT_LEN];
+	int16_t conv_out_i16[LINE_N_SENSORS];
 	volatile SensorData_TypeDef *d = IR_Sensor.data;
 
 	conv_in[0] = (float32_t) d->normalized[LEFT_MARK_SENSOR_INDEX];
@@ -183,27 +179,11 @@ static void Sensor_Conv_Update(void) {
 	}
 	conv_in[CONV_IN_LEN - 1] = (float32_t) d->normalized[RIGHT_MARK_SENSOR_INDEX];
 
-	// CMSIS-DSP full convolution: out[n] = sum_k in[n-k] * h[k]
-	// IR_i (= conv_in[i+1])에 대응하는 출력은 out[i+2]
-	arm_conv_f32(conv_in, CONV_IN_LEN, conv_kernel, CONV_KERNEL_LEN, conv_out);
-
-	// 시간축도 CMSIS-DSP arm_conv_f32 적용:
-	// hist[i] = [x[t-2], x[t-1], x[t]], h = [7, 2, 1] -> temp_out[2] = 1*x[t-2] + 2*x[t-1] + 7*x[t]
+	const STConv2D_Config_t cfg = STConv2D_DefaultConfig();
+	STConv2D_Update(&cfg, conv_in, LINE_N_SENSORS, g_conv_hist, &g_conv_hist_primed, conv_out_i16);
 	for (uint8_t i = 0; i < LINE_N_SENSORS; i++) {
-		const float32_t cur = conv_out[i + 2];
-		if (!g_conv_hist_primed) {
-			g_conv_hist[i][0] = cur;
-			g_conv_hist[i][1] = cur;
-			g_conv_hist[i][2] = cur;
-		} else {
-			g_conv_hist[i][0] = g_conv_hist[i][1];
-			g_conv_hist[i][1] = g_conv_hist[i][2];
-			g_conv_hist[i][2] = cur;
-		}
-		arm_conv_f32(g_conv_hist[i], CONV_TEMP_LEN, conv_time_kernel, CONV_TEMP_LEN, temp_out);
-		d->conv[i] = (int16_t) (temp_out[CONV_TEMP_LEN - 1] * 0.1f);
+		d->conv[i] = conv_out_i16[i];
 	}
-	g_conv_hist_primed = 1;
 }
 
 void TIM7_IRQ_Handler() {
