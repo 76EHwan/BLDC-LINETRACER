@@ -34,11 +34,16 @@ typedef struct {
 	float_t target_curve_gain; // [-] drive 3/4: target_pos x this inside curve segments (1 = unchanged)
 	float_t slalom_ratio;      // [-] drive 4: 45 deg segments at base + (max - base) x this
 	float_t brake_margin_m;    // [m] 감속 여유 거리: 직선 가속 후 다음 곡선 진입 전 미리 감속 완료할 마진
+	float_t bulge_lat_acc;     // [m/s2] drive 4: Bulge 곡선 숏컷 횡가속도 제한 (v = sqrt(bulge_lat_acc * r_min))
+	float_t corner45_max_mps;  // [m/s] drive 4: 단독 45도 대원호 숏컷(Corner45) 최대 속도 상한
+	float_t omega_add_mps;     // [m/s] drive 4: 오메가 헤어핀 원호 속도 오프셋 (Fourth_Corner_Mps + this)
+	float_t wave_add_mps;      // [m/s] drive 4: 180도 웨이브 숏컷 속도 오프셋 (Fourth_Corner_Mps + this)
 } DriveParam_t;
 #define DRIVE_HAS_SLALOM_RATIO 1
 #define DRIVE_HAS_CASCADE_STEER 1
 #define DRIVE_HAS_TARGET_CURVE_GAIN 1
 #define DRIVE_HAS_BRAKE_MARGIN 1
+#define DRIVE_HAS_CURVE_CUT_SPEED 1
 
 extern DriveParam_t driveData;
 

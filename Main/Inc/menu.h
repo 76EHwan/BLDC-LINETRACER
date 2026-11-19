@@ -51,5 +51,9 @@ void Update_Yaw_KI(void);
 void Update_Target_Curve_Gain(void);
 void Update_Slalom_Ratio(void);
 void Update_Brake_Margin(void);
+void Update_Bulge_Lat_Acc(void);
+void Update_Corner45_Max_Mps(void);
+void Update_Omega_Add_Mps(void);
+void Update_Wave_Add_Mps(void);
 
 #endif /* MENU_H_ */

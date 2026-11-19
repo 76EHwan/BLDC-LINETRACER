@@ -278,6 +278,10 @@ void Save_MarkerLog_To_SD(uint8_t slot_number) {
 	len += sprintf(log_buf + len, "target curve gain = %.2f\n", driveData.target_curve_gain);
 	len += sprintf(log_buf + len, "slalom ratio = %.2f\n", driveData.slalom_ratio);
 	len += sprintf(log_buf + len, "brake margin = %.2f\n", driveData.brake_margin_m);
+	len += sprintf(log_buf + len, "bulge lat acc = %.2f\n", driveData.bulge_lat_acc);
+	len += sprintf(log_buf + len, "corner45 max mps = %.2f\n", driveData.corner45_max_mps);
+	len += sprintf(log_buf + len, "omega add mps = %.2f\n", driveData.omega_add_mps);
+	len += sprintf(log_buf + len, "wave add mps = %.2f\n", driveData.wave_add_mps);
 
 	// 구분선 및 마커 헤더 기록
 	len += sprintf(log_buf + len, "===================\n");

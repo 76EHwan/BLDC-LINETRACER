@@ -31,6 +31,10 @@ DriveParam_t driveData = {
 	.target_curve_gain = 1.25f,
 	.slalom_ratio = 0.03f,
 	.brake_margin_m = 0.12f,
+	.bulge_lat_acc = 6.50f,
+	.corner45_max_mps = 3.30f,
+	.omega_add_mps = 0.04f,
+	.wave_add_mps = 0.25f,
 };
 // @formatter:on
 
@@ -132,6 +136,10 @@ void Drive_AutoHeal_Reset_Anchor(void) {
 		driveData.target_shift_val = g_heal_anchor.target_shift_val;
 		driveData.target_curve_gain = g_heal_anchor.target_curve_gain;
 		driveData.slalom_ratio = g_heal_anchor.slalom_ratio;
+		driveData.bulge_lat_acc = g_heal_anchor.bulge_lat_acc;
+		driveData.corner45_max_mps = g_heal_anchor.corner45_max_mps;
+		driveData.omega_add_mps = g_heal_anchor.omega_add_mps;
+		driveData.wave_add_mps = g_heal_anchor.wave_add_mps;
 		driveData.yaw_gain_p = g_heal_anchor.yaw_gain_p;
 		steer_pid.Kp = driveData.steer_gain_p;
 		steer_pid.Kd = driveData.steer_gain_d;
@@ -591,9 +599,231 @@ typedef struct {
 static CrossMarkerLog_t ref_log[CROSS_LOG_MAX];
 static uint16_t ref_log_count = 0;
 static SegmentPlan_t seg_plan[CROSS_LOG_MAX];
+static float ref_log_cum_dist[CROSS_LOG_MAX];
+static float ref_pose_x[CROSS_LOG_MAX];
+static float ref_pose_y[CROSS_LOG_MAX];
+static float ref_pose_th[CROSS_LOG_MAX];
 
 #define BRAKE_MARGIN_M 0.06f
 #define ACCEL_START_MARGIN_M 0.25f // 코너 탈출 직후 차체 직진 정렬 완료 후 가속 개시 마진 (기존 0.08m -> 0.25m)
+
+// 각도 차이를 [-180, 180] 범위로 정규화 [deg] (시뮬레이터 while-yield 매크로 회피를 위해 for 사용)
+__STATIC_INLINE float Wrap_Angle_Deg(float deg) {
+	for (; deg > 180.0f; deg -= 360.0f) {}
+	for (; deg < -180.0f; deg += 360.0f) {}
+	return deg;
+}
+
+// ZETIN 45도 규칙 기반 세그먼트 회전각 스냅 (직선 노이즈 제거, 커브 45°*k 스냅)
+static float Snap_Zetin_Segment_Yaw(float dy_raw, float seg_d) {
+	if (fabsf(dy_raw) < 22.0f || seg_d <= 0.005f) {
+		return 0.0f;
+	}
+	const float arc45 = 0.25f * (45.0f * PI / 180.0f);
+	float k_est = 0.5f * (fabsf(dy_raw) / 45.0f) + 0.5f * (seg_d / arc45);
+	int k = (int)roundf(k_est);
+	if (k < 1) k = 1;
+	if (k > 6) k = 6;
+	return ((dy_raw > 0.0f) ? 1.0f : -1.0f) * (float)k * 45.0f;
+}
+
+// 1차 주행 ref_log로부터 누적 거리 및 2D 참조 포즈(x, y, th) 구축
+static void Build_Ref_Log_Geometry(void) {
+	float cum = 0.0f;
+	for (uint16_t i = 0; i < ref_log_count; i++) {
+		cum += ref_log[i].dist_from_prev_m;
+		ref_log_cum_dist[i] = cum;
+	}
+	if (ref_log_count == 0) return;
+	float px = 0.0f, py = 0.0f, pth = 0.0f;
+	ref_pose_x[0] = 0.0f;
+	ref_pose_y[0] = 0.0f;
+	ref_pose_th[0] = 0.0f;
+	for (uint16_t i = 1; i < ref_log_count; i++) {
+		float d = ref_log[i].dist_from_prev_m;
+		float dyaw = Snap_Zetin_Segment_Yaw(ref_log[i].yaw_angle, d);
+		float mid_rad = (pth + 0.5f * dyaw) * (PI / 180.0f);
+		px += d * cosf(mid_rad);
+		py += d * sinf(mid_rad);
+		pth = Wrap_Angle_Deg(pth + dyaw);
+		ref_pose_x[i] = px;
+		ref_pose_y[i] = py;
+		ref_pose_th[i] = pth;
+	}
+}
+
+// STOP 마커 처리 및 코스 중간 인접 트랙 스침으로 인한 허위 STOP 방어
+// 반환: 0 = 계속 진행, 1 = 완주 정지, 2 = 무시(return 0)
+static uint8_t Handle_Stop_Marker_Common(uint16_t idx, float eff_odom, CrossEvent_t *cross) {
+	float total_course_dist = (ref_log_count > 0) ? ref_log_cum_dist[ref_log_count - 1] : 50.0f;
+	if (g_total_STOP == 0 || (eff_odom >= total_course_dist - 2.0f && idx + 3 >= ref_log_count)) {
+		LSM6DS3_Reset_Yaw();
+		g_total_STOP++;
+		if (g_total_STOP >= 2) return 1;
+	} else {
+		if (idx < ref_log_count && ref_log[idx].type != CROSS_STOP) {
+			*cross = ref_log[idx].type;
+			if (g_cross_log_count > 0) {
+				g_cross_log[(g_cross_log_count - 1) % CROSS_LOG_MAX].type = *cross;
+			}
+		} else {
+			return 2;
+		}
+	}
+	return 0;
+}
+
+// 최근 10개 마커 시퀀스 상관 + 2D 벡터/방향 유사도 기반 재동기화 (교차로 없는 구간 포함)
+static void Resync_Marker_Sequence(CrossEvent_t cross, uint16_t *idx, uint8_t *mismatch,
+                                   float *odom_offset_m, float imu_grid_bias, float eff_odom) {
+	uint16_t n_cur = g_cross_log_count;
+	if (n_cur > CROSS_LOG_MAX) n_cur = CROSS_LOG_MAX;
+	if (n_cur < 3 || ref_log_count < 3) {
+		int best_k = -1;
+		float min_dist_err = 0.45f;
+		int search_start = (int)(*idx) - 2;
+		if (search_start < 0) search_start = 0;
+		int search_end = (int)(*idx) + 8;
+		if (search_end > (int)ref_log_count) search_end = (int)ref_log_count;
+		for (int k = search_start; k < search_end; k++) {
+			if (ref_log[k].type == cross) {
+				float d_err = fabsf(eff_odom - ref_log_cum_dist[k]);
+				if (d_err < min_dist_err) {
+					min_dist_err = d_err;
+					best_k = k;
+				}
+			}
+		}
+		if (best_k >= 0) {
+			*idx = (uint16_t)best_k;
+			*mismatch = 0;
+		}
+		return;
+	}
+
+	uint16_t W = (n_cur < 10) ? n_cur : 10;
+	float cur_yaw = Wrap_Angle_Deg(imu_data.Yaw_Angle - imu_grid_bias);
+
+	// 최근 W개 마커의 현재 헤딩 기준 역방향 상대 2D 벡터 (cx, cy) 적분
+	float cx = 0.0f, cy = 0.0f, cth = 0.0f;
+	for (uint16_t w = 0; w + 1 < W; w++) {
+		uint16_t c = n_cur - 1 - w;
+		float d = g_cross_log[c].dist_from_prev_m;
+		float y = g_cross_log[c].yaw_angle;
+		float mid = (cth - 0.5f * y) * (PI / 180.0f);
+		cx -= d * cosf(mid);
+		cy -= d * sinf(mid);
+		cth = Wrap_Angle_Deg(cth - y);
+	}
+
+	int search_start = (int)(*idx) - 6;
+	if (search_start < 1) search_start = 1;
+	int search_end = (int)(*idx) + 28;
+	if (search_end > (int)ref_log_count) search_end = (int)ref_log_count;
+
+	int best_k = -1;
+	float best_score = -1e9f;
+	float second_score = -1e9f;
+
+	for (int k = search_start; k < search_end; k++) {
+		if (ref_log[k].type != cross) continue;
+		if (fabsf(eff_odom - ref_log_cum_dist[k]) > 2.50f) continue;
+		if (fabsf(Wrap_Angle_Deg(cur_yaw - ref_pose_th[k])) > 45.0f) continue;
+
+		float score = 0.0f;
+		int r = k;
+		for (uint16_t w = 0; w < W; w++) {
+			if (r < 0) {
+				score -= 1.0f;
+				continue;
+			}
+			uint16_t c = n_cur - 1 - w;
+			CrossEvent_t ctype = g_cross_log[c].type;
+			float cd = g_cross_log[c].dist_from_prev_m;
+			float cyaw = g_cross_log[c].yaw_angle;
+
+			if (ref_log[r].type == ctype) {
+				float dd = fabsf(cd - ref_log[r].dist_from_prev_m);
+				float dy = fabsf(Wrap_Angle_Deg(cyaw - ref_log[r].yaw_angle));
+				float d_sim = 1.0f - Clamp_F32(dd / 0.35f, 0.0f, 1.0f);
+				float y_sim = 1.0f - Clamp_F32(dy / 40.0f, 0.0f, 1.0f);
+				score += 1.0f + d_sim + y_sim;
+				r--;
+			} else if (r >= 2 && ref_log[r - 1].type == ctype) {
+				float md = ref_log[r].dist_from_prev_m + ref_log[r - 1].dist_from_prev_m;
+				float my = Wrap_Angle_Deg(ref_log[r].yaw_angle + ref_log[r - 1].yaw_angle);
+				float dd = fabsf(cd - md);
+				float dy = fabsf(Wrap_Angle_Deg(cyaw - my));
+				float d_sim = 1.0f - Clamp_F32(dd / 0.45f, 0.0f, 1.0f);
+				float y_sim = 1.0f - Clamp_F32(dy / 45.0f, 0.0f, 1.0f);
+				score += 0.6f + d_sim + y_sim;
+				r -= 2;
+			} else if (r >= 3 && ref_log[r - 2].type == ctype) {
+				score += 0.3f;
+				r -= 3;
+			} else {
+				score -= 1.0f;
+				r--;
+			}
+		}
+
+		int r_start = r + 1;
+		if (r_start < 0) r_start = 0;
+		float dx_w = ref_pose_x[r_start] - ref_pose_x[k];
+		float dy_w = ref_pose_y[r_start] - ref_pose_y[k];
+		float th_rad = -ref_pose_th[k] * (PI / 180.0f);
+		float rx_loc = dx_w * cosf(th_rad) - dy_w * sinf(th_rad);
+		float ry_loc = dx_w * sinf(th_rad) + dy_w * cosf(th_rad);
+		float vec_err = hypotf(cx - rx_loc, cy - ry_loc);
+		score += 2.0f * (1.0f - Clamp_F32(vec_err / 0.60f, 0.0f, 1.0f));
+		score -= 0.20f * fabsf(eff_odom - ref_log_cum_dist[k]);
+
+		if (score > best_score) {
+			second_score = best_score;
+			best_score = score;
+			best_k = k;
+		} else if (score > second_score) {
+			second_score = score;
+		}
+	}
+
+	if (best_k >= 0 && best_score >= (float)W * 1.45f &&
+	    (second_score < -1e8f || (best_score - second_score) >= 0.70f)) {
+		*idx = (uint16_t)best_k;
+		*mismatch = 0;
+		*odom_offset_m = ref_log_cum_dist[best_k] - g_total_odom_m;
+	}
+}
+
+// 교차로(CROSS_CROSS) 우선 재동기화 + 시퀀스/벡터 기반 복구
+static void Resync_Marker_Common(CrossEvent_t cross, uint16_t *idx, uint8_t *mismatch,
+                                 float *odom_offset_m, float imu_grid_bias, float eff_odom) {
+	if (cross == CROSS_CROSS && (*mismatch || *idx >= ref_log_count || ref_log[*idx].type != CROSS_CROSS)) {
+		float cur_yaw = Wrap_Angle_Deg(imu_data.Yaw_Angle - imu_grid_bias);
+		int best_c = -1;
+		float min_c_err = 9999.0f;
+		int c_start = (int)(*idx) - 4;
+		if (c_start < 0) c_start = 0;
+		for (uint16_t i = (uint16_t)c_start; i < ref_log_count; i++) {
+			if (ref_log[i].type == CROSS_CROSS) {
+				if (fabsf(Wrap_Angle_Deg(cur_yaw - ref_pose_th[i])) > 45.0f) continue;
+				float d_err = fabsf(eff_odom - ref_log_cum_dist[i]);
+				if (d_err < min_c_err) {
+					min_c_err = d_err;
+					best_c = (int)i;
+				}
+			}
+		}
+		if (best_c >= 0) {
+			*idx = (uint16_t)best_c;
+			*mismatch = 0;
+		}
+	}
+
+	if (*mismatch) {
+		Resync_Marker_Sequence(cross, idx, mismatch, odom_offset_m, imu_grid_bias, eff_odom);
+	}
+}
 
 typedef struct {
 	uint16_t idx;
@@ -602,6 +832,8 @@ typedef struct {
 	uint8_t braking_started;
 	float marker_start_dist;
 	float seg_len_predicted;
+	float imu_grid_bias;
+	float odom_offset_m;
 } DriveSecondState_t;
 
 __STATIC_INLINE void Build_Segment_Plan(void) {
@@ -687,6 +919,8 @@ __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
 		Build_Segment_Plan();
 	}
 
+	Build_Ref_Log_Geometry();
+
 	Drive_IMU_Auto_Calibrate();
 
 	if (driveData.fan_en) {
@@ -741,31 +975,22 @@ __STATIC_INLINE uint8_t Drive_Second_Init_Sequence(void) {
 
 __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 		DriveSecondState_t *state) {
-	if (cross == CROSS_STOP) {
-		LSM6DS3_Reset_Yaw();
-		g_total_STOP++;
-		if (g_total_STOP >= 2)
-			return 1;
-	} else {
-		if (cross == CROSS_LEFT)
-			g_total_L++;
-		else if (cross == CROSS_RIGHT)
-			g_total_R++;
-		else if (cross == CROSS_CROSS)
-			g_total_C++;
-	}
+	float eff_odom = g_total_odom_m + state->odom_offset_m;
 
-	if (state->mismatch) {
-		if (cross == CROSS_CROSS) {
-			for (uint16_t i = state->idx; i < ref_log_count; i++) {
-				if (ref_log[i].type == CROSS_CROSS) {
-					state->idx = i;
-					state->mismatch = 0;
-					break;
-				}
-			}
-		}
+	if (cross == CROSS_STOP) {
+		uint8_t stop_res = Handle_Stop_Marker_Common(state->idx, eff_odom, &cross);
+		if (stop_res == 1) return 1;
+		if (stop_res == 2) return 0;
 	}
+	if (cross == CROSS_LEFT)
+		g_total_L++;
+	else if (cross == CROSS_RIGHT)
+		g_total_R++;
+	else if (cross == CROSS_CROSS)
+		g_total_C++;
+
+	Resync_Marker_Common(cross, &state->idx, &state->mismatch,
+	                     &state->odom_offset_m, state->imu_grid_bias, eff_odom);
 
 	if (!state->mismatch) {
 		if (state->idx >= ref_log_count || ref_log[state->idx].type != cross) {
@@ -808,6 +1033,9 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Second(CrossEvent_t cross,
 	state->braking_started = 0;
 
 	if (!state->mismatch) {
+		if (state->idx < ref_log_count) {
+			state->odom_offset_m = ref_log_cum_dist[state->idx] - g_total_odom_m;
+		}
 		state->idx++;
 	}
 
@@ -829,8 +1057,11 @@ __STATIC_INLINE void Check_Distance_And_Brake(DriveSecondState_t *state) {
 		float_t brake_dist = (driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M;
 		if (v1 > v2) {
 			const float_t tau_sys = (g_target_base_mps > v1 + 0.30f && v1 < 4.0f) ? 0.120f : 0.060f;
-			float_t v_eff = (g_target_base_mps > v1) ? (v1 + driveData.accel * 0.055f) : v1;
-			if (v_eff > g_target_base_mps) v_eff = g_target_base_mps;
+			float_t v_eff = v1;
+			if (g_target_base_mps > v1) {
+				v_eff = v1 + driveData.accel * 0.055f;
+				if (v_eff > g_target_base_mps) v_eff = g_target_base_mps;
+			}
 			brake_dist += (v_eff * v_eff - v2 * v2) / (2.0f * driveData.decel);
 			brake_dist += v_eff * tau_sys;
 			/* linear tau_sys=0.085f replaces excess mid-speed penalty */
@@ -946,6 +1177,8 @@ typedef struct {
 	float seg_len_predicted;
 	float target_mps; // 현재 가속 구간의 목표 최대 속도
 	float end_mps;    // 구간 끝(다음 구간 진입)에서 맞춰야 할 속도
+	float imu_grid_bias;
+	float odom_offset_m;
 } DriveThirdState_t;
 
 // 3차 주행용 구간 계획 빌드 (마커 페어링 기반 직선/곡선 판별 및 45도 곡선 가속)
@@ -1073,6 +1306,8 @@ __STATIC_INLINE uint8_t Drive_Third_Init_Sequence(void) {
 		Build_Segment_Plan_Third();
 	}
 
+	Build_Ref_Log_Geometry();
+
 	Drive_IMU_Auto_Calibrate();
 
 	if (driveData.fan_en) {
@@ -1125,27 +1360,19 @@ __STATIC_INLINE uint8_t Drive_Third_Init_Sequence(void) {
 
 // 3차 주행 마커 이벤트 및 가속 구간 계산 (사용자 원본 4차 로직)
 __STATIC_INLINE uint8_t Process_Marker_Event_Third(CrossEvent_t cross, DriveThirdState_t *state) {
-	if (cross == CROSS_STOP) {
-		LSM6DS3_Reset_Yaw();
-		g_total_STOP++;
-		if (g_total_STOP >= 2) return 1;
-	} else {
-		if (cross == CROSS_LEFT) g_total_L++;
-		else if (cross == CROSS_RIGHT) g_total_R++;
-		else if (cross == CROSS_CROSS) g_total_C++;
-	}
+	float eff_odom = g_total_odom_m + state->odom_offset_m;
 
-	if (state->mismatch) {
-		if (cross == CROSS_CROSS) {
-			for (uint16_t i = state->idx; i < ref_log_count; i++) {
-				if (ref_log[i].type == CROSS_CROSS) {
-					state->idx = i;
-					state->mismatch = 0;
-					break;
-				}
-			}
-		}
+	if (cross == CROSS_STOP) {
+		uint8_t stop_res = Handle_Stop_Marker_Common(state->idx, eff_odom, &cross);
+		if (stop_res == 1) return 1;
+		if (stop_res == 2) return 0;
 	}
+	if (cross == CROSS_LEFT) g_total_L++;
+	else if (cross == CROSS_RIGHT) g_total_R++;
+	else if (cross == CROSS_CROSS) g_total_C++;
+
+	Resync_Marker_Common(cross, &state->idx, &state->mismatch,
+	                     &state->odom_offset_m, state->imu_grid_bias, eff_odom);
 
 	if (!state->mismatch) {
 		if (state->idx >= ref_log_count || ref_log[state->idx].type != cross) {
@@ -1217,7 +1444,12 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Third(CrossEvent_t cross, DriveThir
 	state->marker_start_dist = g_odom_distance_m;
 	state->braking_started = 0;
 
-	if (!state->mismatch) state->idx++;
+	if (!state->mismatch) {
+		if (state->idx < ref_log_count) {
+			state->odom_offset_m = ref_log_cum_dist[state->idx] - g_total_odom_m;
+		}
+		state->idx++;
+	}
 
 	return 0;
 }
@@ -1238,8 +1470,11 @@ __STATIC_INLINE void Check_Distance_And_Brake_Third(DriveThirdState_t *state) {
 		float_t brake_dist = (driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M;
 		if (v1 > v2) {
 			const float_t tau_sys = (g_target_base_mps > v1 + 0.30f && v1 < 4.0f) ? 0.120f : 0.060f;
-			float_t v_eff = (g_target_base_mps > v1) ? (v1 + driveData.accel * 0.055f) : v1;
-			if (v_eff > g_target_base_mps) v_eff = g_target_base_mps;
+			float_t v_eff = v1;
+			if (g_target_base_mps > v1) {
+				v_eff = v1 + driveData.accel * 0.055f;
+				if (v_eff > g_target_base_mps) v_eff = g_target_base_mps;
+			}
 			brake_dist += (v_eff * v_eff - v2 * v2) / (2.0f * driveData.decel);
 			brake_dist += v_eff * tau_sys;
 			/* linear tau_sys=0.085f replaces excess mid-speed penalty */
@@ -1526,16 +1761,13 @@ typedef struct {
 } SegmentPlanFourth_t;
 
 static SegmentPlanFourth_t seg_plan_4[CROSS_LOG_MAX];
-static float ref_log_cum_dist[CROSS_LOG_MAX];
-static float ref_pose_x[CROSS_LOG_MAX];
-static float ref_pose_y[CROSS_LOG_MAX];
-static float ref_pose_th[CROSS_LOG_MAX];
 
 typedef struct {
 	uint16_t idx;
 	uint8_t mismatch;
 	uint8_t accel_active;
 	uint8_t braking_started;
+	uint8_t omega_braking_started;
 	uint8_t zone_start_from_deep;
 	float marker_start_dist;
 	float corridor_start_dist;
@@ -1648,13 +1880,6 @@ __STATIC_INLINE float Cut_Seg_Dyr_Rad(uint16_t seg, uint16_t first_curve_idx, ui
 	return 0.0f;
 }
 
-// 각도 차이를 [-180, 180] 범위로 정규화 [deg]
-__STATIC_INLINE float Wrap_Angle_Deg(float deg) {
-	while (deg > 180.0f) deg -= 360.0f;
-	while (deg < -180.0f) deg += 360.0f;
-	return deg;
-}
-
 // Straight-Cut 시작점(from_idx)부터 목표 마커(to_idx)까지의 투영 누적 거리 산출 [m]
 __STATIC_INLINE float Cut_Milestone_Dist(uint16_t from_idx, uint16_t to_idx) {
 	float dist = 0.0f;
@@ -1746,7 +1971,8 @@ static uint8_t Cut_Eval_Candidate(
 			corner_idx++;
 		}
 		while (corner_idx + 1 < ref_log_count) {
-			if (ref_log[corner_idx].type == CROSS_STOP || ref_log[corner_idx].type == CROSS_CROSS) {
+			if (ref_log[corner_idx].type == CROSS_STOP ||
+			    (ref_log[corner_idx].type == CROSS_CROSS && exit_dist < 0.25f)) {
 				break;
 			}
 			float next_cy = fabsf(ref_log[corner_idx + 1].yaw_angle);
@@ -1755,7 +1981,8 @@ static uint8_t Cut_Eval_Candidate(
 			}
 			exit_dist += ref_log[corner_idx + 1].dist_from_prev_m;
 			corner_idx++;
-			if (ref_log[corner_idx].type == CROSS_STOP || ref_log[corner_idx].type == CROSS_CROSS) {
+			if (ref_log[corner_idx].type == CROSS_STOP ||
+			    (ref_log[corner_idx].type == CROSS_CROSS && exit_dist < 0.25f)) {
 				break;
 			}
 		}
@@ -1889,7 +2116,8 @@ static uint8_t Cut_Eval_Candidate(
 		if (allow_wide_bulge && max_dev > 0.360f && r_min < 0.58f) {
 			dev_ok = 0;
 		} else {
-			bulge_mps = sqrtf(6.5f * r_min);
+			float b_lat = (driveData.bulge_lat_acc > 0.5f) ? driveData.bulge_lat_acc : 6.50f;
+			bulge_mps = sqrtf(b_lat * r_min);
 			if (bulge_mps < driveData.base_mps) bulge_mps = driveData.base_mps;
 			if (bulge_mps > driveData.max_mps) bulge_mps = driveData.max_mps;
 			float bx = 0.0f, by = 0.0f, bth = 0.0f, max_b_err = 0.0f, b_cum = 0.0f;
@@ -2171,7 +2399,7 @@ static uint8_t Omega_Eval_Candidate(
 	if (s_m1 > s_m1_max) s_m1 = s_m1_max;
 
 	float arc_mps = sqrtf(13.0f * r_arc);
-	float max_corner = Fourth_Corner_Mps() + 0.04f;
+	float max_corner = Fourth_Corner_Mps() + driveData.omega_add_mps;
 	if (arc_mps > max_corner) arc_mps = max_corner;
 	if (arc_mps < 1.30f) arc_mps = 1.30f;
 
@@ -2243,7 +2471,8 @@ static void Wave180_Apply_Plan(uint16_t start_idx, uint8_t count, int8_t first_d
 	const float r_arc = 0.3125f;
 	const float alpha_deg = 53.1301f;
 	const float half_len = 0.595f;
-	float wave_mps = Fourth_Corner_Mps() + 0.25f;
+	float wave_mps = Fourth_Corner_Mps() + driveData.wave_add_mps;
+	if (wave_mps < 1.00f) wave_mps = 1.00f;
 	if (wave_mps > driveData.max_mps) wave_mps = driveData.max_mps;
 
 	uint16_t end_idx = start_idx + count;
@@ -2337,23 +2566,31 @@ static void Corner90_Apply_Plan(uint16_t start_idx, uint16_t corner_idx, uint16_
 #endif
 // 고립된 단독 직-45-직 코너: 진입/탈출 직선을 활용해 선회 반경 R_arc를 확대(인코스 대원호 주행)
 static uint16_t Corner45_Try_Apply(uint16_t start_idx, uint16_t curve_idx, float entry_dist, float y1, uint8_t is_chained) {
-	if (entry_dist < (is_chained ? 0.22f : 0.16f) || fabsf(y1) < 28.0f || fabsf(y1) > 62.0f || curve_idx + 2 >= ref_log_count) {
+	if (entry_dist < (is_chained ? 0.22f : 0.16f) || entry_dist > 1.05f ||
+	    fabsf(y1) < 28.0f || fabsf(y1) > 62.0f || curve_idx + 2 >= ref_log_count) {
 		return 0;
 	}
 	uint16_t land_idx = curve_idx + 1;
 	uint16_t corner_idx = land_idx;
 	float exit_dist = 0.0f;
+	float first_cross_dist = 999.0f;
 	while (corner_idx + 1 < ref_log_count) {
-		if (ref_log[corner_idx].type == CROSS_STOP || ref_log[corner_idx].type == CROSS_CROSS) {
+		if (ref_log[corner_idx].type == CROSS_STOP) {
 			break;
+		}
+		if (ref_log[corner_idx].type == CROSS_CROSS && exit_dist < first_cross_dist) {
+			first_cross_dist = exit_dist;
 		}
 		if (fabsf(ref_log[corner_idx + 1].yaw_angle) >= 18.0f) {
 			break;
 		}
 		exit_dist += ref_log[corner_idx + 1].dist_from_prev_m;
 		corner_idx++;
-		if (ref_log[corner_idx].type == CROSS_STOP || ref_log[corner_idx].type == CROSS_CROSS) {
+		if (ref_log[corner_idx].type == CROSS_STOP) {
 			break;
+		}
+		if (ref_log[corner_idx].type == CROSS_CROSS && exit_dist < first_cross_dist) {
+			first_cross_dist = exit_dist;
 		}
 	}
 	if (exit_dist < 0.16f || corner_idx >= ref_log_count) {
@@ -2365,6 +2602,10 @@ static uint16_t Corner45_Try_Apply(uint16_t start_idx, uint16_t curve_idx, float
 	}
 	float lead = min_leg;
 	if (lead > (is_chained ? 0.25f : 0.30f)) lead = is_chained ? 0.25f : 0.30f;
+	if (first_cross_dist < 900.0f && lead > first_cross_dist - 0.40f) {
+		lead = first_cross_dist - 0.40f;
+		if (lead < 0.08f) return 0;
+	}
 	if (!is_chained && corner_idx + 1 < ref_log_count && exit_dist >= 0.36f) {
 		float ny = fabsf(ref_log[corner_idx + 1].yaw_angle);
 		if (ny >= 28.0f && ny <= 62.0f && lead > exit_dist * 0.42f) {
@@ -2383,7 +2624,9 @@ static uint16_t Corner45_Try_Apply(uint16_t start_idx, uint16_t curve_idx, float
 	float arc_mps = sqrtf(8.5f * r_arc);
 	float min_c = Fourth_Corner_Mps() + 0.15f;
 	if (arc_mps < min_c) arc_mps = min_c;
-	if (arc_mps > 3.30f) arc_mps = 3.30f;
+	float c45_cap = (driveData.corner45_max_mps > 0.1f) ? driveData.corner45_max_mps : 3.30f;
+	if (arc_mps > c45_cap) arc_mps = c45_cap;
+	if (arc_mps < 1.00f) arc_mps = 1.00f;
 	if (arc_mps > driveData.max_mps) arc_mps = driveData.max_mps;
 
 	int8_t odir = (y1 > 0.0f) ? -1 : 1; // +45(L) -> -1, -45(R) -> +1
@@ -2973,27 +3216,7 @@ __STATIC_INLINE uint8_t Drive_Fourth_Init_Sequence(void) {
 		Build_Segment_Plan_Fourth();
 	}
 
-	float cum = 0.0f;
-	for (uint16_t i = 0; i < ref_log_count; i++) {
-		cum += ref_log[i].dist_from_prev_m;
-		ref_log_cum_dist[i] = cum;
-	}
-	{
-		float px = 0.0f, py = 0.0f, pth = 0.0f;
-		ref_pose_x[0] = 0.0f;
-		ref_pose_y[0] = 0.0f;
-		ref_pose_th[0] = 0.0f;
-		for (uint16_t i = 1; i < ref_log_count; i++) {
-			float dyaw = ref_log[i].yaw_angle;
-			float mid_rad = (pth + 0.5f * dyaw) * (PI / 180.0f);
-			px += ref_log[i].dist_from_prev_m * cosf(mid_rad);
-			py += ref_log[i].dist_from_prev_m * sinf(mid_rad);
-			pth = Wrap_Angle_Deg(pth + dyaw);
-			ref_pose_x[i] = px;
-			ref_pose_y[i] = py;
-			ref_pose_th[i] = pth;
-		}
-	}
+	Build_Ref_Log_Geometry();
 
 	Drive_IMU_Auto_Calibrate();
 
@@ -3045,125 +3268,57 @@ __STATIC_INLINE uint8_t Drive_Fourth_Init_Sequence(void) {
 	return 1;
 }
 
-// 최근 10개 마커 시퀀스 상관 + 2D 벡터/방향 유사도 기반 재동기화 (교차로 없는 구간 포함)
-static void Resync_Marker_Sequence_Fourth(CrossEvent_t cross, DriveFourthState_t *state, float eff_odom) {
-	uint16_t n_cur = g_cross_log_count;
-	if (n_cur > CROSS_LOG_MAX) n_cur = CROSS_LOG_MAX;
-	if (n_cur < 3 || ref_log_count < 3) {
-		int best_k = -1;
-		float min_dist_err = 0.45f;
-		int search_start = (int)state->idx - 2;
-		if (search_start < 0) search_start = 0;
-		int search_end = (int)state->idx + 8;
-		if (search_end > (int)ref_log_count) search_end = (int)ref_log_count;
-		for (int k = search_start; k < search_end; k++) {
-			if (ref_log[k].type == cross) {
-				float d_err = fabsf(eff_odom - ref_log_cum_dist[k]);
-				if (d_err < min_dist_err) {
-					min_dist_err = d_err;
-					best_k = k;
-				}
+// 4차 주행 가속 구간 길이 및 진입/탈출 목표 속도 산출 (컷/크로스 경계 분할)
+static void Fourth_Plan_Accel_Segment(uint16_t start_idx, float *out_dist, float *out_target_mps, float *out_end_mps) {
+	const uint8_t type = seg_plan_4[start_idx].accel_type;
+	float total_dist = 0.0f;
+	uint8_t next_type = 0;
+	uint16_t next_idx = ref_log_count;
+
+	for (uint16_t i = start_idx; i < ref_log_count; i++) {
+		if (seg_plan_4[i].accel_type != type ||
+		    (i > start_idx && seg_plan_4[i].is_straight_cut && seg_plan_4[i].cut_start_idx == i)) {
+			next_type = seg_plan_4[i].accel_type;
+			next_idx = i;
+			break;
+		}
+		if (i + 1 < ref_log_count) {
+			total_dist += ref_log[i + 1].dist_from_prev_m;
+		} else {
+			break;
+		}
+	}
+
+	float target_mps = Segment_Mps_Fourth(type);
+	float end_mps = Segment_Mps_Fourth(next_type);
+	if (type == 1 && next_type == 0) {
+		float min_c = Fourth_Corner_Mps();
+		if (total_dist < 0.60f) {
+			target_mps = min_c;
+		} else if (total_dist < 1.35f) {
+			float short_cap = min_c + (total_dist - 0.60f) * 2.0f;
+			if (short_cap < target_mps) {
+				target_mps = short_cap;
 			}
 		}
-		if (best_k >= 0) {
-			state->idx = (uint16_t)best_k;
-			state->mismatch = 0;
-		}
-		return;
+	}
+	if (next_idx < ref_log_count && seg_plan_4[next_idx].is_omega_cut) {
+		float v_arc = seg_plan_4[next_idx].omega_arc_mps;
+		float d_in = seg_plan_4[next_idx].cut_lock_dist + seg_plan_4[next_idx].omega_tan1_len;
+		float margin_b = ((driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M) + 0.10f;
+		float d_eff = d_in - margin_b - v_arc * 0.06f;
+		if (d_eff < 0.0f) d_eff = 0.0f;
+		float v_cap = sqrtf(v_arc * v_arc + 2.0f * (driveData.decel * 0.78f) * d_eff);
+		if (v_cap < end_mps) end_mps = v_cap;
 	}
 
-	uint16_t W = (n_cur < 10) ? n_cur : 10;
-	float cur_yaw = Wrap_Angle_Deg(imu_data.Yaw_Angle - state->imu_grid_bias);
+	float min_end = Fourth_Corner_Mps();
+	if (end_mps < min_end) end_mps = min_end;
+	if (end_mps > target_mps) end_mps = target_mps;
 
-	// 최근 W개 마커의 현재 헤딩 기준 역방향 상대 2D 벡터 (cx, cy) 적분
-	float cx = 0.0f, cy = 0.0f, cth = 0.0f;
-	for (uint16_t w = 0; w + 1 < W; w++) {
-		uint16_t c = n_cur - 1 - w;
-		float d = g_cross_log[c].dist_from_prev_m;
-		float y = g_cross_log[c].yaw_angle;
-		float mid = (cth - 0.5f * y) * (PI / 180.0f);
-		cx -= d * cosf(mid);
-		cy -= d * sinf(mid);
-		cth = Wrap_Angle_Deg(cth - y);
-	}
-
-	int search_start = (int)state->idx - 6;
-	if (search_start < 1) search_start = 1;
-	int search_end = (int)state->idx + 28;
-	if (search_end > (int)ref_log_count) search_end = (int)ref_log_count;
-
-	int best_k = -1;
-	float best_score = -1e9f;
-	float second_score = -1e9f;
-
-	for (int k = search_start; k < search_end; k++) {
-		if (ref_log[k].type != cross) continue;
-		if (fabsf(eff_odom - ref_log_cum_dist[k]) > 2.50f) continue;
-		if (fabsf(Wrap_Angle_Deg(cur_yaw - ref_pose_th[k])) > 45.0f) continue;
-
-		float score = 0.0f;
-		int r = k;
-		for (uint16_t w = 0; w < W; w++) {
-			if (r < 0) {
-				score -= 1.0f;
-				continue;
-			}
-			uint16_t c = n_cur - 1 - w;
-			CrossEvent_t ctype = g_cross_log[c].type;
-			float cd = g_cross_log[c].dist_from_prev_m;
-			float cyaw = g_cross_log[c].yaw_angle;
-
-			if (ref_log[r].type == ctype) {
-				float dd = fabsf(cd - ref_log[r].dist_from_prev_m);
-				float dy = fabsf(Wrap_Angle_Deg(cyaw - ref_log[r].yaw_angle));
-				float d_sim = 1.0f - Clamp_F32(dd / 0.35f, 0.0f, 1.0f);
-				float y_sim = 1.0f - Clamp_F32(dy / 40.0f, 0.0f, 1.0f);
-				score += 1.0f + d_sim + y_sim;
-				r--;
-			} else if (r >= 2 && ref_log[r - 1].type == ctype) {
-				float md = ref_log[r].dist_from_prev_m + ref_log[r - 1].dist_from_prev_m;
-				float my = Wrap_Angle_Deg(ref_log[r].yaw_angle + ref_log[r - 1].yaw_angle);
-				float dd = fabsf(cd - md);
-				float dy = fabsf(Wrap_Angle_Deg(cyaw - my));
-				float d_sim = 1.0f - Clamp_F32(dd / 0.45f, 0.0f, 1.0f);
-				float y_sim = 1.0f - Clamp_F32(dy / 45.0f, 0.0f, 1.0f);
-				score += 0.6f + d_sim + y_sim;
-				r -= 2;
-			} else if (r >= 3 && ref_log[r - 2].type == ctype) {
-				score += 0.3f;
-				r -= 3;
-			} else {
-				score -= 1.0f;
-				r--;
-			}
-		}
-
-		int r_start = r + 1;
-		if (r_start < 0) r_start = 0;
-		float dx_w = ref_pose_x[r_start] - ref_pose_x[k];
-		float dy_w = ref_pose_y[r_start] - ref_pose_y[k];
-		float th_rad = -ref_pose_th[k] * (PI / 180.0f);
-		float rx_loc = dx_w * cosf(th_rad) - dy_w * sinf(th_rad);
-		float ry_loc = dx_w * sinf(th_rad) + dy_w * cosf(th_rad);
-		float vec_err = hypotf(cx - rx_loc, cy - ry_loc);
-		score += 2.0f * (1.0f - Clamp_F32(vec_err / 0.60f, 0.0f, 1.0f));
-		score -= 0.20f * fabsf(eff_odom - ref_log_cum_dist[k]);
-
-		if (score > best_score) {
-			second_score = best_score;
-			best_score = score;
-			best_k = k;
-		} else if (score > second_score) {
-			second_score = score;
-		}
-	}
-
-	if (best_k >= 0 && best_score >= (float)W * 1.45f &&
-	    (second_score < -1e8f || (best_score - second_score) >= 0.70f)) {
-		state->idx = (uint16_t)best_k;
-		state->mismatch = 0;
-		state->odom_offset_m = ref_log_cum_dist[best_k] - g_total_odom_m;
-	}
+	*out_dist = total_dist;
+	*out_target_mps = target_mps;
+	*out_end_mps = end_mps;
 }
 
 // 4차 주행 마커 이벤트 및 가속 구간 계산
@@ -3171,22 +3326,9 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 	float eff_odom = g_total_odom_m + state->odom_offset_m;
 
 	if (cross == CROSS_STOP) {
-		float total_course_dist = (ref_log_count > 0) ? ref_log_cum_dist[ref_log_count - 1] : 50.0f;
-		if (g_total_STOP == 0 || (eff_odom >= total_course_dist - 2.0f && state->idx + 3 >= ref_log_count)) {
-			LSM6DS3_Reset_Yaw();
-			g_total_STOP++;
-			if (g_total_STOP >= 2) return 1;
-		} else {
-			// 코스 중간 인접 트랙 스침으로 인한 허위 STOP 마커: ref_log 상 기대되는 마커 타입으로 복원 및 g_cross_log 동기화
-			if (state->idx < ref_log_count && ref_log[state->idx].type != CROSS_STOP) {
-				cross = ref_log[state->idx].type;
-				if (g_cross_log_count > 0) {
-					g_cross_log[(g_cross_log_count - 1) % CROSS_LOG_MAX].type = cross;
-				}
-			} else {
-				return 0;
-			}
-		}
+		uint8_t stop_res = Handle_Stop_Marker_Common(state->idx, eff_odom, &cross);
+		if (stop_res == 1) return 1;
+		if (stop_res == 2) return 0;
 	}
 
 	if (cross == CROSS_LEFT) g_total_L++;
@@ -3215,53 +3357,16 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 		}
 	}
 
-	// 1. 교차로(CROSS_CROSS) 기반 우선 재동기화: mismatch 여부에 관계없이 기대 타입이 다르면 즉시 최근접 C로 복구
-	if (cross == CROSS_CROSS && (state->mismatch || state->idx >= ref_log_count || ref_log[state->idx].type != CROSS_CROSS)) {
-		int best_c = -1;
-		float min_c_err = 9999.0f;
-		int c_start = (int)state->idx - 4;
-		if (c_start < 0) c_start = 0;
-		for (uint16_t i = (uint16_t)c_start; i < ref_log_count; i++) {
-			if (ref_log[i].type == CROSS_CROSS) {
-				float d_err = fabsf(eff_odom - ref_log_cum_dist[i]);
-				if (d_err < min_c_err) {
-					min_c_err = d_err;
-					best_c = (int)i;
-				}
-			}
-		}
-		if (best_c >= 0) {
-			state->idx = (uint16_t)best_c;
-			state->mismatch = 0;
+	// 1. 기대 마커 타입 불일치 시 즉시 mismatch 판정 후 현 마커에서 재동기화 시도
+	if (!state->mismatch) {
+		if (state->idx >= ref_log_count || ref_log[state->idx].type != cross) {
+			state->mismatch = 1;
 		}
 	}
 
-	if (state->mismatch) {
-		Resync_Marker_Sequence_Fourth(cross, state, eff_odom);
-	}
-	if (0) {
-		// 2. 보정된 누적 주행거리 및 마커 타입 기반 동적 재동기화 (Resynchronization)
-		int best_k = -1;
-		float min_dist_err = 0.45f;
-		int search_start = (int)state->idx - 2;
-		if (search_start < 0) search_start = 0;
-		int search_end = (int)state->idx + 8;
-		if (search_end > (int)ref_log_count) search_end = (int)ref_log_count;
-
-		for (int k = search_start; k < search_end; k++) {
-			if (ref_log[k].type == cross) {
-				float d_err = fabsf(eff_odom - ref_log_cum_dist[k]);
-				if (d_err < min_dist_err) {
-					min_dist_err = d_err;
-					best_k = k;
-				}
-			}
-		}
-		if (best_k >= 0) {
-			state->idx = (uint16_t)best_k;
-			state->mismatch = 0;
-		}
-	}
+	// 2. 교차로(CROSS_CROSS) 우선 재동기화 + 시퀀스/벡터 기반 복구
+	Resync_Marker_Common(cross, &state->idx, &state->mismatch,
+	                     &state->odom_offset_m, state->imu_grid_bias, eff_odom);
 
 	if (!state->mismatch) {
 		if (state->idx >= ref_log_count || ref_log[state->idx].type != cross) {
@@ -3270,21 +3375,29 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 	}
 
 	// 숏컷 진입 판단:
-	// 진입 시작 마커(cut_start_idx)에서만 숏컷을 개시하며, mismatch 상태라도 라인 추종이 안정적이고
-	// 보정 주행거리가 시작 마커 부근이면 즉시 동기화 복구하여 실행 (시케인 내부/탈출 마커에서의 오진입 차단)
+	// 진입 시작 마커(cut_start_idx)에서만 숏컷을 개시하며, 마커 타입 일치 + 헤딩 정합(ref_pose_th 대비 <= 25도)을
+	// 필수 검증해 직전 마커 누락 시 다음 마커에서 45도 오정렬된 방향으로 반대 꺾임하는 현상을 원천 차단
+	float cut_corr_yaw = Wrap_Angle_Deg(imu_data.Yaw_Angle - state->imu_grid_bias);
+	float cut_yaw_err = (state->idx < ref_log_count)
+	                        ? fabsf(Wrap_Angle_Deg(cut_corr_yaw - ref_pose_th[state->idx]))
+	                        : 180.0f;
+
 	if (state->idx < ref_log_count &&
+	    ref_log[state->idx].type == cross &&
 	    seg_plan_4[state->idx].is_straight_cut &&
 	    state->idx == seg_plan_4[state->idx].cut_start_idx) {
 		if (state->mismatch) {
 			float d_err = fabsf(eff_odom - ref_log_cum_dist[state->idx]);
 			float line_err = fabsf(Sensor_Get_Last_Position());
-			if (d_err <= 0.45f && line_err < 0.20f) {
+			if (d_err <= 0.35f && line_err < 0.20f && cut_yaw_err <= 22.0f) {
 				state->mismatch = 0;
 			}
 		}
 	}
 
 	if (!state->mismatch && state->idx < ref_log_count &&
+	    ref_log[state->idx].type == cross &&
+	    cut_yaw_err <= 22.0f &&
 	    seg_plan_4[state->idx].is_straight_cut &&
 	    state->idx == seg_plan_4[state->idx].cut_start_idx) {
 		state->odom_offset_m = ref_log_cum_dist[state->idx] - g_total_odom_m;
@@ -3364,10 +3477,54 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 			                : ((next_ca <= 22.0f) ? (Fourth_Corner_Mps() + 0.70f) : Fourth_Corner_Mps());
 			if (trans_mps > driveData.max_mps) trans_mps = driveData.max_mps;
 			state->end_mps = trans_mps;
+		} else if (state->cut_end_idx < ref_log_count &&
+		           ref_log[state->cut_end_idx].type == CROSS_CROSS &&
+		           seg_plan_4[state->cut_end_idx].curve_dir == 0 &&
+		           seg_plan_4[state->cut_end_idx].accel_type > 0) {
+			float v_allow = Fourth_Corner_Mps();
+			if (seg_plan_4[state->cut_end_idx].is_omega_cut &&
+			    state->cut_end_idx == seg_plan_4[state->cut_end_idx].cut_start_idx) {
+				float v_arc = seg_plan_4[state->cut_end_idx].omega_arc_mps;
+				float d_in = seg_plan_4[state->cut_end_idx].cut_lock_dist + seg_plan_4[state->cut_end_idx].omega_tan1_len;
+				float margin_b = ((driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M) + 0.10f;
+				float d_eff = d_in - margin_b - v_arc * 0.06f;
+				if (d_eff < 0.0f) d_eff = 0.0f;
+				v_allow = sqrtf(v_arc * v_arc + 2.0f * (driveData.decel * 0.78f) * d_eff);
+				if (v_allow > driveData.max_mps) v_allow = driveData.max_mps;
+			} else {
+				float post_dist = 0.0f, post_target = 0.0f, post_end = 0.0f;
+				Fourth_Plan_Accel_Segment(state->cut_end_idx, &post_dist, &post_target, &post_end);
+				if (seg_plan_4[state->cut_end_idx].is_straight_cut &&
+				    seg_plan_4[state->cut_end_idx].cut_bulge_offset != 0.0f &&
+				    seg_plan_4[state->cut_end_idx].cut_bulge_mps < post_target) {
+					post_target = seg_plan_4[state->cut_end_idx].cut_bulge_mps;
+				}
+				float margin_b = ((driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M) + 0.10f;
+				float d_eff = post_dist - margin_b - post_end * 0.06f;
+				if (d_eff < 0.0f) d_eff = 0.0f;
+				v_allow = sqrtf(post_end * post_end + 2.0f * (driveData.decel * 0.78f) * d_eff);
+				if (v_allow > post_target) v_allow = post_target;
+			}
+			float min_c = Fourth_Corner_Mps();
+			if (v_allow < min_c) v_allow = min_c;
+			state->end_mps = v_allow;
 		} else if (state->is_omega_cut && fabsf(state->cut_exit_yaw_off) > 90.0f && state->cut_end_idx < ref_log_count &&
 		    seg_plan_4[state->cut_end_idx].accel_type > 0 &&
 		    ref_log[state->cut_end_idx].type != CROSS_STOP) {
-			state->end_mps = Segment_Mps_Fourth(seg_plan_4[state->cut_end_idx].accel_type);
+			float next_mps = Segment_Mps_Fourth(seg_plan_4[state->cut_end_idx].accel_type);
+			if (seg_plan_4[state->cut_end_idx].accel_type == 1 || seg_plan_4[state->cut_end_idx].accel_type == 4) {
+				float post_dist = 0.0f, post_target = 0.0f, post_end = 0.0f;
+				Fourth_Plan_Accel_Segment(state->cut_end_idx, &post_dist, &post_target, &post_end);
+				float margin_b = ((driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M) + 0.10f;
+				float d_eff = post_dist - margin_b - post_end * 0.06f;
+				if (d_eff < 0.0f) d_eff = 0.0f;
+				float v_allow = sqrtf(post_end * post_end + 2.0f * (driveData.decel * 0.78f) * d_eff);
+				if (v_allow > post_target) v_allow = post_target;
+				if (v_allow < next_mps) next_mps = v_allow;
+			}
+			float min_c = Fourth_Corner_Mps();
+			if (next_mps < min_c) next_mps = min_c;
+			state->end_mps = next_mps;
 		} else {
 			state->end_mps = driveData.base_mps;
 		}
@@ -3388,6 +3545,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 		g_is_straight = 1;
 		state->marker_start_dist = g_odom_distance_m;
 		state->braking_started = 0;
+		state->omega_braking_started = 0;
 		state->idx++;
 		return 0;
 	}
@@ -3395,53 +3553,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 	if (!state->mismatch && state->idx < ref_log_count && seg_plan_4[state->idx].accel_type > 0) {
 		state->accel_active = 1;
 		const uint8_t type = seg_plan_4[state->idx].accel_type;
-		float total_dist = 0.0f;
-		uint8_t next_type = 0;
-		uint16_t next_idx = ref_log_count;
-
-		for (uint16_t i = state->idx; i < ref_log_count; i++) {
-			if (seg_plan_4[i].accel_type != type) {
-				next_type = seg_plan_4[i].accel_type;
-				next_idx = i;
-				break;
-			}
-			if (i + 1 < ref_log_count) {
-				total_dist += ref_log[i + 1].dist_from_prev_m;
-			} else {
-				break;
-			}
-		}
-		state->seg_len_predicted = total_dist;
-
-		state->target_mps = Segment_Mps_Fourth(type);
-		state->end_mps = Segment_Mps_Fourth(next_type);
-		if (type == 1 && next_type == 0) {
-			float min_c = Fourth_Corner_Mps();
-			if (total_dist < 0.60f) {
-				state->target_mps = min_c;
-			} else if (total_dist < 1.35f) {
-				float short_cap = min_c + (total_dist - 0.60f) * 2.0f;
-				if (short_cap < state->target_mps) {
-					state->target_mps = short_cap;
-				}
-			}
-		}
-		if (next_idx < ref_log_count && seg_plan_4[next_idx].is_omega_cut) {
-			float v_arc = seg_plan_4[next_idx].omega_arc_mps;
-			float d_in = seg_plan_4[next_idx].cut_lock_dist + seg_plan_4[next_idx].omega_tan1_len;
-			float margin_b = ((driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M) + 0.10f;
-			float d_eff = d_in - margin_b - v_arc * 0.06f;
-			if (d_eff < 0.0f) d_eff = 0.0f;
-			float v_cap = sqrtf(v_arc * v_arc + 2.0f * (driveData.decel * 0.78f) * d_eff);
-			if (v_cap < state->end_mps) state->end_mps = v_cap;
-		}
-
-		float min_end = Fourth_Corner_Mps();
-		if (state->end_mps < min_end)
-			state->end_mps = min_end;
-
-		if (state->end_mps > state->target_mps)
-			state->end_mps = state->target_mps;
+		Fourth_Plan_Accel_Segment(state->idx, &state->seg_len_predicted, &state->target_mps, &state->end_mps);
 
 		uint8_t prev_type = (state->idx >= 1) ? seg_plan_4[state->idx - 1].accel_type : 1;
 		uint8_t prev_curve = (state->idx >= 1) ? seg_plan_4[state->idx - 1].curve_dir : 0;
@@ -3453,7 +3565,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 			state->zone_start_from_deep = 0;
 			g_target_base_mps = state->target_mps;
 		} else if ((prev_curve != 0 && prev_type == 0) ||
-		           (type == 1 && (prev_curve != 0 || cur_yaw_rate >= 35.0f || cur_line_err >= 0.18f))) {
+		           (type == 1 && (prev_curve != 0 || (cross != CROSS_CROSS && (cur_yaw_rate >= 35.0f || cur_line_err >= 0.18f))))) {
 			// 커브 탈출 직후 또는 잔여 요레이트/횡오차가 큰 상태: 차체 정렬 완료까지 코너 안정 속도 유지 후 가속
 			state->corridor_start_dist = g_odom_distance_m;
 			state->zone_start_from_deep = 1;
@@ -3490,6 +3602,7 @@ __STATIC_INLINE uint8_t Process_Marker_Event_Fourth(CrossEvent_t cross, DriveFou
 
 	state->marker_start_dist = g_odom_distance_m;
 	state->braking_started = 0;
+	state->omega_braking_started = 0;
 
 	if (!state->mismatch) {
 		if (state->idx < ref_log_count) {
@@ -3568,6 +3681,7 @@ __STATIC_INLINE void Check_Virtual_Markers_Fourth(DriveFourthState_t *state) {
 			                     ? seg_plan_4[state->cut_end_idx].omega_arc_mps
 			                     : driveData.base_mps;
 			state->braking_started = 0;
+			state->omega_braking_started = 0;
 			g_straight_cut_active = 1;
 			g_suppress_marker_detect = 1;
 			return;
@@ -3608,6 +3722,7 @@ __STATIC_INLINE void Check_Virtual_Markers_Fourth(DriveFourthState_t *state) {
 		float c_mps = Fourth_Corner_Mps();
 		state->accel_active = 0;
 		state->braking_started = 0;
+		state->omega_braking_started = 0;
 		state->zone_start_from_deep = 0;
 		state->target_mps = c_mps;
 		state->end_mps = c_mps;
@@ -3634,8 +3749,11 @@ __STATIC_INLINE void Check_Distance_And_Brake_Fourth(DriveFourthState_t *state) 
 		float_t brake_dist = (driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M;
 		if (v1 > v2) {
 			const float_t tau_sys = (g_target_base_mps > v1 + 0.30f && v1 < 4.0f) ? 0.120f : 0.060f;
-			float_t v_eff = (g_target_base_mps > v1) ? (v1 + driveData.accel * 0.055f) : v1;
-			if (v_eff > g_target_base_mps) v_eff = g_target_base_mps;
+			float_t v_eff = v1;
+			if (g_target_base_mps > v1) {
+				v_eff = v1 + driveData.accel * 0.055f;
+				if (v_eff > g_target_base_mps) v_eff = g_target_base_mps;
+			}
 			brake_dist += (v_eff * v_eff - v2 * v2) / (2.0f * driveData.decel);
 			brake_dist += v_eff * tau_sys;
 			/* linear tau_sys=0.085f replaces excess mid-speed penalty */
@@ -3651,14 +3769,19 @@ __STATIC_INLINE void Check_Distance_And_Brake_Fourth(DriveFourthState_t *state) 
 				float_t tan1_end = state->cut_lock_dist + state->omega_tan1_len;
 				float_t arc_end = tan1_end + state->omega_arc_len;
 				if (traveled < tan1_end) {
-					float_t rem_to_arc = tan1_end - traveled;
-					float_t bdist = ((driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M) + 0.06f;
-					if (v1 > state->omega_arc_mps) {
-						bdist += (v1 * v1 - state->omega_arc_mps * state->omega_arc_mps) / (2.0f * driveData.decel * 0.80f) + v1 * 0.055f;
-						if (v1 > 3.5f) bdist += (v1 - 3.5f) * 0.15f + 0.10f;
-					}
-					if (rem_to_arc <= bdist) {
+					if (state->omega_braking_started) {
 						desired_mps = state->omega_arc_mps;
+					} else {
+						float_t rem_to_arc = tan1_end - traveled;
+						float_t bdist = ((driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M) + 0.06f;
+						if (v1 > state->omega_arc_mps) {
+							bdist += (v1 * v1 - state->omega_arc_mps * state->omega_arc_mps) / (2.0f * driveData.decel * 0.80f) + v1 * 0.055f;
+							if (v1 > 3.5f) bdist += (v1 - 3.5f) * 0.15f + 0.10f;
+						}
+						if (rem_to_arc <= bdist) {
+							state->omega_braking_started = 1;
+							desired_mps = state->omega_arc_mps;
+						}
 					}
 				} else if (traveled < arc_end) {
 					desired_mps = state->omega_arc_mps;
@@ -3789,6 +3912,12 @@ __STATIC_INLINE void Update_Target_Pos_Fourth(DriveFourthState_t *state) {
 			if (!state->cut_p1_latched) {
 				float corr_yaw = imu_data.Yaw_Angle - state->imu_grid_bias;
 				float grid_yaw = roundf(corr_yaw / 45.0f) * 45.0f;
+				if (state->cut_start_idx < ref_log_count) {
+					float exp_grid = ref_pose_th[state->cut_start_idx];
+					if (fabsf(Wrap_Angle_Deg(grid_yaw - exp_grid)) > 22.5f) {
+						grid_yaw = exp_grid;
+					}
+				}
 				float target_yaw = Wrap_Angle_Deg(grid_yaw + state->cut_angle_deg + state->imu_grid_bias);
 				state->cut_base_yaw_ref = target_yaw;
 				state->cut_p1_latched = 1;
@@ -3875,8 +4004,11 @@ __STATIC_INLINE void Update_Target_Pos_Fourth(DriveFourthState_t *state) {
 			// 단, exit_len이 충분할 때는 Phase 2 가상 탈출 직후 원 마커가 중복 카운트되지 않도록 억제 창 유지
 			float guard = exit_len * 0.32f;
 			if (guard > 0.14f) guard = 0.14f;
-			if (state->braking_started && exit_len < 0.26f) guard = 0.0f;
-			g_suppress_marker_detect = (traveled >= phase2_end_dist + guard) ? 0 : 1;
+			float suppress_end = phase2_end_dist + guard;
+			float max_suppress = state->cut_straight_dist - 0.18f;
+			if (state->braking_started && exit_len < 0.26f) suppress_end = phase2_end_dist;
+			if (suppress_end > max_suppress) suppress_end = max_suppress;
+			g_suppress_marker_detect = (traveled >= suppress_end) ? 0 : 1;
 		}
 		return;
 	}
@@ -4038,7 +4170,6 @@ __STATIC_INLINE void Update_Target_Pos_Fourth(DriveFourthState_t *state) {
 			if (ramp_in < 0.12f) ramp_in = 0.12f;
 			else if (ramp_in > 0.32f) ramp_in = 0.32f;
 		}
-		const float ramp_out = (total_dist >= 0.30f) ? 0.22f : 0.25f;
 		float edge_shift = corner_shift;
 		uint8_t restrict_apex = 0;
 		if (next_idx < (int)ref_log_count) {
@@ -4048,6 +4179,7 @@ __STATIC_INLINE void Update_Target_Pos_Fourth(DriveFourthState_t *state) {
 				restrict_apex = 1;
 			}
 		}
+		const float ramp_out = (total_dist >= 0.30f) ? (restrict_apex ? 0.34f : 0.22f) : 0.25f;
 		float apex_shift = Compute_Corner_Apex_Shift(corner_shift, total_dist, restrict_apex);
 		if (apex_shift < edge_shift) apex_shift = edge_shift;
 		if (pre_dir > edge_shift) pre_dir = edge_shift;
@@ -4152,347 +4284,8 @@ void Drive_Fourth(void) {
 }
 
 // ============================================================================
-// 5회차 주행 함수 모음 (Out-In-Out 최적 레이싱 라인)
+// 5회차 주행 함수 모음 (4차 주행과 동일)
 // ============================================================================
-
-typedef struct {
-	uint8_t accel_type; // 0: 감속(깊은 커브), 1: 직선 가속, 2: 45도(슬라롬) 가속
-	uint8_t curve_dir;  // 0: 직선, 1: 좌(L), 2: 우(R)
-} SegmentPlanFifth_t;
-
-static SegmentPlanFifth_t seg_plan_5[CROSS_LOG_MAX];
-
-typedef struct {
-	uint16_t idx;
-	uint8_t mismatch;
-	uint8_t accel_active;
-	uint8_t braking_started;
-	float marker_start_dist;
-	float seg_len_predicted;
-	float target_mps;
-	float end_mps;
-} DriveFifthState_t;
-
-__STATIC_INLINE void Build_Segment_Plan_Fifth(void) {
-	uint8_t curve_state = 0;
-
-	for (uint16_t i = 0; i < ref_log_count; i++) {
-		CrossEvent_t cur = ref_log[i].type;
-		uint8_t a_type = 0;
-
-		if (cur == CROSS_STOP) {
-			a_type = (i == 0) ? 1 : 0;
-			curve_state = 0;
-		} else if (cur == CROSS_CROSS) {
-			a_type = 1;
-			curve_state = 0;
-		} else if (cur == CROSS_LEFT) {
-			if (curve_state == 1) {
-				curve_state = 0;
-				a_type = 1;
-			} else {
-				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
-				if (curve_yaw < 18.0f) {
-					curve_state = 0;
-					a_type = 0;
-				} else {
-					curve_state = 1;
-					a_type = (curve_yaw < 65.0f) ? 2 : 0;
-				}
-			}
-		} else if (cur == CROSS_RIGHT) {
-			if (curve_state == 2) {
-				curve_state = 0;
-				a_type = 1;
-			} else {
-				float curve_yaw = (i + 1 < ref_log_count) ? fabsf(ref_log[i + 1].yaw_angle) : 90.0f;
-				if (curve_yaw < 18.0f) {
-					curve_state = 0;
-					a_type = 0;
-				} else {
-					curve_state = 2;
-					a_type = (curve_yaw < 65.0f) ? 2 : 0;
-				}
-			}
-		}
-
-		seg_plan_5[i].curve_dir = curve_state;
-		seg_plan_5[i].accel_type = a_type;
-	}
-}
-
-__STATIC_INLINE uint8_t Drive_Fifth_Init_Sequence(void) {
-	LCD7789_Invert(0);
-
-	if (!IR_Sensor.is_calibration) {
-		if (Sensor_Load_Calibration() != FR_OK) {
-			LCD_Printf(0, 0, "Fail");
-			HAL_Delay(1000);
-			return 0;
-		}
-	}
-
-	if (!is_ref_log_copied) {
-		ref_log_count = g_cross_log_count;
-		if (ref_log_count == 0) return 0;
-		for (uint16_t i = 0; i < ref_log_count; i++) ref_log[i] = g_cross_log[i];
-		Build_Segment_Plan_Fifth();
-		is_ref_log_copied = 1;
-	} else {
-		if (ref_log_count == 0) return 0;
-		Build_Segment_Plan_Fifth();
-	}
-
-	Drive_IMU_Auto_Calibrate();
-
-	if (driveData.fan_en) {
-		Fan_Mtr_Start();
-		Fan_Mtr_Set_Duty(driveData.fan_en * 100);
-		HAL_Delay(1000);
-	}
-
-	accel = driveData.accel;
-	decel = driveData.decel;
-	Odom_Reset();
-	g_total_odom_m = 0.0f;
-	imu_straight_bias_track = 0;
-	g_straight_cut_active = 0;
-	g_suppress_marker_detect = 0;
-	g_min_same_side_odom_m = 0.070f;
-	g_straight_cut_yaw_ref = 0.0f;
-	g_straight_cut_kappa_ref = 0.0f;
-	Steer_Reset_State();
-	Drive_Diag_Reset(5);
-	g_cross_log_count = 0;
-	Cross_Detect_Reset();
-
-	IR_Sensor.is_lost_position = 0;
-	IR_Sensor.data->mark_left = 0;
-	IR_Sensor.data->mark_right = 0;
-	IR_Sensor.data->target_pos = 0.0f;
-
-	g_total_L = 0;
-	g_total_R = 0;
-	g_total_C = 0;
-	g_total_STOP = 0;
-
-	steer_pid.Kp = driveData.steer_gain_p;
-	steer_pid.Ki = 0.0f;
-	steer_pid.Kd = driveData.steer_gain_d;
-
-	arm_pid_init_f32(&steer_pid, 1);
-	arm_pid_init_f32(&steer_pid, 0);
-
-	Buzzer_Discount_Start();
-	Sensor_Start();
-	HAL_Delay(10);
-	MTR_Setup_And_Start(FOC_MODE_SPEED_LOOP);
-	Ramp_Start();
-	LSM6DS3_Reset_Yaw();
-	g_target_base_mps = driveData.base_mps;
-	return 1;
-}
-
-__STATIC_INLINE uint8_t Process_Marker_Event_Fifth(CrossEvent_t cross, DriveFifthState_t *state) {
-	if (cross == CROSS_STOP) {
-		float total_course_dist = (ref_log_count > 0) ? ref_log_cum_dist[ref_log_count - 1] : 50.0f;
-		if (g_total_STOP == 0 || g_total_odom_m >= total_course_dist - 3.0f) {
-			LSM6DS3_Reset_Yaw();
-			g_total_STOP++;
-			if (g_total_STOP >= 2) return 1;
-		} else {
-			// 코스 중간 인접 트랙 스침으로 인한 허위 STOP 마커: ref_log 상 기대되는 마커 타입으로 복원 및 g_cross_log 동기화
-			if (state->idx < ref_log_count && ref_log[state->idx].type != CROSS_STOP) {
-				cross = ref_log[state->idx].type;
-				if (g_cross_log_count > 0) {
-					g_cross_log[(g_cross_log_count - 1) % CROSS_LOG_MAX].type = cross;
-				}
-			} else {
-				return 0;
-			}
-		}
-	}
-
-	if (cross == CROSS_LEFT) g_total_L++;
-	else if (cross == CROSS_RIGHT) g_total_R++;
-	else if (cross == CROSS_CROSS) g_total_C++;
-
-	if (state->mismatch) {
-		if (cross == CROSS_CROSS) {
-			for (uint16_t i = state->idx; i < ref_log_count; i++) {
-				if (ref_log[i].type == CROSS_CROSS) {
-					state->idx = i;
-					state->mismatch = 0;
-					break;
-				}
-			}
-		}
-	}
-
-	if (!state->mismatch) {
-		if (state->idx >= ref_log_count || ref_log[state->idx].type != cross) {
-			state->mismatch = 1;
-		}
-	}
-
-	if (!state->mismatch && state->idx < ref_log_count && seg_plan_5[state->idx].accel_type > 0) {
-		state->accel_active = 1;
-		const uint8_t type = seg_plan_5[state->idx].accel_type;
-		float total_dist = 0.0f;
-		uint8_t next_type = 0;
-		uint16_t next_seg_idx = state->idx;
-
-		for (uint16_t i = state->idx; i < ref_log_count; i++) {
-			if (seg_plan_5[i].accel_type != type) {
-				next_type = seg_plan_5[i].accel_type;
-				next_seg_idx = i;
-				break;
-			}
-			if (i + 1 < ref_log_count) {
-				total_dist += ref_log[i + 1].dist_from_prev_m;
-			} else {
-				break;
-			}
-		}
-		state->seg_len_predicted = total_dist;
-
-		state->target_mps = Segment_Mps(type);
-		state->end_mps = Segment_Mps(next_type);
-
-		if (next_seg_idx + 1 < ref_log_count && (next_type == 0 || next_type == 2)) {
-			float next_yaw_deg = fabsf(ref_log[next_seg_idx + 1].yaw_angle);
-			float next_dist = ref_log[next_seg_idx + 1].dist_from_prev_m;
-			if (next_yaw_deg > 10.0f && next_dist > 0.05f) {
-				float dtheta_rad = next_yaw_deg * (PI / 180.0f);
-				float r_eff = next_dist / dtheta_rad;
-				
-			}
-		}
-
-		if (state->end_mps < driveData.base_mps)
-			state->end_mps = driveData.base_mps;
-
-		if (state->end_mps > state->target_mps)
-			state->end_mps = state->target_mps;
-		g_target_base_mps = state->target_mps;
-
-	} else {
-		state->accel_active = 0;
-		state->target_mps = driveData.base_mps;
-		state->end_mps = driveData.base_mps;
-		g_target_base_mps = driveData.base_mps;
-		if (state->idx < ref_log_count && seg_plan_3[state->idx].curve_dir == 0) {
-			g_is_straight = 1;
-		} else {
-			g_is_straight = 0;
-		}
-	}
-
-	state->marker_start_dist = g_odom_distance_m;
-	state->braking_started = 0;
-
-	if (!state->mismatch) state->idx++;
-
-	return 0;
-}
-
-__STATIC_INLINE void Check_Distance_And_Brake_Fifth(DriveFifthState_t *state) {
-	if (state->accel_active) {
-		if (state->braking_started) {
-			g_target_base_mps = state->end_mps;
-			return;
-		}
-		float_t traveled = g_odom_distance_m - state->marker_start_dist;
-		float_t remaining = state->seg_len_predicted - traveled;
-
-		float_t v1 = g_current_base_mps;
-		float_t v2 = state->end_mps;
-
-		float_t brake_dist = (driveData.brake_margin_m > 0.0f) ? driveData.brake_margin_m : BRAKE_MARGIN_M;
-		if (v1 > v2) {
-			const float_t tau_sys = (g_target_base_mps > v1 + 0.30f && v1 < 4.0f) ? 0.120f : 0.060f;
-			float_t v_eff = (g_target_base_mps > v1) ? (v1 + driveData.accel * 0.055f) : v1;
-			if (v_eff > g_target_base_mps) v_eff = g_target_base_mps;
-			brake_dist += (v_eff * v_eff - v2 * v2) / (2.0f * driveData.decel);
-			brake_dist += v_eff * tau_sys;
-			/* linear tau_sys=0.085f replaces excess mid-speed penalty */
-			/* high-speed aero drag already aids decel; no extra >4.5f penalty */
-		}
-
-		if (remaining <= brake_dist) {
-			g_target_base_mps = state->end_mps;
-			state->braking_started = 1;
-		} else {
-			if (traveled >= ACCEL_START_MARGIN_M) {
-				g_target_base_mps = state->target_mps;
-				if (state->target_mps == driveData.max_mps) g_is_straight = 1;
-			}
-		}
-	}
-}
-
-// 5차 주행 전용 Out-In-Out 최적 레이싱 라인 (Optimal Racing Line) 영점 이동
-__STATIC_INLINE void Update_Target_Pos_Fifth(DriveFifthState_t *state) {
-	if (state->mismatch || state->idx >= ref_log_count || state->idx == 0) {
-		IR_Sensor.data->target_pos = 0.0f;
-		return;
-	}
-
-	uint16_t cur_seg_idx = state->idx - 1;
-	uint8_t curve_dir = seg_plan_5[cur_seg_idx].curve_dir;
-	uint8_t a_type = seg_plan_5[cur_seg_idx].accel_type;
-
-	float seg_len = ref_log[state->idx].dist_from_prev_m;
-	if (seg_len < 0.05f) seg_len = 0.05f;
-	float traveled = g_odom_distance_m;
-	float remaining = seg_len - traveled;
-	float u = traveled / seg_len;
-	if (u < 0.0f) u = 0.0f;
-	if (u > 1.0f) u = 1.0f;
-
-	float d_shift = driveData.target_shift_val;
-	if (d_shift < 0.02f) {
-		IR_Sensor.data->target_pos = 0.0f;
-		return;
-	}
-	if (d_shift > 1.45f) d_shift = 1.45f;
-
-	float D_in = d_shift;
-	float D_out = d_shift * 0.35f;
-
-	float target = 0.0f;
-
-	if (curve_dir != 0) {
-		float turn_sign = (curve_dir == 1) ? 1.0f : -1.0f;
-		if (a_type == 2) {
-			target = turn_sign * (D_in * 0.70f) * sinf(u * PI);
-		} else {
-			float du = u - 0.5f;
-			float val = D_in - (D_in + D_out) * 4.0f * du * du;
-			target = turn_sign * val;
-		}
-	} else {
-		uint8_t prev_curve = (cur_seg_idx > 0) ? seg_plan_5[cur_seg_idx - 1].curve_dir : 0;
-		uint8_t next_curve = (state->idx < ref_log_count) ? seg_plan_5[state->idx].curve_dir : 0;
-
-		const float TRANS_OUT = 0.30f;
-		const float TRANS_IN = 0.35f;
-		if (prev_curve != 0 && traveled < TRANS_OUT) {
-			float prev_sign = (prev_curve == 1) ? 1.0f : -1.0f;
-			float w = 0.5f * (1.0f + cosf((traveled / TRANS_OUT) * PI));
-			target = -prev_sign * D_out * w;
-		} else if (next_curve != 0 && remaining < TRANS_IN && remaining >= 0.0f) {
-			float next_sign = (next_curve == 1) ? 1.0f : -1.0f;
-			float w = 0.5f * (1.0f - cosf(((TRANS_IN - remaining) / TRANS_IN) * PI));
-			target = -next_sign * D_out * w;
-		} else {
-			target = 0.0f;
-		}
-	}
-
-	IR_Sensor.data->target_pos = target;
-}
-
 void Drive_Fifth(void) {
 	g_is_straight = 0;
 	Drive_Fourth();
@@ -4595,10 +4388,12 @@ FRESULT Drive_Save_SysID_To_SD(void) {
 			"# steer_kp=%.3f\n# steer_kd=%.1f\n# pos_atten_gain=%.2f\n"
 			"# yaw_kp=%.3f\n# yaw_ki=%.3f\n"
 			"# target_shift=%.2f\n# target_curve_gain=%.2f\n# brake_margin=%.2f\n"
+			"# bulge_lat_acc=%.2f\n# corner45_max_mps=%.2f\n# omega_add_mps=%.2f\n# wave_add_mps=%.2f\n"
 			"# line_lost=%u\n# max_beta_deg=%.2f\n# max_lat_mm=%.1f\n# weave_dps=%.1f\n# fail_v=%.2f\n",
 			driveData.base_mps, driveData.max_mps, driveData.accel, driveData.decel,
 			driveData.steer_gain_p, driveData.steer_gain_d, driveData.pos_atten_gain,
 			driveData.yaw_gain_p, driveData.yaw_gain_i, 			driveData.target_shift_val, driveData.target_curve_gain, driveData.brake_margin_m,
+			driveData.bulge_lat_acc, driveData.corner45_max_mps, driveData.omega_add_mps, driveData.wave_add_mps,
 			(unsigned) g_drive_diag.line_lost, g_drive_diag.max_beta_deg,
 			g_drive_diag.max_lat_mm, g_drive_diag.weave_dps, g_drive_diag.fail_v);
 	SD_SysID_WriteChunk(line, (UINT) len);

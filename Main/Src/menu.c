@@ -112,6 +112,10 @@ MenuItem_t speed_param_items[] = {
 	{ .name = "Base Accel", 	.pfnActionCallback = Update_Base_Accel			},
 	{ .name = "Base Decel", 	.pfnActionCallback = Update_Base_Decel			},
 	{ .name = "Brake Margin", 	.pfnActionCallback = Update_Brake_Margin		},
+	{ .name = "Bulge LatAcc", 	.pfnActionCallback = Update_Bulge_Lat_Acc		},
+	{ .name = "C45 Max m/s", 	.pfnActionCallback = Update_Corner45_Max_Mps	},
+	{ .name = "Omega Add", 		.pfnActionCallback = Update_Omega_Add_Mps		},
+	{ .name = "Wave Add", 		.pfnActionCallback = Update_Wave_Add_Mps		},
 	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
 };
@@ -458,6 +462,7 @@ __STATIC_INLINE void Update_Param_Float(Data_TypeDef param_Data_Type,
 	UserInput_t btn = INPUT_CMD_NONE;
 	uint8_t index = (floatData == &(driveData.yaw_gain_p) || floatData == &(driveData.yaw_gain_i)
 			|| floatData == &(driveData.brake_margin_m)
+			|| floatData == &(driveData.omega_add_mps) || floatData == &(driveData.wave_add_mps)
 			|| (fabsf(*floatData) < 2.0f && fabsf(*floatData) > 1e-4f)) ? 2 : 0;
 	uint8_t dirty = 1;
 
@@ -610,6 +615,22 @@ void Update_Slalom_Ratio() {
 
 void Update_Brake_Margin() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.brake_margin_m), "Brake Margin");
+}
+
+void Update_Bulge_Lat_Acc() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.bulge_lat_acc), "Bulge LatAcc");
+}
+
+void Update_Corner45_Max_Mps() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.corner45_max_mps), "C45 Max m/s");
+}
+
+void Update_Omega_Add_Mps() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.omega_add_mps), "Omega Add");
+}
+
+void Update_Wave_Add_Mps() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.wave_add_mps), "Wave Add");
 }
 
 void Menu_ProcessLoop() {
