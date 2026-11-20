@@ -107,6 +107,8 @@ typedef struct {
 	int16_t  iq_L_mA;       // 좌측 모터 실측 전류 [mA] (전진 +)
 	int16_t  iq_R_mA;       // 우측 모터 실측 전류 [mA] (전진 +)
 	int16_t  gyro_z_ddps;   // 자이로 Z 각속도 (오프셋 차감) * 10 [0.1 deg/s] (좌회전 CCW +)
+	int16_t  acc_x_raw;     // IMU 가속도 X 원시값 [0.122 mg/LSB, ±4g, 센서 좌표계] (imu_accel_capture_en=0 이면 0)
+	int16_t  acc_y_raw;     // IMU 가속도 Y 원시값 [0.122 mg/LSB, ±4g, 센서 좌표계]
 	uint16_t odom_mm;       // 구간 누적 오도메트리 거리 [mm]
 	uint8_t  marker_cnt;    // 현재까지 누적된 마커 개수 (g_cross_log_count)
 	uint8_t  vbus_dV;       // 배터리 전압 * 10 [0.1 V]

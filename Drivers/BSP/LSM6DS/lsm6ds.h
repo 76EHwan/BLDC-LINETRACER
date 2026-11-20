@@ -98,6 +98,8 @@ typedef struct {
     float_t Accel_X;
     float_t Accel_Y;
     float_t Accel_Z;
+    float_t Accel_X_Offset;  /* [g] still-calibration mean, set only while imu_accel_capture_en (else 0) */
+    float_t Accel_Y_Offset;
 
     int16_t Gyro_X_Raw;
     int16_t Gyro_Y_Raw;
@@ -121,6 +123,9 @@ extern volatile LSM6DS_Data_t imu_data;
 extern volatile uint8_t imu_dma_busy;
 extern volatile uint8_t imu_gyro_z_ready;
 extern volatile uint8_t imu_straight_bias_track;
+/* 1 = read Accel X/Y together with Gyro Z (SysID Drive only).
+   I2C mode: the DMA burst grows from 2 to 6 bytes (~0.21 ms of each 1 ms slot at 400 kHz; 0.83 ms at 100 kHz). */
+extern volatile uint8_t imu_accel_capture_en;
 
 /* Core Function Declarations */
 HAL_StatusTypeDef LSM6DS_Init(void);

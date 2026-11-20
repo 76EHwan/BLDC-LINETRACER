@@ -11,6 +11,7 @@ volatile LSM6DS_Data_t imu_data;
 volatile uint8_t imu_dma_busy = 0;
 volatile uint8_t imu_gyro_z_ready = 0;
 volatile uint8_t imu_straight_bias_track = 0;
+volatile uint8_t imu_accel_capture_en = 0;
 
 static float_t s_gyro_z_cal_offset = 0.0f;
 static float_t s_gyro_z_lpf = 0.0f;
@@ -100,8 +101,10 @@ static HAL_StatusTypeDef LSM6DS_Bus_Write(uint8_t reg, uint8_t val) {
  * ============================================================================ */
 static uint16_t lsm6ds_i2c_addr = LSM6DS3_ADDR;
 
+/* OUTZ_G (0x26..0x27), then OUTX_A / OUTY_A (0x28..0x2B) in the same burst when accel capture is on */
 __attribute__((section(".ram_d2_nocache"), aligned(32)))
-static uint8_t gyro_z_dma_buf[2];
+static uint8_t gyro_z_dma_buf[6];
+static volatile uint16_t s_dma_len = 2;
 
 static HAL_StatusTypeDef LSM6DS_Bus_Read(uint8_t reg, uint8_t *pData, uint16_t len) {
     return HAL_I2C_Mem_Read(IMU_I2C, lsm6ds_i2c_addr, reg, I2C_MEMADD_SIZE_8BIT, pData, len, IMU_I2C_TIMEOUT_MS);
@@ -239,9 +242,18 @@ void LSM6DS_INT1_IRQHandler(void) {
         return;
     }
 #ifdef IMU_CS_Pin
-    uint8_t raw[6];
-    if (LSM6DS_Bus_Read(REG_OUTX_L_G, raw, 6) != HAL_OK) {
+    uint8_t raw[12];
+    const uint16_t n_read = imu_accel_capture_en ? 12 : 6;
+    if (LSM6DS_Bus_Read(REG_OUTX_L_G, raw, n_read) != HAL_OK) {
         return;
+    }
+    if (n_read == 12) {
+        imu_data.Accel_X_Raw = (int16_t)((raw[7] << 8) | raw[6]);
+        imu_data.Accel_Y_Raw = (int16_t)((raw[9] << 8) | raw[8]);
+        imu_data.Accel_Z_Raw = (int16_t)((raw[11] << 8) | raw[10]);
+        imu_data.Accel_X = imu_data.Accel_X_Raw * ACCEL_SENSITIVITY_4G;
+        imu_data.Accel_Y = imu_data.Accel_Y_Raw * ACCEL_SENSITIVITY_4G;
+        imu_data.Accel_Z = imu_data.Accel_Z_Raw * ACCEL_SENSITIVITY_4G;
     }
 
     imu_data.Gyro_X_Raw = (int16_t)((raw[1] << 8) | raw[0]);
@@ -274,10 +286,11 @@ void LSM6DS3_ReadGyroZ_DMA_Start(void) {
         return;
     }
     imu_dma_busy = 1;
+    s_dma_len = imu_accel_capture_en ? 6 : 2;
 
     HAL_StatusTypeDef ret = HAL_I2C_Mem_Read_DMA(
         IMU_I2C, lsm6ds_i2c_addr, REG_OUTZ_L_G,
-        I2C_MEMADD_SIZE_8BIT, gyro_z_dma_buf, 2);
+        I2C_MEMADD_SIZE_8BIT, gyro_z_dma_buf, s_dma_len);
 
     if (ret != HAL_OK) {
         imu_dma_busy = 0;
@@ -362,6 +375,8 @@ void LSM6DS_Gyro_Calibrate_Z_Only(void) {
     }
 
     double sum = 0.0;
+    double sum_ax = 0.0, sum_ay = 0.0;
+    const uint8_t with_accel = imu_accel_capture_en;
     const int warmup_samples = 50;
     const int sample_count = 2000;
     int skipped_samples = 0;
@@ -378,6 +393,8 @@ void LSM6DS_Gyro_Calibrate_Z_Only(void) {
                 skipped_samples++;
             } else {
                 sum += (double)imu_data.Gyro_Z;
+                sum_ax += (double)imu_data.Accel_X;
+                sum_ay += (double)imu_data.Accel_Y;
                 valid_samples++;
             }
         }
@@ -389,6 +406,13 @@ void LSM6DS_Gyro_Calibrate_Z_Only(void) {
 
     if (valid_samples > 0) {
         imu_data.Gyro_Z_Offset = (float_t)(sum / (double)valid_samples);
+    }
+    if (with_accel && valid_samples > 0) {
+        imu_data.Accel_X_Offset = (float_t)(sum_ax / (double)valid_samples);
+        imu_data.Accel_Y_Offset = (float_t)(sum_ay / (double)valid_samples);
+    } else {
+        imu_data.Accel_X_Offset = 0.0f;
+        imu_data.Accel_Y_Offset = 0.0f;
     }
     s_gyro_z_cal_offset = imu_data.Gyro_Z_Offset;
     imu_data.Yaw_Angle = 0.0f;
@@ -483,6 +507,12 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) {
 
     imu_data.Gyro_Z_Raw = (int16_t)((gyro_z_dma_buf[1] << 8) | gyro_z_dma_buf[0]);
     imu_data.Gyro_Z = imu_data.Gyro_Z_Raw * GYRO_SENSITIVITY_2000DPS;
+    if (s_dma_len == 6) {
+        imu_data.Accel_X_Raw = (int16_t)((gyro_z_dma_buf[3] << 8) | gyro_z_dma_buf[2]);
+        imu_data.Accel_Y_Raw = (int16_t)((gyro_z_dma_buf[5] << 8) | gyro_z_dma_buf[4]);
+        imu_data.Accel_X = imu_data.Accel_X_Raw * ACCEL_SENSITIVITY_4G;
+        imu_data.Accel_Y = imu_data.Accel_Y_Raw * ACCEL_SENSITIVITY_4G;
+    }
 
     uint32_t now_cyccnt = DWT->CYCCNT;
 

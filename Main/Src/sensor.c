@@ -1005,7 +1005,11 @@ void IMU_Test(void) {
 	LCD_Printf(0, 0, "IMU Test");
 	LCD_Printf(0, 5, "[U] Cali [D] 0Yaw");
 	LCD_Printf(0, 6, "[K Hold] Exit");
+	LCD_Printf(0, 7, "Accel avg (raw)");
 
+	// 가속도 X/Y도 함께 읽기 (IMU I2C 전송 2→6바이트). 중력 1g 테스트용:
+	// 축을 위/아래로 세우면 +9.81 / -9.81 m/s^2 → 배율 = (위-아래)/(2g), 오프셋 = (위+아래)/2
+	imu_accel_capture_en = 1;
 	LSM6DS3_Reset_Yaw();
 
 	while (1) {
@@ -1025,9 +1029,22 @@ void IMU_Test(void) {
 		LCD_Printf(0, 2, "Gz  : %+7.2f dps", (double)(imu_data.Gyro_Z - imu_data.Gyro_Z_Offset));
 		LCD_Printf(0, 3, "Ofst: %+7.2f dps", (double)imu_data.Gyro_Z_Offset);
 
-		HAL_Delay(50);
+		// 25회 평균. HAL_Delay(1)은 1~2 ms 대기라 약 25~50 ms (기존 50 ms 갱신 주기와 비슷)
+		float_t ax_sum = 0.0f, ay_sum = 0.0f;
+		const int n_avg = 25;
+		for (int k = 0; k < n_avg; k++) {
+			ax_sum += imu_data.Accel_X;
+			ay_sum += imu_data.Accel_Y;
+			HAL_Delay(1);
+		}
+		float_t ax = ax_sum / (float_t) n_avg * 9.80665f;
+		float_t ay = ay_sum / (float_t) n_avg * 9.80665f;
+		LCD_Printf(0, 8, "Ax : %+6.2f m/s2", (double) ax);
+		LCD_Printf(0, 9, "Ay : %+6.2f m/s2", (double) ay);
+		LCD_Printf(0, 10, "|Axy|:%6.2f m/s2", (double) sqrtf(ax * ax + ay * ay));
 	}
 
+	imu_accel_capture_en = 0;
 	LCD_Clear();
 	Button_Wait_Release(&btn_k);
 }

@@ -197,6 +197,8 @@ void Drive_Diag_Update_ISR(float_t line_pos_norm, float_t active_mps,
 				sp->iq_L_mA = (int16_t) Clamp_F32(foc_L.I_q * 1000.0f, -32000.0f, 32000.0f);
 				sp->iq_R_mA = (int16_t) Clamp_F32(-foc_R.I_q * 1000.0f, -32000.0f, 32000.0f);
 				sp->gyro_z_ddps = (int16_t) Clamp_F32(gyro_z_dps * 10.0f, -32000.0f, 32000.0f);
+				sp->acc_x_raw = imu_accel_capture_en ? imu_data.Accel_X_Raw : 0;
+				sp->acc_y_raw = imu_accel_capture_en ? imu_data.Accel_Y_Raw : 0;
 				sp->odom_mm = (uint16_t) Clamp_F32(g_odom_distance_m * 1000.0f, 0.0f, 65000.0f);
 				sp->marker_cnt = (uint8_t) ((g_cross_log_count < 255U) ? g_cross_log_count : 255U);
 				sp->vbus_dV = (uint8_t) Clamp_F32(g_vbus_filt * 10.0f, 0.0f, 255.0f);
@@ -4397,6 +4399,15 @@ FRESULT Drive_Save_SysID_To_SD(void) {
 			g_drive_diag.max_lat_mm, g_drive_diag.weave_dps, g_drive_diag.fail_v);
 	SD_SysID_WriteChunk(line, (UINT) len);
 
+	// 가속도계 캡처 정보: acc_x/acc_y 열은 센서 좌표계 원시값 [m/s^2] (바이어스 미차감).
+	// acc_bias_* 는 출발 전 정지 캘리브레이션 평균 (중력 기울기 성분 포함). acc_capture=0 이면 열이 전부 0.
+	const float_t acc_lsb_mps2 = ACCEL_SENSITIVITY_4G * 9.80665f;
+	len = snprintf(line, sizeof(line),
+			"# fan_en=%u\n# acc_capture=%u\n# acc_bias_x=%.4f\n# acc_bias_y=%.4f\n",
+			(unsigned) driveData.fan_en, (unsigned) imu_accel_capture_en,
+			imu_data.Accel_X_Offset * 9.80665f, imu_data.Accel_Y_Offset * 9.80665f);
+	SD_SysID_WriteChunk(line, (UINT) len);
+
 	uint16_t m_cnt = (g_cross_log_count < CROSS_LOG_MAX) ? g_cross_log_count : CROSS_LOG_MAX;
 	for (uint16_t i = 0; i < m_cnt; i++) {
 		CrossEvent_t type = g_cross_log[i].type;
@@ -4410,7 +4421,7 @@ FRESULT Drive_Save_SysID_To_SD(void) {
 
 	len = snprintf(line, sizeof(line),
 			"t_ms,line_pos,target_mps,mps_L,mps_R,target_iq_L,target_iq_R,"
-			"iq_L,iq_R,gyro_z_dps,odom_m,marker_cnt,vbus\n");
+			"iq_L,iq_R,gyro_z_dps,odom_m,marker_cnt,vbus,acc_x,acc_y\n");
 	SD_SysID_WriteChunk(line, (UINT) len);
 
 	uint32_t total = g_sysid_drive_count;
@@ -4420,7 +4431,7 @@ FRESULT Drive_Save_SysID_To_SD(void) {
 	for (uint32_t i = 0; i < total; i++) {
 		const SysID_DriveSample_t *sp = &g_sysid_drive_buf[i];
 		len = snprintf(line, sizeof(line),
-				"%u,%.4f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f,%.3f,%u,%.1f\n",
+				"%u,%.4f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.1f,%.3f,%u,%.1f,%.3f,%.3f\n",
 				(unsigned) sp->t_ms,
 				sp->line_pos_x10k * 0.0001f,
 				sp->tgt_mps_mmps * 0.001f,
@@ -4433,7 +4444,9 @@ FRESULT Drive_Save_SysID_To_SD(void) {
 				sp->gyro_z_ddps * 0.1f,
 				sp->odom_mm * 0.001f,
 				(unsigned) sp->marker_cnt,
-				sp->vbus_dV * 0.1f);
+				sp->vbus_dV * 0.1f,
+				sp->acc_x_raw * acc_lsb_mps2,
+				sp->acc_y_raw * acc_lsb_mps2);
 		SD_SysID_WriteChunk(line, (UINT) len);
 	}
 
@@ -4441,8 +4454,12 @@ FRESULT Drive_Save_SysID_To_SD(void) {
 }
 
 void Drive_SysID_Test(void) {
-	if (!Drive_Init_Sequence())
+	// 가속도계 X/Y 동시 캡처 (IMU I2C 전송 2→6바이트, 이 모드 전용). 정지 캘리브레이션에서 바이어스도 측정
+	imu_accel_capture_en = 1;
+	if (!Drive_Init_Sequence()) {
+		imu_accel_capture_en = 0;
 		return;
+	}
 
 	uint32_t start_tick = HAL_GetTick();
 	uint8_t exit_reason_lost = 0;
@@ -4476,6 +4493,7 @@ void Drive_SysID_Test(void) {
 	LCD_Clear();
 	LCD_Printf(0, 0, "Saving SysID...");
 	FRESULT res = Drive_Save_SysID_To_SD();
+	imu_accel_capture_en = 0;
 
 	char grip_msg[20] = { 0 };
 	Drive_AutoAdapt_Grip(grip_msg, sizeof(grip_msg));
