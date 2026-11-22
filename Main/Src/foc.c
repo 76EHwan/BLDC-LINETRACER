@@ -338,6 +338,7 @@ void FOC_Update_Theta_Encoder(FOC_Handle_t *hfoc) {
 }
 
 float_t g_odom_distance_m = 0.f;
+float_t g_total_odom_m = 0.f;
 
 float_t FOC_Meas_Mps(FOC_Handle_t *hfoc) {
 	return fabsf(hfoc->omega_e_meas)
@@ -350,7 +351,9 @@ void Odom_Reset(void) {
 
 void Odom_Accumulate(float dt_sec) {
 	float_t mps = 0.5f * (FOC_Meas_Mps(&foc_L) + FOC_Meas_Mps(&foc_R));
-	g_odom_distance_m += mps * dt_sec;
+	float_t ds = mps * dt_sec;
+	g_odom_distance_m += ds;
+	g_total_odom_m += ds;
 }
 
 // 6. 메인 FOC 실행 루프 (injected 변환 완료 IRQ에서 주기적 호출)

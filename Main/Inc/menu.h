@@ -20,6 +20,7 @@ struct MenuContext_t {
     MenuContext_t *parent_menu;       // 'Left' 버튼을 눌렀을 때 돌아갈 상위 메뉴
     uint8_t prev_index;
     uint8_t cursor_index;
+    uint8_t top_index;                // 스크롤 상단 항목 인덱스
 };
 
 extern uint8_t current_menu_index; // 프로젝트에 맞춰 변수명 확인
@@ -27,6 +28,7 @@ extern uint8_t current_menu_index; // 프로젝트에 맞춰 변수명 확인
 // 배열 크기를 자동으로 계산하는 매크로
 #define MENU_ITEM_COUNT(arr) (sizeof(arr) / sizeof((arr)[0]))
 void Menu_ProcessLoop(void);
+void Menu_RequestRedraw(void);
 
 FRESULT FOC_Parameters_InitOrLoad(void);
 void FOC_Menu_SaveToSD(void);
@@ -37,6 +39,8 @@ void Update_Line_Lost_Sum_Min(void);
 void Update_Base_Mps(void);
 void Update_Base_Accel(void);
 void Update_Base_Decel(void);
+void Update_Ramp_Jerk_S(void);
+void Update_Ramp_Settle_Ms(void);
 void Update_Max_Mps(void);
 void Update_Steer_KP(void);
 void Update_Steer_KD(void);
@@ -46,9 +50,12 @@ void Update_Target_Shift_Val(void);
 void Update_Fan_Enable(void);
 void Update_Yaw_KP(void);
 void Update_Yaw_KI(void);
-void Update_Lat_Acc_Max(void);
 void Update_Target_Curve_Gain(void);
 void Update_Slalom_Ratio(void);
 void Update_Brake_Margin(void);
+void Update_Bulge_Lat_Acc(void);
+void Update_Corner45_Max_Mps(void);
+void Update_Omega_Add_Mps(void);
+void Update_Wave_Add_Mps(void);
 
 #endif /* MENU_H_ */

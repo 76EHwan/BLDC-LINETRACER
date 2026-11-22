@@ -31,15 +31,22 @@ typedef struct {
 	// an inner gyro loop tracks it. yaw_gain_p = yaw_gain_i = 0: the plain line PD as before.
 	float_t yaw_gain_p;     // [-]     inner loop P on the yaw-rate error
 	float_t yaw_gain_i;     // [1/s]   inner loop I on the yaw-rate error
-	float_t lat_acc_max;    // [m/s^2] grip limit: slow down while speed x gyro yaw rate exceeds it (0 = off)
 	float_t target_curve_gain; // [-] drive 3/4: target_pos x this inside curve segments (1 = unchanged)
 	float_t slalom_ratio;      // [-] drive 4: 45 deg segments at base + (max - base) x this
 	float_t brake_margin_m;    // [m] 감속 여유 거리: 직선 가속 후 다음 곡선 진입 전 미리 감속 완료할 마진
+	float_t bulge_lat_acc;     // [m/s2] drive 4: Bulge 곡선 숏컷 횡가속도 제한 (v = sqrt(bulge_lat_acc * r_min))
+	float_t corner45_max_mps;  // [m/s] drive 4: 단독 45도 대원호 숏컷(Corner45) 최대 속도 상한
+	float_t omega_add_mps;     // [m/s] drive 4: 오메가 헤어핀 원호 속도 오프셋 (Fourth_Corner_Mps + this)
+	float_t wave_add_mps;      // [m/s] drive 4: 180도 웨이브 숏컷 속도 오프셋 (Fourth_Corner_Mps + this)
+	float_t ramp_jerk_s;      // [s]  가속 시작 저크 제한: 가속도를 이 시간 동안 0 → accel 로 올린다 (0 = 끔, 즉시 accel)
+	float_t ramp_settle_ms;   // [ms] 기준 속도에서 가속을 시작하기 전, 라인 오차·요레이트가 안정될 때까지 기다리는 최대 시간 (0 = 끔)
 } DriveParam_t;
 #define DRIVE_HAS_SLALOM_RATIO 1
 #define DRIVE_HAS_CASCADE_STEER 1
 #define DRIVE_HAS_TARGET_CURVE_GAIN 1
 #define DRIVE_HAS_BRAKE_MARGIN 1
+#define DRIVE_HAS_CURVE_CUT_SPEED 1
+#define DRIVE_HAS_ACCEL_RAMP 1
 
 extern DriveParam_t driveData;
 
@@ -47,6 +54,13 @@ extern DriveParam_t driveData;
 extern float_t accel;
 extern float_t decel;
 extern volatile uint8_t g_is_braking;
+extern volatile uint8_t g_is_straight;
+extern volatile uint8_t g_straight_cut_active;
+extern volatile uint8_t g_suppress_marker_detect;
+extern volatile float g_min_same_side_odom_m;
+extern volatile float g_straight_cut_yaw_ref;
+extern volatile float g_straight_cut_kappa_ref;
+extern volatile float g_straight_cut_line_blend;
 extern volatile float g_target_base_mps;
 extern volatile float g_current_base_mps;
 
@@ -76,6 +90,7 @@ typedef struct {
 	float_t max_lat_mm;        // 센서바 기준 최대 횡방향 오차 [mm]
 	float_t weave_dps;         // 주행 중 자이로 고주파 진동 에너지 (RMS) [deg/s]
 	float_t fail_v;            // 이탈 직전 주행 속도 [m/s]
+	float_t max_a_lat;         // 실측 최대 횡가속도 [m/s^2]
 	uint32_t heal_count;       // 누적 Auto-Heal 적용 횟수
 	char last_role[16];        // 마지막 적용된 힐링 처방 이름
 } DriveDiag_t;
@@ -96,6 +111,8 @@ typedef struct {
 	int16_t  iq_L_mA;       // 좌측 모터 실측 전류 [mA] (전진 +)
 	int16_t  iq_R_mA;       // 우측 모터 실측 전류 [mA] (전진 +)
 	int16_t  gyro_z_ddps;   // 자이로 Z 각속도 (오프셋 차감) * 10 [0.1 deg/s] (좌회전 CCW +)
+	int16_t  acc_x_raw;     // IMU 가속도 X 원시값 [0.122 mg/LSB, ±4g, 센서 좌표계] (imu_accel_capture_en=0 이면 0)
+	int16_t  acc_y_raw;     // IMU 가속도 Y 원시값 [0.122 mg/LSB, ±4g, 센서 좌표계]
 	uint16_t odom_mm;       // 구간 누적 오도메트리 거리 [mm]
 	uint8_t  marker_cnt;    // 현재까지 누적된 마커 개수 (g_cross_log_count)
 	uint8_t  vbus_dV;       // 배터리 전압 * 10 [0.1 V]
@@ -111,5 +128,6 @@ void Drive_Diag_Finalize(uint8_t line_lost);
 void Drive_AutoHeal_Apply(void);
 void Drive_AutoHeal_Reset_Anchor(void);
 void Drive_AutoHeal_Menu(void);
+uint8_t Drive_AutoAdapt_Grip(char *diag_str, uint8_t diag_str_size);
 
 #endif /* INC_DRIVE_H_ */

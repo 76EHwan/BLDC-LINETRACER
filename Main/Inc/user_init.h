@@ -6,7 +6,7 @@
  */
 
 #ifndef USER_INIT_H_
-#define USER_INIT_H
+#define USER_INIT_H_
 
 #include "st7735_lcd.h"
 #include "st7789_lcd.h"
@@ -20,16 +20,16 @@ void User_Init(void);
 #define LCD_Set_Color 	LCD7789_Set_Color
 #define LCD_Sleep_Mode	LCD7789_Sleep
 #define LCD_Invert		LCD7789_Invert
+
 #define FOC_CONTROL
 //#define SENSOR_TRAP_CONTROL
 
-#if defined(FOC_CONTROL) & defined(SENSOR_TRAP_CONTROL)
-error "FOC & SENSOT TRAP Both Crashed."
+#if defined(FOC_CONTROL) && defined(SENSOR_TRAP_CONTROL)
+#error "FOC & SENSOR TRAP Both Defined."
 #endif
 
-#if !defined(FOC_CONTROL) & !defined(SENSOR_TRAP_CONTROL)
-error "Undefined FOC & SENSOT TRAP."
-
+#if !defined(FOC_CONTROL) && !defined(SENSOR_TRAP_CONTROL)
+#error "Undefined FOC & SENSOR TRAP."
 #endif
 
 #endif /* USER_INIT_H_ */

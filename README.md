@@ -17,9 +17,9 @@ STM32H743VIT6 기반 **BLDC(FOC 제어) 라인트레이서** 펌웨어입니다.
 | 엔코더 | 쿼드러처 엔코더 2048 CPR — LPTIM2(좌) / LPTIM1(우) 엔코더 모드 |
 | 보조 엔코더 | MT6701 자기 엔코더 (SPI2 SSI, 테스트 메뉴에서만 사용) |
 | 라인 센서 | IR 18채널 (라인 16 + 좌/우 마커 2), 4bit MUX 스캔, ADC3 + BDMA |
-| IMU | LSM6DS3TR-C (I2C1 DMA, Gyro Z 적분으로 yaw 산출) |
-| 디스플레이 | ST7789 LCD (SPI, `st7735` 드라이버도 함께 포함) |
-| 저장장치 | microSD (SDMMC1 + FatFs), W25Qxx QSPI 플래시 |
+| IMU | ST **LSM6DS 전 시리즈 범용 지원** (`LSM6DS3`, `LSM6DS3TR-C`, `LSM6DSR`, `LSM6DSO`, `LSM6DST`, `LSM6DSV`, `LSM6DSV16X`, `LSM6DSV32X` `WHO_AM_I` 자동 판별, I2C1 DMA / SPI1 EXTI0, Gyro Z 적분으로 yaw 산출) |
+| 디스플레이 | ST7789 LCD (SPI4 BDMA, 화면 변경 시에만 재렌더링 + 10 ms `__WFI()` 슬립으로 코어/LCD 발열 최소화, 한 화면 10개 메뉴 최적화) |
+| 저장장치 | microSD (SDMMC1 + FatFs, 미장착 시 부팅 자동 스킵 및 RNG 기반 무결성 검증), W25Qxx QSPI 플래시 |
 | 입력 | 5-way 버튼 (U / D / L / R / K), 싱글·더블·홀드 인식 |
 | 부저 | DAC + DMA 파형 출력 (FUET-8540), LPTIM3로 발음 시간 관리 |
 | 기타 | 흡입팬 PWM(TIM15), 배터리 전압 분압 측정, USB DFU 부트로더 진입 |
@@ -43,14 +43,14 @@ Main/                     ← 애플리케이션 로직 (직접 작성한 코드
  ├── Src/motor.c          모터 기동/정지, 조향(Steer), 드라이버 설정, 튜닝 UI
  ├── Src/sensor.c         라인 센서 스캔·정규화·위치 추정, 마커 검출/로깅
  ├── Src/drive.c          1~4회차 주행 시퀀스, 가감속 램프, 구간 계획
- ├── Src/menu.c           계층형 LCD 메뉴, 파라미터 편집, Last-Used 기록
+ ├── Src/menu.c           계층형 LCD 메뉴 (WFI 슬립 발열 억제 및 10개 상한 최적화), 파라미터 편집, Last-Used 기록
  ├── Src/sd_ui.c          SD 카드 설정 저장/로드, 주행 로그 저장, 슬롯 선택 UI
  ├── Src/bootloader.c     시스템 메모리(DFU) 부트로더 점프
- └── Src/user_init.c      전원 인가 후 초기화 시퀀스
+ └── Src/user_init.c      전원 인가 후 초기화 시퀀스 (KEY 홀드 시 부팅 화면 일시정지 지원)
 
-Drivers/BSP/              보드 주변장치 드라이버 (DRV8316C, MCT8316Z, LSM6DS3TR-C,
+Drivers/BSP/              보드 주변장치 드라이버 (DRV8316C, MCT8316Z, LSM6DS3TR-C 범용 드라이버,
                           MT6701, ST7735/ST7789, SDcard, w25qxx, Button, Buzzer)
-Core/                     CubeMX 생성 코드 (main.c, 주변장치 init, IRQ 디스패처)
+Core/                     CubeMX 생성 코드 (main.c, 주변장치 init, IRQ 디스패처, sd_diskio_patch)
 Drivers/CMSIS/DSP         CMSIS-DSP (Clarke/Park/PID/삼각함수)
 FATFS/, Middlewares/      FatFs, USB Device
 MDK-ARM/                  Keil 프로젝트 (보조)
@@ -67,7 +67,7 @@ BLDC_Template_v2.0.0.ioc  STM32CubeMX 프로젝트 파일
 | 속도 루프 | TIM13 | **2 kHz** | 엔코더 차분 속도 측정(이동평균 4), 속도 PID → Iq 지령, Vbus LPF |
 | 램프 & 조향 | TIM14 | **2 kHz** | 오도메트리 적산, 목표속도 가감속 램프, `Steer_Motor()` |
 | 센서 스캔 | TIM7 → TIM2 → ADC3 | 슬롯 25 µs / 전체 **2 kHz** | MUX 채널 전환 → 5 µs 후 ADC 트리거 → 정규화 + 임계 판정 |
-| IMU 샘플링 | SysTick 10 tick | 100 Hz | Gyro Z DMA 읽기 → DWT 사이클 기반 dt로 yaw 적분 |
+| IMU 샘플링 | SysTick 10 tick (I2C1) / EXTI0 (SPI1) | 100 Hz / 1.66~1.92 kHz | Gyro Z 비동기 읽기 → DWT 사이클 기반 dt로 yaw 적분 |
 
 PWM은 TIM3(좌)/TIM4(우) **center-aligned, ARR 4800 @ 240 MHz → 25 kHz** 입니다.
 `MX_DRV8316C_Init()` 에서 CubeMX가 Hall 모드로 만들어 둔 TIM3/TIM4를 PWM 모드로 재구성하고,
@@ -110,13 +110,15 @@ TIM3는 카운터 0, TIM4는 4800에서 출발시켜 **좌우 모터의 전류 �
   (`scan_group1/2` — 크로스토크 저감). 마커 센서 16/17번은 두 그룹 모두에 포함되어 2배 빠르게 갱신됩니다.
 - 캘리브레이션에서 채널별 `whitemax` / `blackmax` 를 수집하고, 정규화 계수를
   `(255 << 8) / (white - black)` 로 미리 계산해 런타임에는 정수 곱/시프트만 수행합니다.
-- **위치 추정** `Sensor_Get_Position()`
+- **위치 추정** `Sensor_Get_Position()` 및 `Sensor_Get_Last_Position()`
   - 직전 피크 인덱스 주변 ±3 창에서만 피크를 탐색해 노이즈/분기에 강인하게 처리
-  - 창 안에서 7개 센서의 정규화 값으로 **가중 평균(무게중심)** → −1.0 ~ +1.0 의 위치 반환
-  - 창 밖에 켜진 센서가 있으면 좌/우 **마커 후보**(`mark_left` / `mark_right`)로 분리
-  - 창 안이 과도하게 켜지면 교차선(cross) 상태로 판단해 직전 위치를 유지
+  - 창 안에서 7개 센서의 정규화 값으로 **가중 평균(무게중심)** → −1.5 ~ +1.5 의 위치 반환
+  - 창 안이 과도하게 켜지면(6개 이상 점등 또는 합산 밝기 임계 초과) 교차선(`IR_Sensor.is_cross = 1`)으로 판단해 직전 피크와 위치를 동결하여 크로스 구간 위치 스파이크 원천 차단
+  - 메인 루프에서 상태 변수를 오염시키지 않고 직전 측정 위치만 안전하게 조회할 수 있는 `Sensor_Get_Last_Position()` 제공
   - 총 밝기 합이 `line_lost_sum_min` 이하인 상태가 50회 연속되면 **라인 로스트** 판정 → 주행 종료
 - **마커 검출** `Cross_Detect_Update()` — 마커 진입 시 상태를 누적하고 이탈하는 순간 판정합니다.
+  - 교차로(`CROSS_CROSS`) 통과 직후 15 cm(`g_post_cross_lockout_dist`) 동안 잔류 대각선 테이프에 의한 좌/우 고스트 마커 오검출을 방지하고, 15 cm 주행 후 자동 해제합니다.
+  - 좌/우 독립 마커 비트 분리 시 직전 피크 앵커(`anchor`)를 기준으로 탐색하고, `g_min_same_side_odom_m` 이내의 동일 방향 마커 중복 검사를 억제합니다.
 
   | 누적 결과 | 이벤트 |
   |---|---|
@@ -131,17 +133,41 @@ TIM3는 카운터 0, TIM4는 4800에서 출발시켜 **좌우 모터의 전류 �
 
 ---
 
-## 6. 조향 및 속도 배분 (`Steer_Motor`, `motor.c`)
+## 6. 조향 및 속도 배분 (`Steer_Motor`, `motor.c`) — Geometric Pure Pursuit + $R=0.25\,\text{m}$ 곡률 제어
+
+전방 $L_d = 132.13\,\text{mm}$ 원호 센서바의 기하학적 특성과 대회 규격 고정 곡률($R = 0.25\,\text{m} \implies \kappa_{\text{rule}} = 4.0\,\text{m}^{-1}$)을 결합한 **Adaptive Pure Pursuit + 캐스케이드 요레이트 제어기**를 사용합니다.
 
 ```
-error      = line_pos - target_pos
-steer      = PD(error)                       // CMSIS arm_pid_f32, Ki = 0
-atten      = clamp(1 - |error| * pos_atten_gain, 0.4, 1.0)   // 비대칭 필터 (감속 즉시 / 복귀 완만)
-active_mps = g_current_base_mps * atten
-mps_L      = active_mps * (1 + steer * THREAD/2)
-mps_R      = active_mps * (1 - steer * THREAD/2)
-target_omega = mps * (2/TIRE_DIA) * POLE_PAIRS * GEAR_RATIO
+smooth_target = LPF(target_pos)                  // tau ≈ 12ms 완충 필터 (target_pos 급변 충격 방지)
+error         = line_pos - smooth_target
+alpha         = 0.4145 * error                   // 정규화 센서 오차 → 전방 원호 방위각 [rad] (23.75 deg/unit)
+
+// 1) 기본 Pure Pursuit 곡률 (중심 기울기 ≈ 6.27 m^-1/unit, 기존 PD 대비 1/3 강성으로 직선 헌팅 원천 억제)
+kappa_pp      = (2 * sin(alpha)) / L_d           // L_d = 0.13213 m
+
+// 2) R = 0.25m (kappa = 4.0 m^-1) 코너 곡률 및 슬립각 비선형 보상 (중심에서 값·미분값 모두 0)
+corner_weight = error^2 / (error^2 + 0.12^2)
+kappa_corner  = sign(error) * 4.0 * corner_weight * (1 + 1.85 * error^2)
+
+// 3) Adaptive Look-Ahead 속도 스케일링 (고속 직선 L_eff(v) = L_d * sqrt(v / v_base))
+p_term        = (kappa_pp * sqrt(v_base / v) + kappa_corner * (v_base / v)) * (Kp / 20.4)
+
+// 4) 측정값 미분(Derivative-on-Measurement) + 크로스 통과 시 미분 동결(Hold-off)
+deriv         = LPF(line_pos - prev_line_pos)    // target_pos 변경 시 인위적 미분 킥 차단
+d_term        = (Kd * kd_scale) * deriv * (v_base / v)
+
+// 5) 내부 루프: 자이로 각속도(Gyro Z) 캐스케이드 피드백
+yaw_ref       = active_mps * (p_term + d_term)
+yaw_cmd       = yaw_ref + p_yaw * (yaw_ref - yaw_meas) / (1 + p_yaw) + yaw_integ
+mps_L         = active_mps + yaw_cmd * (THREAD / 2)
+mps_R         = active_mps - yaw_cmd * (THREAD / 2)
 ```
+
+- **핵심 특징**:
+  1. **직선 및 코너 탈출 진동 억제**: 중심 부근(`|error| -> 0`)에서는 순수 기하학적 Pure Pursuit 곡률($6.27\,\text{m}^{-1}/\text{unit}$)만 작용하여 기존 선형 PD($20.4$) 대비 중심 강성을 약 $1/3$로 낮추고, 코너 진입 시(`|error| >= 0.12`)에만 $R=0.25\,\text{m}$ 곡률 보상이 매끄럽게 결합됩니다.
+  2. **측정값 미분 및 크로스 홀드오프**: `error` 대신 `line_pos` 측정값만 미분하여 3·4차 주행에서 `target_pos` 시프트 시 발생하던 미분 킥을 제거하고, 교차로(`is_cross`) 진입 및 탈출 후 4주기(2.0 ms) 동안 미분항을 `0`으로 유지합니다.
+  3. **코너 탈출 동적 자세 정렬 후 가속 (`drive.c`)**: 2·3·4차 주행에서 곡선 탈출 마커 통과 직후 $0.25\,\text{m}$ 마진 및 차체 자세 정렬(`|yaw_rate| < 40 dps && |line_err| < 0.20`)이 완료될 때까지 `base_mps`를 유지한 뒤 직선 풀 가속을 래치(latch)합니다.
+  4. **인코리도 직선 컷 IMU 헤딩 홀드 (`drive.c`, `motor.c`)**: 4차 주행 직선 컷 구간(`g_straight_cut_active`)에서는 IR 라인 오차 추종 대신 목표 헤딩(`g_straight_cut_yaw_ref`)과 곡률 피드포워드(`yaw_ref = 16.0 * heading_err_rad - active_mps * g_straight_cut_kappa_ref`)로 완만한 호/직선 궤적을 추종합니다.
 
 가감속은 TIM14 램프에서 `accel` / `decel` [m/s²] 로 선형 처리하며,
 `Drive_Stop_At_Distance(d)` 는 `decel = v² / 2d` 를 역산해 **지정한 거리 안에서 정지**시킵니다(피트인).
@@ -154,13 +180,15 @@ target_omega = mps * (2/TIRE_DIA) * POLE_PAIRS * GEAR_RATIO
 |---|---|---|
 | **1st Drive** | `Drive_First` | 기본 속도로 완주하며 마커·거리·yaw 로그 수집. 두 번째 STOP 마커에서 종료 후 SD 슬롯(1~10)에 저장 |
 | **2nd Drive** | `Drive_Second` | 1회차 로그로 구간 계획을 세워 **직선 구간에서만 `max_mps` 로 가속**, 제동거리 `(v1²−v2²)/2a + 마진` 을 남기고 감속 |
-| **3rd Drive** | `Drive_Third` | 가속은 끄고, 다가올 코너 방향에 따라 **목표 위치(`target_pos`)를 좌우로 선형 보간 이동**시켜 인코스 주행 |
-| **4th Drive** | `Drive_Fourth` | 2회차의 가속 + 3회차의 타겟 시프트를 결합. 기록된 yaw 크기로 **15°~65° 얕은 연속 곡선(슬라롬)** 을 판별해 `max_mps × 0.85` 로 가속 |
+| **3rd Drive** | `Drive_Third` | 직선 가속 + 다가올 코너 방향에 따라 **목표 위치(`target_pos`)를 좌우로 선형 보간 이동**시켜 인코스 주행 |
+| **4th Drive** | `Drive_Fourth` | 2·3회차 가속·타겟 시프트에 더해 얕은 연속 곡선(슬라롬) 가속 및 코리도 허용 폭 내 시케인·mid-90°·다중 스텝 쉬프트 범프 구간의 완만한 호/직선 컷(`g_straight_cut_active`) + 가상 마커 추적 수행 |
+| **AI Auto-Heal** | `Drive_AutoHeal_Menu` | 주행 중 탈선/오차에 따라 조향 게인 및 속도를 자동 보정하는 AI 자가치유 주행 |
 | **Vibe Test** | `Drive_Vibration_Test` | 기본 속도 주행 중 Gyro Z를 1 ms 주기로 최대 10000 샘플 기록 → `/Drive_Data/vib_log_*.csv` |
+| **SysID Drive** | `Drive_SysID_Test` | 500 Hz 주행 동특성 데이터 SD 로깅 |
 
 공통 사항
 
-- 매 주행 시작 시 센서 캘리브레이션 로드, 팬 기동, 마커 로그·오도메트리 초기화, 조향 PID 재초기화,
+- 매 주행 시작 시 센서 캘리브레이션 로드, 팬 기동 전 출발선 IMU Gyro Z 오프셋 캘리브레이션(약 0.6초), 팬 기동, 마커 로그·오도메트리 초기화, 조향 PID 재초기화,
   FOC 속도 루프 기동, yaw 리셋을 수행합니다 (`Drive_*_Init_Sequence`).
 - 2~4회차는 실제 마커 순서를 기준 로그와 대조하다가 어긋나면 `mismatch` 로 전환해 가속을 중단하고,
   이후 `CROSS_CROSS` 를 만나면 인덱스를 재동기화합니다.
@@ -172,17 +200,21 @@ target_omega = mps * (2/TIRE_DIA) * POLE_PAIRS * GEAR_RATIO
 ## 8. 메뉴 구조 (`Main/Src/menu.c`)
 
 버튼: `U`/`D` 커서 이동, `R` 진입/실행, `L` 상위 메뉴, `K` 홀드로 각 기능 종료.
+유휴 상태에서는 화면/커서 변경 시에만 LCD를 갱신하고 10 ms `__WFI()` 슬립으로 대기하여 발열을 방지합니다.
 
 ```
 Main Menu
-├── Sensor Menu   Calibration / Raw / Normalized / State / Position / IMU Test
+├── Sensor Menu   Calibration / Raw / Normalized / State / Position / Update Thres / IMU Test / IMU Cali / SysID Log
 ├── Motor Menu    Driver Setup(레지스터 뷰) / Update Setup / 6-Step PWM / Simple FOC /
 │                 Tune Cur PI / Encoder Test / Tune Spd PID / Fan Test /
-│                 Mag Enc Test / Battery Volt / Load From SD / Save To SD
-├── Drive Menu    1st ~ 4th Drive / Vibe Test
-│   └── Update Param  Threshold, Lost Pos Min, Base m/s, Base Accel, Base Decel,
-│                     Max m/s, Steer KP, Steer KD, Pos Abs Gain, Pit In Dis M,
-│                     Target Shift, Fan Enable
+│                 Mag Enc Test / Battery Volt / Load From SD / Save To SD / SysID Test
+├── Drive Menu    1st ~ 4th Drive / AI Auto-Heal / Vibe Test / SysID Drive
+│   └── Update Param  (한 화면 10개 최적화)
+│                     1. Base m/s       6. Steer KD
+│                     2. Max m/s        7. Brake Margin
+│                     3. Base Accel     8. Target Shift
+│                     4. Base Decel     9. Pit In Dis M
+│                     5. Steer KP      10. Fan Enable
 ├── Boot Load     K 홀드 4초 → DFU 부트로더 진입
 └── Last Used     마지막 실행 기능 바로 실행 (내부 플래시에 기록)
 ```
@@ -201,8 +233,9 @@ Main Menu
 | `/Drive_Data/save_slot_1..10.txt` | 주행 파라미터 + 마커 로그 (`IDX / TYPE / DIST / YAW`) |
 | `/Drive_Data/vib_log_*.csv` | 진동 테스트 Gyro Z 로그 |
 
-`save_slot_*.txt` 는 부팅할 때 `Delete_All_Marker_Logs()` 가 전부 삭제하므로,
-보존이 필요한 로그는 전원을 내리기 전에 PC로 옮겨야 합니다.
+- 부팅 시 `SDCard_Test()`가 하드웨어 RNG 난수(`sd_test_rng_val`)를 `/sd_test.tmp`에 기록·검증 후 즉시 삭제합니다.
+- SD 카드가 장착되어 있지 않더라도 부팅이 멈추지 않고 `SD:SKIP`을 표시한 뒤 정상 진입합니다.
+- `save_slot_*.txt` 는 부팅할 때 `Delete_All_Marker_Logs()` 가 비캐시(`SDFatFS_NC`) 버퍼로 마운트하여 전부 삭제하므로, 보존이 필요한 로그는 전원을 내리기 전에 PC로 옮겨야 합니다.
 
 ---
 
@@ -212,14 +245,14 @@ Main Menu
 
 | 항목 | 기본값 | 설명 |
 |---|---|---|
-| `base_mps` | 1.8 | 기본 주행 속도 [m/s] |
-| `max_mps` | 8.0 | 가속 구간 최고 속도 [m/s] |
-| `accel` / `decel` | 5.5 / 5.5 | 가감속도 [m/s²] |
-| `steer_gain_p` | 22.4 | 조향 P 게인 |
-| `steer_gain_d` | 600.0 | 조향 D 게인 |
-| `pos_atten_gain` | 0.0 | 오차 비례 감속 게인 (0이면 비활성) |
+| `base_mps` | 1.80 | 기본 주행 속도 [m/s] |
+| `max_mps` | 7.00 | 가속 구간 최고 속도 [m/s] |
+| `accel` / `decel` | 8.0 / 8.0 | 가감속도 [m/s²] |
+| `steer_gain_p` | 16.400 | 조향 P 게인 ([-1.5, +1.5] 센서 좌표계 기준) |
+| `steer_gain_d` | 800.0 | 조향 D 게인 |
+| `brake_margin_m` | 0.15 | 직선 감속 여유 거리 [m] |
 | `pit_in_distance_m` | 0.15 | 정지선 통과 후 정지까지 거리 [m] |
-| `target_shift_val` | 0.3 | 3·4회차 인코스 타겟 이동량 (센서 정규화 좌표) |
+| `target_shift_val` | 0.58 | 3·4회차 인코스 타겟 이동량 [단위] |
 | `fan_en` | 0 | 흡입팬 사용 여부 |
 
 센서 임계값 `threshold = 95`, 라인 로스트 판정 합 `line_lost_sum_min = 20` (`sensor.c`).
@@ -242,6 +275,7 @@ Main Menu
 
 > CubeMX로 코드를 재생성한 뒤에는 `Core/Src/stm32h7xx_it.c` 의 USER CODE 블록(타이머/ADC 콜백 디스패처)과
 > `main.c` 의 `Check_Bootloader_Request()` 호출이 유지되었는지 확인하세요.
+> `Core/Src/sd_diskio_patch.c` 에서 `BSP_SD_IsDetected()` 를 오버라이드하므로 CubeMX 재생성 후에도 SD 카드 감지(`PD4`)가 유지됩니다.
 > TIM3/TIM4는 CubeMX에서 Hall 모드로 생성되며 `MX_DRV8316C_Init()` 이 런타임에 PWM으로 바꿉니다 — 정상 동작입니다.
 
 **USB DFU로 플래시하기**
@@ -254,15 +288,16 @@ Main Menu
 
 ## 12. 사용 순서 (첫 세팅)
 
-1. **센서 캘리브레이션** — `Sensor Menu > Calibration`
+1. **부팅 상태 확인** — 전원 인가 시 초기화 결과(감지된 IMU 모델명/Chip ID, FOC 오프셋, 배터리 전압, SD 카드 RNG 검증 결과)가 표시됩니다. `KEY` 버튼을 누르고 있으면 화면이 일시정지(`PAUSED (Rel KEY)`)되어 천천히 확인할 수 있습니다.
+2. **센서 캘리브레이션** — `Sensor Menu > Calibration`
    흰 바닥 위에서 센서바를 흔들어 whitemax 수집 → K 홀드 → 검은 라인 위에서 blackmax 수집 → K 홀드.
    결과는 자동으로 SD에 저장됩니다.
-2. **모터 방향/엔코더 확인** — `Motor Menu > 6-Step PWM` 에서 DirL / DirR 이 `OK` 인지 확인,
+3. **모터 방향/엔코더 확인** — `Motor Menu > 6-Step PWM` 에서 DirL / DirR 이 `OK` 인지 확인,
    `Encoder Test` 로 CNT 증가 방향 확인.
-3. **전류 PI 튜닝** — `Motor Menu > Tune Cur PI` (Id 스텝 응답 관찰), 필요 시 `Tune Spd PID`.
+4. **전류 PI 튜닝** — `Motor Menu > Tune Cur PI` (Id 스텝 응답 관찰), 필요 시 `Tune Spd PID`.
    튜닝값은 `Save To SD` 로 저장, 다음 전원 인가 후 `Load From SD` 로 복원합니다.
-4. **주행 파라미터 설정** — `Drive Menu > Update Param`.
-5. **1st Drive** 로 코스를 한 바퀴 학습시킨 뒤, 같은 전원 세션에서 **2nd / 3rd / 4th Drive** 실행.
+5. **주행 파라미터 설정** — `Drive Menu > Update Param`.
+6. **1st Drive** 로 코스를 한 바퀴 학습시킨 뒤, 같은 전원 세션에서 **2nd / 3rd / 4th Drive** 실행.
    (기준 로그는 RAM에 유지되므로 전원을 내리면 다시 1회차부터 수행해야 합니다.)
 
 ---

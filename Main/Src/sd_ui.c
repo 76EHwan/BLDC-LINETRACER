@@ -17,7 +17,7 @@
 #include "sd_ui.h"
 #include "sensor.h"
 #include "user_init.h"
-#include "lsm6ds3tr-c.h"
+#include "lsm6ds.h"
 
 // =========================================================
 // [SD카드 저장 및 불러오기]
@@ -274,11 +274,14 @@ void Save_MarkerLog_To_SD(uint8_t slot_number) {
 	len += sprintf(log_buf + len, "pos atten gain = %.2f\n", driveData.pos_atten_gain);
 	len += sprintf(log_buf + len, "yaw kp = %.3f\n", driveData.yaw_gain_p);
 	len += sprintf(log_buf + len, "yaw ki = %.3f\n", driveData.yaw_gain_i);
-	len += sprintf(log_buf + len, "lat acc max = %.2f\n", driveData.lat_acc_max);
 	len += sprintf(log_buf + len, "target shift = %.2f\n", driveData.target_shift_val);
 	len += sprintf(log_buf + len, "target curve gain = %.2f\n", driveData.target_curve_gain);
 	len += sprintf(log_buf + len, "slalom ratio = %.2f\n", driveData.slalom_ratio);
 	len += sprintf(log_buf + len, "brake margin = %.2f\n", driveData.brake_margin_m);
+	len += sprintf(log_buf + len, "bulge lat acc = %.2f\n", driveData.bulge_lat_acc);
+	len += sprintf(log_buf + len, "corner45 max mps = %.2f\n", driveData.corner45_max_mps);
+	len += sprintf(log_buf + len, "omega add mps = %.2f\n", driveData.omega_add_mps);
+	len += sprintf(log_buf + len, "wave add mps = %.2f\n", driveData.wave_add_mps);
 
 	// 구분선 및 마커 헤더 기록
 	len += sprintf(log_buf + len, "===================\n");

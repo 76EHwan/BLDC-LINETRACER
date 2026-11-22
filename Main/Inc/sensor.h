@@ -45,6 +45,13 @@ typedef struct {
 
 	uint8_t mark_left;
 	uint8_t mark_right;
+
+	// Spatio-temporal separable convolution: spatial [-1, 2, -1] x causal temporal [1, 2, 7] / 10.
+	// conv[i]: low-lag temporally smoothed Laplacian of normalized[] (mark sensors 16/17 are outer neighbours of IR_0/IR_15).
+	// conv_gain > 0: blended into peak metric and centroid weights, refreshed every full scan (idx == 0).
+	// conv_gain = 0: legacy raw normalized[] weights only.
+	int16_t conv[LINE_N_SENSORS];
+	float32_t conv_gain;
 } SensorData_TypeDef;
 
 typedef struct {
@@ -52,6 +59,7 @@ typedef struct {
 	uint8_t is_calibration;
 	uint8_t is_lost_position;
 	uint8_t is_position;
+	uint8_t is_cross;
 	volatile SensorData_TypeDef *data;
 } Sensor_TypeDef;
 
@@ -83,15 +91,20 @@ void Sensor_Stop();
 void Sensor_Printf(uint8_t idx, volatile uint16_t *sensor_data);
 
 float Sensor_Get_Position(void);
+float Sensor_Get_Last_Position(void);
+void Sensor_Reset_Position(void);
 
 void Cross_Detect_Reset(void);
 CrossEvent_t Cross_Detect_Update(void);
+uint8_t Cross_Is_Reading(void);
 void Cross_Log_Push(CrossEvent_t type);
+void Sensor_Log_Virtual_Marker(CrossEvent_t type, float yaw_deg);
 
 void Sensor_Calibration();
 void Sensor_Raw_Printf();
 void Sensor_Normalize_Printf();
 void Sensor_State_Printf();
+void Sensor_Conv_Printf();
 void Sensor_Position_Printf();
 void Sensor_SysID_Log(void);
 
@@ -104,5 +117,6 @@ float Sensor_Line_Estimate_Pass1(void);
 float Sensor_Line_Estimate_Pass2(void);
 
 void IMU_Test(void);
+void IMU_Calibrate_Menu(void);
 
 #endif /* INC_SENSOR_H_ */

@@ -5,8 +5,9 @@
 #include "mt6701.h"
 
 #include "drive.h" // 조향 제어 시 목표 속도(g_current_base_mps) 참조용
-#include "lsm6ds3tr-c.h" // 캐스케이드 조향: imu_data.Gyro_Z
+#include "lsm6ds.h" // 캐스케이드 조향: imu_data.Gyro_Z
 #include "motor.h"
+#include "pp_steer.h"
 #include "sensor.h"
 #include "user_init.h"
 
@@ -165,31 +166,65 @@ void Fan_Mtr_Stop() {
 // ============================================================================
 
 arm_pid_instance_f32 steer_pid;
+volatile uint8_t g_steer_settled = 1;
+#define STEER_SETTLE_ERR    0.06f   // |라인 오차| [정규화] (약 5 mm)
+#define STEER_SETTLE_YAW    1.5f    // |요레이트| [rad/s] (약 86 dps)
+#define STEER_SETTLE_TICKS  60U     // 연속 유지 시간 [0.5 ms tick] = 30 ms
 static volatile float32_t g_current_steer = 0.0f;
 static volatile float32_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
 static volatile float32_t g_yaw_integ = 0.0f;    // 캐스케이드 안쪽 루프 적분 [rad/s]
-static volatile float32_t g_grip_atten = 1.0f;   // 접지 한계 감속 비율 (lat_acc_max)
 static volatile float32_t g_prev_steer_error = 0.0f;
 static volatile float32_t g_filtered_deriv = 0.0f;
+static volatile float32_t g_smooth_target_pos = 0.0f; // zero position shifting 완충 필터
+static volatile uint8_t g_prev_was_cross = 0;
 #define YAW_INTEG_MAX 5.0f                        // 적분 한계 [rad/s]
 
 void Steer_Reset_State(void) {
+	Sensor_Reset_Position();
 	g_yaw_integ = 0.0f;
-	g_grip_atten = 1.0f;
 	filtered_atten = 1.0f;
 	g_prev_steer_error = 0.0f;
 	g_filtered_deriv = 0.0f;
+	g_smooth_target_pos = 0.0f;
+	g_prev_was_cross = 0;
+}
+
+void Steer_Clear_Target_Shift(void) {
+	g_smooth_target_pos = 0.0f;
+	g_yaw_integ = 0.0f;
 }
 
 void Steer_Motor() {
-	// 1. float32_t 자료형 사용으로 단정밀도(Single-Precision) 강제
+	// 1. zero position shifting 완충: target_pos 동적 변경 시 급격한 스텝으로 인한 차체 흔들림 방지
+	const float32_t target_lpf_alpha = 0.96f; // dt=0.5ms 기준 시상수 약 12ms (빠른 추종과 충격 완화의 최적점)
+	g_smooth_target_pos = (target_lpf_alpha * g_smooth_target_pos) + ((1.0f - target_lpf_alpha) * IR_Sensor.data->target_pos);
+
+	// 2. 단정밀도(Single-Precision) 강제 계측 위치 수신
 	float32_t line_pos = Sensor_Get_Position();
-	float32_t error = line_pos - IR_Sensor.data->target_pos;
+	float32_t error = line_pos - g_smooth_target_pos;
 
 	// 2. 미분항(Kd): 측정값(line_pos) 미분(Derivative-on-Measurement) 적용
-	//    target_pos가 동적으로 이동할 때 인공적인 Kd 미분 킥(스파이크) 및 자이로 요레이트 폭주 차단
-	float32_t raw_deriv = line_pos - g_prev_steer_error;
-	g_prev_steer_error = line_pos;
+	//    target_pos 동적 이동 시 인공적인 Kd 미분 킥 차단 및
+	//    크로스 라인 진입/탈출 시 불연속 스텝으로 인한 Kd 폭주/발산 완전 차단
+	float32_t raw_deriv;
+	if (IR_Sensor.is_cross) {
+		g_prev_was_cross = 4; // 크로스 탈출 후 잔류 꼬리 테이프 통과까지 4주기(2.0ms) 동안 미분 0 유지
+		raw_deriv = 0.0f;
+		g_prev_steer_error = line_pos;
+		g_filtered_deriv = 0.0f;
+	} else if (g_prev_was_cross > 0) {
+		g_prev_was_cross--;
+		raw_deriv = 0.0f;
+		g_prev_steer_error = line_pos;
+		g_filtered_deriv = 0.0f;
+	} else {
+		raw_deriv = line_pos - g_prev_steer_error;
+		// 물리적 한계 초과 미분 스파이크 클램핑 (0.5ms당 0.010 units = 횡속도 약 1.1 m/s 상당)
+		const float32_t MAX_RAW_DERIV = 0.010f;
+		if (raw_deriv > MAX_RAW_DERIV) raw_deriv = MAX_RAW_DERIV;
+		else if (raw_deriv < -MAX_RAW_DERIV) raw_deriv = -MAX_RAW_DERIV;
+		g_prev_steer_error = line_pos;
+	}
 
 	// LPF 차단주파수 약 80Hz (dt = 0.0005s, alpha = 0.80f)
 	const float32_t lpf_alpha = 0.80f;
@@ -216,52 +251,115 @@ void Steer_Motor() {
 	// Gyro_Z [dps]는 좌회전(CCW)이 + 이므로 부호를 뒤집는다: yaw_meas [rad/s], + = 우회전
 	float32_t yaw_meas = -(imu_data.Gyro_Z - imu_data.Gyro_Z_Offset) * (PI / 180.0f);
 
-	// 4. 접지 한계 감속: 속도 x 요레이트(= 횡가속도)가 lat_acc_max를 넘으면 그만큼 속도를 낮춘다.
-	//    곡선에서 미끄러지지 않게(엔코더 거리, 마커 인식이 깨끗하게). 빨리 내리고 천천히(약 0.1 s) 올린다.
-	if (driveData.lat_acc_max > 0.0f) {
-		float32_t a_lat = active_mps * fabsf(yaw_meas);
-		float32_t raw = (a_lat > driveData.lat_acc_max) ? driveData.lat_acc_max / a_lat : 1.0f;
-		if (raw < g_grip_atten)
-			g_grip_atten = raw;
-		else
-			g_grip_atten = 0.995f * g_grip_atten + 0.005f * raw;
-		active_mps *= g_grip_atten;
-	} else {
-		g_grip_atten = 1.0f;
-	}
-
-	// 5. 속도 스케일링: 고속 가속 구간(max_mps)에서 루프 이득이 과도해져 발진하지 않도록 보정
-	//    (이동거리 미분 de/ds 및 Pure Pursuit 곡률 기반 보정)
-	float32_t p_term = steer_pid.Kp * error;
-	float32_t d_term = steer_pid.Kd * g_filtered_deriv;
-
-	float32_t v_base = driveData.base_mps > 0.5f ? driveData.base_mps : 1.0f;
-	if (active_mps > v_base) {
-		float32_t speed_ratio = v_base / active_mps;
-		p_term *= speed_ratio;
-		d_term *= speed_ratio;
-	}
-
-	g_current_steer = p_term + d_term;
-
-	// 6. 캐스케이드 조향: 라인 PD 출력(steer, 곡률)을 목표 요레이트로 바꾸고 자이로로 추종
-	//    yaw_ref [rad/s], + = 우회전(왼쪽 바퀴가 빠름). yaw_gain_p = yaw_gain_i = 0이면 기존 PD와 동일.
-	float32_t yaw_ref = active_mps * g_current_steer;
-	float32_t yaw_cmd = yaw_ref;
-	if (driveData.yaw_gain_p > 0.0f || driveData.yaw_gain_i > 0.0f) {
-		float32_t yaw_err = yaw_ref - yaw_meas;
-		if (active_mps > 0.05f) {
-			g_yaw_integ += driveData.yaw_gain_i * yaw_err * RAMP_DT;
-			g_yaw_integ = fminf(fmaxf(g_yaw_integ, -YAW_INTEG_MAX), YAW_INTEG_MAX);
-		} else {
-			g_yaw_integ = 0.0f;
-		}
-		yaw_cmd = yaw_ref + driveData.yaw_gain_p * yaw_err + g_yaw_integ;
-	} else {
+	if (g_straight_cut_active) {
+		g_smooth_target_pos = line_pos;
+		g_prev_steer_error = line_pos;
+		g_filtered_deriv = 0.0f;
+		filtered_atten = 1.0f;
 		g_yaw_integ = 0.0f;
+		active_mps = g_current_base_mps;
+
+		float32_t heading_err_deg = imu_data.Yaw_Angle - g_straight_cut_yaw_ref;
+		if (heading_err_deg > 180.0f) heading_err_deg -= 360.0f;
+		else if (heading_err_deg < -180.0f) heading_err_deg += 360.0f;
+		float32_t heading_err_rad = heading_err_deg * (PI / 180.0f);
+		float32_t yaw_ref = 16.0f * heading_err_rad - active_mps * g_straight_cut_kappa_ref;
+		if (yaw_ref > 12.0f) yaw_ref = 12.0f;
+		else if (yaw_ref < -12.0f) yaw_ref = -12.0f;
+
+		float32_t yaw_cmd = yaw_ref + 1.5f * (yaw_ref - yaw_meas);
+
+		const float32_t line_blend = g_straight_cut_line_blend;
+		if (line_blend > 0.001f) {
+			static const PPSteer_Config_t pp_cfg_p2 = {
+				0.13213f, 0.41450f, 4.00000f, 0.12f, 1.85f, 1.30f, 20.4f, 1.2f
+			};
+			PPSteer_Input_t pp_in_p2;
+			pp_in_p2.error = line_pos;
+			pp_in_p2.filtered_deriv = 0.0f;
+			pp_in_p2.kp = steer_pid.Kp;
+			pp_in_p2.kd = 0.0f;
+			pp_in_p2.active_mps = active_mps;
+			pp_in_p2.base_mps = driveData.base_mps > 0.5f ? driveData.base_mps : 1.0f;
+			pp_in_p2.is_straight = 1U;
+			pp_in_p2.is_braking = 0U;
+			float32_t kappa_line = PPSteer_ComputeCurvature(&pp_cfg_p2, &pp_in_p2);
+			float32_t yaw_line = active_mps * kappa_line;
+			yaw_cmd = (1.0f - line_blend) * yaw_cmd + line_blend * yaw_line;
+		}
+
+		if (yaw_cmd > 15.0f) yaw_cmd = 15.0f;
+		else if (yaw_cmd < -15.0f) yaw_cmd = -15.0f;
+
+		float32_t mps_L = active_mps + yaw_cmd * THREAD_DIV2;
+		float32_t mps_R = active_mps - yaw_cmd * THREAD_DIV2;
+
+		foc_L.target_omega = mps_L * MPS_TO_OMEGA;
+		foc_R.target_omega = -mps_R * MPS_TO_OMEGA;
+		foc_L.omega_setpoint = foc_L.target_omega;
+		foc_R.omega_setpoint = foc_R.target_omega;
+
+		Drive_Diag_Update_ISR(0.0f, active_mps, yaw_meas, yaw_ref,
+				imu_data.Gyro_Z - imu_data.Gyro_Z_Offset);
+		g_steer_settled = 1;   // 직선 컷(IMU 방향 유지) 중에는 가속 대기를 하지 않는다
+		return;
 	}
 
-	// 양쪽 모터 목표 속도 산출: 바퀴 속도차 = 요레이트 x 바퀴 간격
+	// 가속 대기 판정: 라인 오차와 요레이트가 STEER_SETTLE_TICKS 동안 작게 유지되면 안정
+	{
+		static uint16_t s_settle_cnt = 0;
+		if (fabsf(error) < STEER_SETTLE_ERR && fabsf(yaw_meas) < STEER_SETTLE_YAW) {
+			if (s_settle_cnt < STEER_SETTLE_TICKS)
+				s_settle_cnt++;
+		} else {
+			s_settle_cnt = 0;
+		}
+		g_steer_settled = (s_settle_cnt >= STEER_SETTLE_TICKS) ? 1U : 0U;
+	}
+
+	//    곡선에서 미끄러지지 않게(엔코더 거리, 마커 인식이 깨끗하게). 빨리 내리고 천천히(약 0.1 s) 올린다.
+
+
+	// 5. 기하학적 Pure Pursuit + R = 0.25m 곡률 제어 (순수 함수 모듈 pp_steer 위임)
+	static const PPSteer_Config_t pp_cfg = {
+		0.13213f, /* lookahead_m */
+		0.41450f, /* rad_per_unit */
+		4.00000f, /* corner_kappa (1 / 0.25m) */
+		0.12f,    /* corner_e0 */
+		1.85f,    /* rejoin_gain_k */
+		1.30f,    /* rejoin_gain_max */
+		20.4f,    /* kp_ref */
+		1.2f      /* max_alpha_rad */
+	};
+	PPSteer_Input_t pp_in;
+	pp_in.error = error;
+	pp_in.filtered_deriv = g_filtered_deriv;
+	pp_in.kp = steer_pid.Kp;
+	pp_in.kd = steer_pid.Kd;
+	pp_in.active_mps = active_mps;
+	pp_in.base_mps = driveData.base_mps > 0.5f ? driveData.base_mps : 1.0f;
+	pp_in.is_straight = g_is_straight ? 1U : 0U;
+	pp_in.is_braking = (g_target_base_mps < g_current_base_mps) ? 1U : 0U;
+	g_current_steer = PPSteer_ComputeCurvature(&pp_cfg, &pp_in);
+
+	// 6. 캐스케이드 조향: 외륜 라인 PD 출력 이득의 인위적 증폭 차단 및 능동 각속도 댐핑
+	const float32_t yaw_ref = active_mps * g_current_steer;
+	const uint8_t freeze_integ = (g_is_straight && (g_target_base_mps < g_current_base_mps)) ? 1U : 0U;
+	const float32_t p_boost = freeze_integ ? 1.3f : 1.0f;
+	float32_t yaw_integ_tmp = g_yaw_integ;
+	float32_t yaw_cmd = PPSteer_CascadeYaw(
+		g_current_steer, active_mps, yaw_meas,
+		driveData.yaw_gain_p, driveData.yaw_gain_i, RAMP_DT,
+		freeze_integ, p_boost, &yaw_integ_tmp, YAW_INTEG_MAX);
+	g_yaw_integ = yaw_integ_tmp;
+
+	// 고속 감속 및 코너 진입 제동 구간 요레이트 지령 상한 (과도한 휠 록업 방지하되 조향 복원력 포화 없도록 여유 확보)
+	if ((g_is_straight && (g_target_base_mps < g_current_base_mps)) || (active_mps > driveData.base_mps + 0.8f)) {
+		float32_t max_decel_yaw = (active_mps > driveData.base_mps + 1.2f) ? 12.0f : 15.0f;
+		if (yaw_cmd > max_decel_yaw) yaw_cmd = max_decel_yaw;
+		else if (yaw_cmd < -max_decel_yaw) yaw_cmd = -max_decel_yaw;
+	}
+
 	float32_t mps_L = active_mps + yaw_cmd * THREAD_DIV2;
 	float32_t mps_R = active_mps - yaw_cmd * THREAD_DIV2;
 
@@ -871,6 +969,12 @@ void MTR_SysID_Test(void) {
 	foc_L.omega_ramp_rate = 100000.0f;
 	foc_R.omega_ramp_rate = 100000.0f;
 
+	// 3A 파워 서플라이 보호: 모터당 1.0A로 제한 (양쪽 합산 최대 2.0A, OCP 셧다운 방지)
+	float orig_limit_L = foc_L.iq_limit;
+	float orig_limit_R = foc_R.iq_limit;
+	foc_L.iq_limit = 1.0f;
+	foc_R.iq_limit = 1.0f;
+
 	uint32_t n = 0;
 	uint32_t t0 = HAL_GetTick();
 	uint8_t aborted = 0;
@@ -881,7 +985,7 @@ void MTR_SysID_Test(void) {
 	foc_L.target_Iq = 0.0f;
 	foc_R.target_Iq = 0.0f;
 	for (int k = 0; k < 80 && n < SYSID_DRIVE_SAMPLE_MAX; k++) {
-		float id_cmd = (k < 40) ? 1.5f : 0.0f;
+		float id_cmd = (k < 40) ? 0.9f : 0.0f; // 합산 최대 1.8A
 		foc_L.target_Id = id_cmd;
 		foc_R.target_Id = id_cmd;
 
@@ -905,8 +1009,9 @@ void MTR_SysID_Test(void) {
 	foc_R.target_Id = 0.0f;
 
 	// Phase 1..7: 무부하 속도 계단 스윕 (쿨롱 마찰 + 점성 마찰 + 속도 스텝 응답)
+	// 3A 파워 공급 환경에 맞춰 안정적인 단계(150~1050 rad/s)로 스윕
 	static const float test_omegas[7] = {
-		200.0f, 400.0f, 600.0f, 800.0f, 1000.0f, 1200.0f, 1500.0f
+		150.0f, 300.0f, 450.0f, 600.0f, 750.0f, 900.0f, 1050.0f
 	};
 	float step_w[7] = { 0 };
 	float step_iq[7] = { 0 };
@@ -967,6 +1072,8 @@ void MTR_SysID_Test(void) {
 
 	float vbus_now = FOC_Get_VBus();
 	MTR_Safe_Stop();
+	foc_L.iq_limit = orig_limit_L;
+	foc_R.iq_limit = orig_limit_R;
 
 	// 선형 회귀: tau = Kt * Iq = friction + viscous * omega
 	float friction_Nm = 0.00025f;
@@ -994,7 +1101,7 @@ void MTR_SysID_Test(void) {
 	LCD_Printf(0, 0, "Saving MotorID..");
 	FRESULT res = SD_SysID_Open(SYSID_MOTOR_PATH);
 	if (res == FR_OK) {
-		char line[256];
+		char line[512];
 		int len = snprintf(line, sizeof(line),
 				"# kt=%.6f\n# r_phase=%.4f\n# j_rotor=%.4e\n# gear=%.7f\n"
 				"# vbus=%.3f\n# fitted_friction_Nm=%.6e\n# fitted_viscous_Nms=%.6e\n"

@@ -24,6 +24,8 @@
 
 #include "sd_diskio_patch.h"
 #include "sd_diskio.h"
+#include "bsp_driver_sd.h"
+#include "main.h"
 #include <string.h>
 
 #define SD_FIXED_TIMEOUT   (30 * 1000)
@@ -127,3 +129,21 @@ const Diskio_drvTypeDef SD_Driver_Fixed = {
 	SD_ioctl,
 #endif
 };
+
+/**
+ * @brief CubeMX가 bsp_driver_sd.c / fatfs_platform.c를 덮어써도
+ *        감지 로직이 초기화되지 않도록 __weak BSP_SD_IsDetected()를 여기서 오버라이드.
+ *        PD4(SD_DETECT) 핀 상태에 따라 카드 장착 여부 반환.
+ */
+uint8_t BSP_SD_IsDetected(void)
+{
+#if defined(SD_DETECT_GPIO_Port) && defined(SD_DETECT_Pin)
+    /* 보드 회로 특성: PD4(SD_DETECT)가 High(SET)일 때 카드 장착 */
+    if (HAL_GPIO_ReadPin(SD_DETECT_GPIO_Port, SD_DETECT_Pin) != GPIO_PIN_RESET) {
+        return SD_PRESENT;
+    }
+    return SD_NOT_PRESENT;
+#else
+    return SD_PRESENT;
+#endif
+}
