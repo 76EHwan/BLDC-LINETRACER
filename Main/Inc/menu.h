@@ -39,6 +39,8 @@ void Update_Line_Lost_Sum_Min(void);
 void Update_Base_Mps(void);
 void Update_Base_Accel(void);
 void Update_Base_Decel(void);
+void Update_Ramp_Jerk_S(void);
+void Update_Ramp_Settle_Ms(void);
 void Update_Max_Mps(void);
 void Update_Steer_KP(void);
 void Update_Steer_KD(void);

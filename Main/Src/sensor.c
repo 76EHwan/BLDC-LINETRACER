@@ -508,6 +508,13 @@ float32_t Sensor_Get_Position(void) {
 		}
 	}
 
+	static uint16_t post_cut_grace = 0;
+	if (g_straight_cut_active) {
+		post_cut_grace = 160;
+	} else if (post_cut_grace > 0) {
+		post_cut_grace--;
+	}
+
 	if (raw_sum > IR_Sensor.data->line_lost_sum_min) {
 		IR_Sensor.is_lost_position = 0;
 		lost_counter = 0;
@@ -548,7 +555,8 @@ float32_t Sensor_Get_Position(void) {
 			return 0.0f;
 		}
 
-		if (lost_counter > 50) {
+		uint16_t lost_limit = (post_cut_grace > 0) ? 160U : 50U;
+		if (lost_counter > lost_limit) {
 			IR_Sensor.is_lost_position = 1;
 			lost_counter = 0;
 		}

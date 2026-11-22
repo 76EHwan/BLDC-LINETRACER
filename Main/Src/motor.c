@@ -166,6 +166,10 @@ void Fan_Mtr_Stop() {
 // ============================================================================
 
 arm_pid_instance_f32 steer_pid;
+volatile uint8_t g_steer_settled = 1;
+#define STEER_SETTLE_ERR    0.06f   // |라인 오차| [정규화] (약 5 mm)
+#define STEER_SETTLE_YAW    1.5f    // |요레이트| [rad/s] (약 86 dps)
+#define STEER_SETTLE_TICKS  60U     // 연속 유지 시간 [0.5 ms tick] = 30 ms
 static volatile float32_t g_current_steer = 0.0f;
 static volatile float32_t filtered_atten = 1.0f; // ★ 필터링된 atten 상태 저장 변수
 static volatile float32_t g_yaw_integ = 0.0f;    // 캐스케이드 안쪽 루프 적분 [rad/s]
@@ -264,6 +268,26 @@ void Steer_Motor() {
 		else if (yaw_ref < -12.0f) yaw_ref = -12.0f;
 
 		float32_t yaw_cmd = yaw_ref + 1.5f * (yaw_ref - yaw_meas);
+
+		const float32_t line_blend = g_straight_cut_line_blend;
+		if (line_blend > 0.001f) {
+			static const PPSteer_Config_t pp_cfg_p2 = {
+				0.13213f, 0.41450f, 4.00000f, 0.12f, 1.85f, 1.30f, 20.4f, 1.2f
+			};
+			PPSteer_Input_t pp_in_p2;
+			pp_in_p2.error = line_pos;
+			pp_in_p2.filtered_deriv = 0.0f;
+			pp_in_p2.kp = steer_pid.Kp;
+			pp_in_p2.kd = 0.0f;
+			pp_in_p2.active_mps = active_mps;
+			pp_in_p2.base_mps = driveData.base_mps > 0.5f ? driveData.base_mps : 1.0f;
+			pp_in_p2.is_straight = 1U;
+			pp_in_p2.is_braking = 0U;
+			float32_t kappa_line = PPSteer_ComputeCurvature(&pp_cfg_p2, &pp_in_p2);
+			float32_t yaw_line = active_mps * kappa_line;
+			yaw_cmd = (1.0f - line_blend) * yaw_cmd + line_blend * yaw_line;
+		}
+
 		if (yaw_cmd > 15.0f) yaw_cmd = 15.0f;
 		else if (yaw_cmd < -15.0f) yaw_cmd = -15.0f;
 
@@ -277,7 +301,20 @@ void Steer_Motor() {
 
 		Drive_Diag_Update_ISR(0.0f, active_mps, yaw_meas, yaw_ref,
 				imu_data.Gyro_Z - imu_data.Gyro_Z_Offset);
+		g_steer_settled = 1;   // 직선 컷(IMU 방향 유지) 중에는 가속 대기를 하지 않는다
 		return;
+	}
+
+	// 가속 대기 판정: 라인 오차와 요레이트가 STEER_SETTLE_TICKS 동안 작게 유지되면 안정
+	{
+		static uint16_t s_settle_cnt = 0;
+		if (fabsf(error) < STEER_SETTLE_ERR && fabsf(yaw_meas) < STEER_SETTLE_YAW) {
+			if (s_settle_cnt < STEER_SETTLE_TICKS)
+				s_settle_cnt++;
+		} else {
+			s_settle_cnt = 0;
+		}
+		g_steer_settled = (s_settle_cnt >= STEER_SETTLE_TICKS) ? 1U : 0U;
 	}
 
 	//    곡선에서 미끄러지지 않게(엔코더 거리, 마커 인식이 깨끗하게). 빨리 내리고 천천히(약 0.1 s) 올린다.

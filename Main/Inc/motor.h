@@ -23,6 +23,8 @@ typedef enum {
 
 // motor.c에서 정의된 조향 PID 인스턴스
 extern arm_pid_instance_f32 steer_pid;
+// 라인 오차·요레이트가 일정 시간 안정 상태인지 (drive.c 램프의 ramp_settle_ms 가속 대기에 사용)
+extern volatile uint8_t g_steer_settled;
 
 void MTR_Setup_And_Start(FOC_DriveMode_t mode);
 void MTR_Safe_Stop(void);

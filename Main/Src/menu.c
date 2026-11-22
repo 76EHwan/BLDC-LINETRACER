@@ -111,6 +111,8 @@ MenuItem_t speed_param_items[] = {
 	{ .name = "Max m/s", 		.pfnActionCallback = Update_Max_Mps				},
 	{ .name = "Base Accel", 	.pfnActionCallback = Update_Base_Accel			},
 	{ .name = "Base Decel", 	.pfnActionCallback = Update_Base_Decel			},
+	{ .name = "Ramp Jerk s", 	.pfnActionCallback = Update_Ramp_Jerk_S		},
+	{ .name = "Ramp Settle ms", 	.pfnActionCallback = Update_Ramp_Settle_Ms		},
 	{ .name = "Brake Margin", 	.pfnActionCallback = Update_Brake_Margin		},
 	{ .name = "Bulge LatAcc", 	.pfnActionCallback = Update_Bulge_Lat_Acc		},
 	{ .name = "C45 Max m/s", 	.pfnActionCallback = Update_Corner45_Max_Mps	},
@@ -563,6 +565,14 @@ void Update_Base_Accel() {
 
 void Update_Base_Decel() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.decel), "Base Decel");
+}
+
+void Update_Ramp_Jerk_S() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.ramp_jerk_s), "Ramp Jerk s");
+}
+
+void Update_Ramp_Settle_Ms() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.ramp_settle_ms), "Ramp Settle ms");
 }
 
 void Update_Max_Mps() {
