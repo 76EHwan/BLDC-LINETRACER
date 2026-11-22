@@ -40,7 +40,12 @@ typedef struct {
 	float_t wave_add_mps;      // [m/s] drive 4: 180도 웨이브 숏컷 속도 오프셋 (Fourth_Corner_Mps + this)
 	float_t ramp_jerk_s;      // [s]  가속 시작 저크 제한: 가속도를 이 시간 동안 0 → accel 로 올린다 (0 = 끔, 즉시 accel)
 	float_t ramp_settle_ms;   // [ms] 기준 속도에서 가속을 시작하기 전, 라인 오차·요레이트가 안정될 때까지 기다리는 최대 시간 (0 = 끔)
+	float_t fourth_in_mm;     // [mm] 4차: 곡선 안쪽 횡오프셋 한계 (센서바, 라인 센서 76 mm 밖은 블라인드)
+	float_t fourth_side_mm;   // [mm] 4차: 곡선 바깥쪽과 직선 횡오프셋 한계
+	float_t fourth_alat_gain; // [-]  4차: 횡가속 한계 배율 (base_mps 로 R 0.25 곡선을 도는 횡가속 기준)
+	float_t fourth_hgain;     // [-]  4차: IMU 방향 추종 이득 배율 (직선 컷 모드 기본 16 rad/s 대비)
 } DriveParam_t;
+#define DRIVE_HAS_FOURTH_PARAMS 1
 #define DRIVE_HAS_SLALOM_RATIO 1
 #define DRIVE_HAS_CASCADE_STEER 1
 #define DRIVE_HAS_TARGET_CURVE_GAIN 1

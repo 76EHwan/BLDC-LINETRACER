@@ -113,11 +113,11 @@ MenuItem_t speed_param_items[] = {
 	{ .name = "Base Decel", 	.pfnActionCallback = Update_Base_Decel			},
 	{ .name = "Ramp Jerk s", 	.pfnActionCallback = Update_Ramp_Jerk_S		},
 	{ .name = "Ramp Settle ms", 	.pfnActionCallback = Update_Ramp_Settle_Ms		},
+	{ .name = "4th In mm", 		.pfnActionCallback = Update_Fourth_In_Mm		},
+	{ .name = "4th Side mm", 	.pfnActionCallback = Update_Fourth_Side_Mm		},
+	{ .name = "4th LatAcc x", 	.pfnActionCallback = Update_Fourth_Alat_Gain	},
+	{ .name = "4th Head x", 	.pfnActionCallback = Update_Fourth_Hgain		},
 	{ .name = "Brake Margin", 	.pfnActionCallback = Update_Brake_Margin		},
-	{ .name = "Bulge LatAcc", 	.pfnActionCallback = Update_Bulge_Lat_Acc		},
-	{ .name = "C45 Max m/s", 	.pfnActionCallback = Update_Corner45_Max_Mps	},
-	{ .name = "Omega Add", 		.pfnActionCallback = Update_Omega_Add_Mps		},
-	{ .name = "Wave Add", 		.pfnActionCallback = Update_Wave_Add_Mps		},
 	{ .name = "Pit In Dis M", 	.pfnActionCallback = Update_Pit_In_Distance_M	},
 	{ .name = "Fan Enable", 	.pfnActionCallback = Update_Fan_Enable			},
 };
@@ -127,9 +127,7 @@ MenuItem_t steer_param_items[] = {
 	{ .name = "Steer KD", 		.pfnActionCallback = Update_Steer_KD			},
 	{ .name = "Yaw KP", 		.pfnActionCallback = Update_Yaw_KP				},
 	{ .name = "Yaw KI", 		.pfnActionCallback = Update_Yaw_KI				},
-	{ .name = "Target Shift", 	.pfnActionCallback = Update_Target_Shift_Val	},
-	{ .name = "Tgt Crv Gain", 	.pfnActionCallback = Update_Target_Curve_Gain	},
-	{ .name = "Slalom Ratio", 	.pfnActionCallback = Update_Slalom_Ratio		},
+	{ .name = "Pos Atten", 		.pfnActionCallback = Update_Position_Abs_Gain	},
 };
 
 // =========================================================
@@ -575,6 +573,26 @@ void Update_Ramp_Settle_Ms() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.ramp_settle_ms), "Ramp Settle ms");
 }
 
+// 4차: 곡선 안쪽 횡오프셋 한계 [mm] (라인 센서 76 mm 밖은 블라인드, 시뮬 기본 80)
+void Update_Fourth_In_Mm() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.fourth_in_mm), "4th In mm");
+}
+
+// 4차: 곡선 바깥쪽·직선 횡오프셋 한계 [mm] (시뮬 기본 65)
+void Update_Fourth_Side_Mm() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.fourth_side_mm), "4th Side mm");
+}
+
+// 4차: 횡가속 한계 배율 (base_mps 로 R 0.25 곡선을 도는 횡가속 기준, 시뮬 기본 0.90)
+void Update_Fourth_Alat_Gain() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.fourth_alat_gain), "4th LatAcc x");
+}
+
+// 4차: IMU 방향 추종 이득 배율 (시뮬 기본 2.0)
+void Update_Fourth_Hgain() {
+	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.fourth_hgain), "4th Head x");
+}
+
 void Update_Max_Mps() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.max_mps), "Max m/s");
 }
@@ -589,17 +607,12 @@ void Update_Steer_KD() {
 
 void Update_Position_Abs_Gain() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.pos_atten_gain),
-			"Pos Abs Gain");
+			"Pos Atten");
 }
 
 void Update_Pit_In_Distance_M() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.pit_in_distance_m),
 			"Pit In Dis M");
-}
-
-void Update_Target_Shift_Val() {
-	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.target_shift_val),
-			"Target Shift");
 }
 
 void Update_Fan_Enable() {
@@ -615,32 +628,8 @@ void Update_Yaw_KI() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.yaw_gain_i), "Yaw KI");
 }
 
-void Update_Target_Curve_Gain() {
-	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.target_curve_gain), "Tgt Crv Gain");
-}
-
-void Update_Slalom_Ratio() {
-	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.slalom_ratio), "Slalom Ratio");
-}
-
 void Update_Brake_Margin() {
 	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.brake_margin_m), "Brake Margin");
-}
-
-void Update_Bulge_Lat_Acc() {
-	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.bulge_lat_acc), "Bulge LatAcc");
-}
-
-void Update_Corner45_Max_Mps() {
-	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.corner45_max_mps), "C45 Max m/s");
-}
-
-void Update_Omega_Add_Mps() {
-	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.omega_add_mps), "Omega Add");
-}
-
-void Update_Wave_Add_Mps() {
-	Update_Param_Menu(DATA_FLOAT, NULL, &(driveData.wave_add_mps), "Wave Add");
 }
 
 void Menu_ProcessLoop() {

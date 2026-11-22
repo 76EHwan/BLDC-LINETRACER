@@ -6,6 +6,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "button.h"
@@ -178,6 +179,7 @@ FRESULT SD_SysID_Open(const char *path) {
 		return res;
 
 	SDCard_Mkdir(SYSID_DIR_PATH);
+	SDCard_Mkdir(MAPLOG_DIR_PATH);
 	SDCard_Mkdir("/Drive_Data");
 	SDCard_Mkdir("/Sensor_Data");
 	SDCard_Mkdir("/Foc_Data");
@@ -282,6 +284,10 @@ void Save_MarkerLog_To_SD(uint8_t slot_number) {
 	len += sprintf(log_buf + len, "corner45 max mps = %.2f\n", driveData.corner45_max_mps);
 	len += sprintf(log_buf + len, "omega add mps = %.2f\n", driveData.omega_add_mps);
 	len += sprintf(log_buf + len, "wave add mps = %.2f\n", driveData.wave_add_mps);
+	len += sprintf(log_buf + len, "4th in mm = %.1f\n", driveData.fourth_in_mm);
+	len += sprintf(log_buf + len, "4th side mm = %.1f\n", driveData.fourth_side_mm);
+	len += sprintf(log_buf + len, "4th lat acc gain = %.2f\n", driveData.fourth_alat_gain);
+	len += sprintf(log_buf + len, "4th heading gain = %.2f\n", driveData.fourth_hgain);
 
 	// 구분선 및 마커 헤더 기록
 	len += sprintf(log_buf + len, "===================\n");
@@ -308,4 +314,104 @@ void Save_MarkerLog_To_SD(uint8_t slot_number) {
 	}
 
 	SDCard_Save(filepath, log_buf, len);
+}
+
+// ============================================================================
+// 맵 로그 저장 (매 회차 종료 시 자동)
+//   파일: /Map_Log/map_NNN_dK.csv  (NNN: /Map_Log/next.txt 의 일련번호, K: 회차)
+//   '#' 줄은 주행 정보, 이후 열은 시뮬레이터 driveN_markers.csv 와 같은 형식:
+//   idx,type,dist_from_prev_m,yaw_deg   (type: L / R / C / STOP)
+//   PC 에서 `linesim maprec <파일>` 로 ZETIN 규칙 맵을 복원해 트랙 JSON 으로 저장한다.
+// ============================================================================
+static uint16_t s_maplog_next = 0;
+
+static uint8_t MapLog_Number_Used(uint16_t n) {
+	char path[40];
+	FILINFO fi;
+	for (uint8_t d = 1; d <= 6; d++) {
+		snprintf(path, sizeof(path), MAPLOG_DIR_PATH "/map_%03u_d%u.csv", (unsigned) n, (unsigned) d);
+		if (f_stat(path, &fi) == FR_OK)
+			return 1;
+	}
+	return 0;
+}
+
+FRESULT Save_MapLog_To_SD(uint8_t drive_num, float lap_s, uint8_t line_lost, uint16_t *file_no) {
+	char path[40];
+	char line[160];
+	int len;
+
+	// 1) 일련번호 결정 (부팅 후 첫 저장 때 next.txt 에서 읽고, 이미 있는 번호는 건너뜀)
+	FRESULT res = SDCard_Mount();
+	if (res != FR_OK)
+		return res;
+	SDCard_Mkdir(MAPLOG_DIR_PATH);
+	if (s_maplog_next == 0) {
+		char nb[16];
+		s_maplog_next = 1;
+		if (SDCard_Read(MAPLOG_INDEX_PATH, nb, sizeof(nb)) == FR_OK) {
+			long v = strtol(nb, NULL, 10);
+			if (v >= 1 && v <= 999)
+				s_maplog_next = (uint16_t) v;
+		}
+	}
+	uint16_t n = s_maplog_next;
+	for (uint16_t guard = 0; guard < 999; guard++) {
+		if (!MapLog_Number_Used(n))
+			break;
+		n = (n >= 999) ? 1 : (uint16_t) (n + 1);
+	}
+	s_maplog_next = (n >= 999) ? 1 : (uint16_t) (n + 1);
+	{
+		char nb[16];
+		snprintf(nb, sizeof(nb), "%u\n", (unsigned) s_maplog_next);
+		SDCard_Write(MAPLOG_INDEX_PATH, nb);
+	}
+	SDCard_Unmount();
+	if (file_no)
+		*file_no = n;
+
+	// 2) 기록 (SysID 청크 버퍼 사용: 마운트 / 폴더 생성 / 언마운트 포함)
+	snprintf(path, sizeof(path), MAPLOG_DIR_PATH "/map_%03u_d%u.csv", (unsigned) n, (unsigned) drive_num);
+	res = SD_SysID_Open(path);
+	if (res != FR_OK)
+		return res;
+
+	const uint16_t count = (g_cross_log_count < CROSS_LOG_MAX) ? g_cross_log_count : CROSS_LOG_MAX;
+	len = snprintf(line, sizeof(line),
+			"# linesim_maplog=1\n# drive=%u\n# lap_s=%.3f\n# line_lost=%u\n# markers=%u\n",
+			(unsigned) drive_num, lap_s, (unsigned) line_lost, (unsigned) count);
+	SD_SysID_WriteChunk(line, (UINT) len);
+	len = snprintf(line, sizeof(line),
+			"# base_mps=%.2f\n# max_mps=%.2f\n# accel=%.2f\n# decel=%.2f\n# pit_in_m=%.3f\n",
+			driveData.base_mps, driveData.max_mps, driveData.accel, driveData.decel,
+			driveData.pit_in_distance_m);
+	SD_SysID_WriteChunk(line, (UINT) len);
+	len = snprintf(line, sizeof(line), "idx,type,dist_from_prev_m,yaw_deg\n");
+	SD_SysID_WriteChunk(line, (UINT) len);
+
+	for (uint16_t i = 0; i < count; i++) {
+		const CrossEvent_t type = g_cross_log[i].type;
+		const char *t_str = (type == CROSS_LEFT) ? "L" :
+							(type == CROSS_RIGHT) ? "R" :
+							(type == CROSS_CROSS) ? "C" :
+							(type == CROSS_STOP) ? "STOP" : "U";
+		len = snprintf(line, sizeof(line), "%u,%s,%.4f,%.2f\n", (unsigned) i, t_str,
+				g_cross_log[i].dist_from_prev_m, g_cross_log[i].yaw_angle);
+		res = SD_SysID_WriteChunk(line, (UINT) len);
+		if (res != FR_OK)
+			break;
+	}
+	FRESULT rc = SD_SysID_Close();
+	return (res != FR_OK) ? res : rc;
+}
+
+// 주행 종료 화면용: 맵 로그를 저장하고 결과를 LCD 맨 아래 줄에 표시
+void Drive_Save_MapLog_Show(uint8_t drive_num, float lap_s, uint8_t line_lost) {
+	uint16_t no = 0;
+	FRESULT r = Save_MapLog_To_SD(drive_num, lap_s, line_lost, &no);
+	if (r == FR_OK)
+		LCD_Printf(0, 11, "MapLog %03u_d%u OK", (unsigned) no, (unsigned) drive_num);
+	else
+		LCD_Printf(0, 11, "MapLog Err:%d", (int) r);
 }

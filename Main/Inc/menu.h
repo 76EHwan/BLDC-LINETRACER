@@ -41,21 +41,18 @@ void Update_Base_Accel(void);
 void Update_Base_Decel(void);
 void Update_Ramp_Jerk_S(void);
 void Update_Ramp_Settle_Ms(void);
+void Update_Fourth_In_Mm(void);
+void Update_Fourth_Side_Mm(void);
+void Update_Fourth_Alat_Gain(void);
+void Update_Fourth_Hgain(void);
 void Update_Max_Mps(void);
 void Update_Steer_KP(void);
 void Update_Steer_KD(void);
 void Update_Position_Abs_Gain(void);
 void Update_Pit_In_Distance_M(void);
-void Update_Target_Shift_Val(void);
 void Update_Fan_Enable(void);
 void Update_Yaw_KP(void);
 void Update_Yaw_KI(void);
-void Update_Target_Curve_Gain(void);
-void Update_Slalom_Ratio(void);
 void Update_Brake_Margin(void);
-void Update_Bulge_Lat_Acc(void);
-void Update_Corner45_Max_Mps(void);
-void Update_Omega_Add_Mps(void);
-void Update_Wave_Add_Mps(void);
 
 #endif /* MENU_H_ */

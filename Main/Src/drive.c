@@ -42,6 +42,10 @@ DriveParam_t driveData = {
 	.wave_add_mps = 0.20f,
 	.ramp_jerk_s = 0.00f,
 	.ramp_settle_ms = 0.0f,
+	.fourth_in_mm = 80.0f,
+	.fourth_side_mm = 65.0f,
+	.fourth_alat_gain = 0.90f,
+	.fourth_hgain = 2.00f,
 };
 // @formatter:on
 
@@ -656,6 +660,7 @@ void Drive_First(void) {
 
 	if (exit_reason_lost) {
 		LCD_Printf(0, 0, "Line Lost");
+		Drive_Save_MapLog_Show(1, lap_time, 1);
 #ifndef SIM_FW_REAL_MAIN_H
 		Drive_Save_SysID_To_SD();
 #endif
@@ -668,6 +673,7 @@ void Drive_First(void) {
 		LCD_Printf(0, 4, "T:%.2fs", lap_time);
 		LCD_Printf(0, 5, "U_Bit:0x%04X", g_last_stop_state);
 		LCD_Printf(0, 6, "U_Cnt:%d (<12)", g_last_stop_count);
+		Drive_Save_MapLog_Show(1, lap_time, 0);
 		uint8_t slot = Select_Save_Slot();
 		Save_MarkerLog_To_SD(slot);
 #ifndef SIM_FW_REAL_MAIN_H
@@ -1237,6 +1243,7 @@ void Drive_Second(void) {
 		LCD_Printf(0, 4, "T:%.2fs", lap_time);
 	}
 
+	Drive_Save_MapLog_Show(2, lap_time, IR_Sensor.is_lost_position);
 	Drive_Wait_Exit_Or_Heal(1);
 	LCD_Clear();
 }
@@ -1507,6 +1514,7 @@ void Drive_Third(void) {
 		LCD_Printf(0, 3, "C:%d", g_total_C);
 		LCD_Printf(0, 4, "T:%.2fs", lap_time);
 	}
+	Drive_Save_MapLog_Show(3, lap_time, lost_exit);
 	Drive_Wait_Exit_Or_Heal(1);
 	LCD_Clear();
 }
@@ -1514,24 +1522,34 @@ void Drive_Third(void) {
 // ============================================================================
 // 4회차 주행: 코리더 레이싱 라인 (라인 중심 ±150 mm 범위 안 최단시간 경로, 프로토타입 tools/race_line.py)
 //  1) 1차 마커 맵 → 중심선 (구간 회전각 = 45도 스냅 요, 마커 이벤트 지연만큼 경계를 앞당김), 50 mm 격자
-//  2) 센서바 횡오프셋 n(s), |n| <= W: 경로 법선 방향 곡률^2 의 합 최소 (5대각 QP, 활성집합 + LDL^T).
-//     바깥 반복마다 경로 법선과 점 간격 가중치를 갱신한다. 출발 / 끝 0.3 m 는 n = 0 (STOP 마커 판독).
+//  2) 센서바 횡오프셋 n(s): 경로 법선 방향 곡률^2 의 합 최소 (5대각 QP, 활성집합 + LDL^T).
+//     범위: 곡선 안쪽 W_IN (80 mm, 라인 센서 76 mm 밖 = 블라인드), 바깥쪽과 직선 W (65 mm, 라인이 늘 보임).
+//     곡선 시작점 앞뒤는 안쪽 50 mm 이하 (라인이 보이는 채로 곡률 시작을 관측해 진행 방향 위치를 맞춘다).
+//     바깥 반복마다 경로 법선과 점 간격 가중치를 갱신한다. 출발 / 끝 1 m 는 n = 0 (STOP 마커 판독).
 //     기하학적 숏컷(S자 직선 관통, 코너 안쪽 파고들기)은 이 최적화가 코리더 안에서 스스로 만든다.
 //  3) 몸체 경로 = 센서바 경로의 트레일러(무슬립), 몸체 곡률 → 마찰원 속도 프로파일.
 //  4) 주행: 처음부터 끝까지 IMU 방향 추종 모드(g_straight_cut_active). 센서바 위치 (s, n) 를
 //     오도메트리 + IMU + 슬립각 모델로 추정하고, 라인이 센서 범위 안에 있으면 라인 센서로 n 을 보정한다.
-//     방향 지령 = 라인 방향 + 계획 몸체 상대각 + 슬립각 + 위치 오차 보정, 곡률 피드포워드 = 계획 몸체 곡률.
+//     방향 지령 = 라인 방향 + 계획 몸체 상대각 + 계획 슬립각 + 위치 오차 보정,
+//     요레이트 피드포워드 = v * (계획 몸체 곡률 + 슬립각 변화율).
 //     계획 오프셋이 작은 곳에서만 마커를 읽어 거리를 맞추고, 나머지 마커는 가상 마커로 기록한다.
 // 모든 계산 루프는 for 문 (시뮬레이터 while-yield 매크로 회피).
 // ============================================================================
 #define FOURTH_DS_M             0.050f   // 계획 격자 간격 [m]
 #define FOURTH_NMAX             1700U    // 최대 격자 점 수 (85 m)
-#define FOURTH_W_M              0.065f   // 계획 횡오프셋 한계 (센서바 중심) [m]: 라인이 항상 센서(±76 mm) 안. 시뮬 8/8 완주, 최대 lat 122 mm (코리더 150)
+#define FOURTH_W_IN_M           0.080f   // 곡선 안쪽 횡오프셋 한계 [m] (레이싱 라인 이득은 거의 안쪽에서 나온다).
+                                         // 시뮬 16/16 완주, 최대 lat 139 mm (범위 150). 85 mm 는 1/8 초과, 100 mm 는 4/8 초과
+#define FOURTH_W_OUT_M          0.065f   // 곡선 바깥쪽 한계 [m]
+#define FOURTH_W_M              0.065f   // 직선 횡오프셋 한계 (센서바 중심) [m]: 라인이 항상 센서(±76 mm) 안
 #define FOURTH_EDGE_M           1.00f    // 출발선 이후 / 맵 끝 직전 이 거리는 n = 0 (STOP 마커 판독, 라인 정렬)
 #define FOURTH_LINE_END_M       0.80f    // 골 앞 이 거리와 출발선 이전은 라인 PD 추종 (STOP 좌우 마커를 함께 읽도록 중앙 정렬)
 #define FOURTH_GOAL_ZONE_M      1.20f    // 골 STOP 앞 이 거리부터는 마커 판독을 항상 켠다
 #define FOURTH_MARK_WIN_M       0.15f    // 다음 예상 마커 위치 앞 이 거리부터 판독 (그 밖은 허위 마커 차단)
 #define FOURTH_LAG_M            0.040f   // 마커 이벤트 - 곡률 변화점 거리 [m]
+#define FOURTH_SSCALE           1.000f   // 직선 길이 배율 (1차 오도메트리 직선 과다 측정 보정)
+#define FOURTH_ONSET_PRE_M      0.10f    // 곡선 시작점 앞 이 거리부터
+#define FOURTH_ONSET_POST_M     0.08f    // 시작점 뒤 이 거리까지는 안쪽 오프셋을 FOURTH_ONSET_N_M 이하로
+#define FOURTH_ONSET_N_M        0.050f   //  (라인이 보이는 채로 곡률 시작을 관측해 진행 방향 위치를 맞춘 뒤 안쪽 블라인드로 들어간다)
 #define FOURTH_BAR_X_M          0.13213f // 몸체 중심 - 센서바 거리 [m]
 #define FOURTH_MM_PER_UNIT      52.0f    // 라인 위치 1 단위 [mm] (센서바 방향)
 #define FOURTH_OUTER_IT         6        // QP 바깥 반복 (경로 법선 / 가중치 갱신)
@@ -1541,8 +1559,8 @@ void Drive_Third(void) {
 #define FOURTH_VMIN_RATIO       0.85f    // 최저 계획 속도 = base_mps * ratio
 #define FOURTH_DECEL_RATIO      0.85f    // 프로파일 감속도 = decel * ratio
 #define FOURTH_KB_SMOOTH_M      0.050f   // 몸체 곡률 평활 길이 [m]
-#define FOURTH_BETA_K           0.055f   // 슬립각 [rad] per 요레이트 [rad/s] (시뮬 측정: 같은 횡가속이면 고속일수록 작아 요레이트에 비례)
-#define FOURTH_BETA_MAX         0.45f    // 슬립각 상한 [rad] (약 26도)
+#define FOURTH_BETA_K           0.062f   // 슬립각 [rad] per 요레이트 [rad/s] (4차 주행 시뮬 측정: 속도와 무관하게 0.062, rms 2.2도)
+#define FOURTH_BETA_MAX         0.60f    // 슬립각 상한 [rad] (약 34도)
 #define FOURTH_HGAIN            2.0f     // IMU 방향 추종 이득 배율 (motor.c 직선 컷 모드 기본 16 rad/s 대비)
 #define FOURTH_VIS_M            0.090f   // 라인이 예상과 달리 안 보이면 |n| 을 이만큼으로 밀어 제어가 라인 쪽으로 돌아오게 한다
 #define FOURTH_HBIAS_GAIN       0.004f   // 직선에서 라인 각도 관측으로 헤딩 편차를 추정하는 이득 (1 ms 당)
@@ -1551,8 +1569,8 @@ void Drive_Third(void) {
 #define FOURTH_ANG_WIN_MS       15U      // 라인 각도 관측 창 [ms]
 #define FOURTH_ANG_GAIN         0.05f    // 라인 각도 관측으로 s 를 맞추는 이득 (1 ms 당)
 #define FOURTH_ANG_KMIN         1.5f     // 맵 곡률이 이 이상인 곡선에서만 [1/m]
-#define FOURTH_LP0_M            0.15f    // 위치 보정 선행 거리 [m] = LP0 + LPT * v
-#define FOURTH_LPT_S            0.05f
+#define FOURTH_LP0_M            0.10f    // 위치 보정 선행 거리 [m] = LP0 + LPT * v (짧을수록 추종 오차 작음, 시뮬 0.10 / 0.03 이 최적)
+#define FOURTH_LPT_S            0.03f
 #define FOURTH_MEAS_K           0.30f    // 라인 측정 보정 이득 (1 ms 당)
 #define FOURTH_GATE_M           0.035f   // 라인 측정 게이트 [m] (넘으면 30 ms 일관될 때만 재획득: 마커 테이프 오인 차단)
 #define FOURTH_GATE_MARK_M      0.020f   // 마커 테이프 근처 게이트 [m] (재획득 금지)
@@ -1564,7 +1582,7 @@ void Drive_Third(void) {
 #define FOURTH_LOOK_TAU_S       0.08f    // 속도 지령 선행 시간 [s]
 #define FOURTH_LOOK_MARGIN_M    0.06f    // 속도 지령 선행 거리 여유 [m]
 #define FOURTH_LOOK_V2_K        0.012f   // 고속 제동 여유 [m per (m/s)^2]
-#define FOURTH_BETA_TAU_S       0.05f    // 슬립각 1차 지연 [s] (시뮬 측정: 지연 없으면 rms 7도, 50 ms 지연이면 3도)
+#define FOURTH_BETA_TAU_S       0.04f    // 슬립각 1차 지연 [s] (시뮬 측정: 지연 없으면 rms 7도, 40 ms 지연이면 2.2도)
 #define FOURTH_SEP_M            0.095f   // 이웃 라인(평행/역평행)과 센서바 최소 거리 [m]: 라인 센서 범위 76 mm + 라인 반폭
 #define FOURTH_NEAR_M           0.25f    // 이 안에 이웃 라인이 있으면 게이트 밖 재획득 금지 [m]
 #define FOURTH_XING_M           0.20f    // 교차 라인 근처 이 거리 안은 라인 측정 사용 안 함 [m]
@@ -1586,8 +1604,8 @@ typedef char fourth_pool_size_check[((uint32_t)F4_NARR * FOURTH_NMAX <= PLAN_POO
 static uint16_t fourth_m = 0;
 static float f4_dyaw[CROSS_LOG_MAX];   // 구간 회전각 [rad] (스냅)
 static float f4_cum[CROSS_LOG_MAX];    // 마커 이벤트 위치 [m] (실제 라인 길이: 곡선 = R0 * 회전각, 직선 = 1차 오도메트리)
-static int8_t f4_lo_mm[FOURTH_NMAX];   // 격자점별 횡오프셋 하한 / 상한 [mm] (이웃 라인 반영)
-static int8_t f4_hi_mm[FOURTH_NMAX];
+static int16_t f4_lo_mm[FOURTH_NMAX];  // 격자점별 횡오프셋 하한 / 상한 [mm] (안쪽 / 바깥쪽 / 직선 폭, 이웃 라인 반영)
+static int16_t f4_hi_mm[FOURTH_NMAX];
 static uint8_t f4_flag[FOURTH_NMAX];   // bit0: 이웃 라인 가까움, bit1: 교차 구간
 #define F4_FLAG_NEAR  0x01U
 #define F4_FLAG_XING  0x02U
@@ -1603,12 +1621,19 @@ static float Fourth_Tune(const char *name, float def) {
 #define Fourth_Tune(name, def) (def)
 #endif
 
-static float f4_w, f4_alat_gain, f4_beta_k, f4_beta_max, f4_lp0, f4_lpt, f4_meas_k, f4_vmin_ratio, f4_decel_ratio, f4_kodo;
+static float f4_w, f4_w_in, f4_w_out, f4_alat_gain, f4_beta_k, f4_beta_max, f4_lp0, f4_lpt, f4_meas_k, f4_vmin_ratio, f4_decel_ratio, f4_kodo;
 static float f4_kb_cap, f4_slip_c, f4_hgain, f4_ang_gain, f4_lambda;
+static int f4_pk_min = 1, f4_cnt_max = 4;
+static float f4_lag = FOURTH_LAG_M, f4_sscale = FOURTH_SSCALE, f4_dbeta_ff = 1.0f, f4_onset_n = FOURTH_ONSET_N_M, f4_onset_post = FOURTH_ONSET_POST_M;
 
 static void Fourth_Load_Tune(void) {
-	f4_w = Fourth_Tune("F4_W", FOURTH_W_M);
-	f4_alat_gain = Fourth_Tune("F4_ALAT", FOURTH_ALAT_GAIN);
+	// 폭 / 횡가속 배율 / 헤딩 이득은 driveData (메뉴, 시뮬 뷰어에서 조정). 0 이하면 기본 상수
+	const float side = (driveData.fourth_side_mm > 0.0f) ? 0.001f * driveData.fourth_side_mm : FOURTH_W_M;
+	const float in = (driveData.fourth_in_mm > 0.0f) ? 0.001f * driveData.fourth_in_mm : FOURTH_W_IN_M;
+	f4_w = Fourth_Tune("F4_W", side);
+	f4_w_in = Fourth_Tune("F4_WIN", in);
+	f4_w_out = Fourth_Tune("F4_WOUT", side);
+	f4_alat_gain = Fourth_Tune("F4_ALAT", (driveData.fourth_alat_gain > 0.0f) ? driveData.fourth_alat_gain : FOURTH_ALAT_GAIN);
 	f4_beta_k = Fourth_Tune("F4_BETA_K", FOURTH_BETA_K);
 	f4_beta_max = Fourth_Tune("F4_BETA_MAX", FOURTH_BETA_MAX);
 	f4_lp0 = Fourth_Tune("F4_LP0", FOURTH_LP0_M);
@@ -1619,8 +1644,15 @@ static void Fourth_Load_Tune(void) {
 	f4_kodo = Fourth_Tune("F4_KODO", FOURTH_KODO);
 	f4_kb_cap = Fourth_Tune("F4_KBCAP", FOURTH_KB_CAP);
 	f4_slip_c = Fourth_Tune("F4_SLIP_C", FOURTH_SLIP_C);
-	f4_hgain = Fourth_Tune("F4_HGAIN", FOURTH_HGAIN);
+	f4_hgain = Fourth_Tune("F4_HGAIN", (driveData.fourth_hgain > 0.0f) ? driveData.fourth_hgain : FOURTH_HGAIN);
 	f4_lambda = Fourth_Tune("F4_LAMBDA", FOURTH_LAMBDA);
+	f4_pk_min = (int)Fourth_Tune("F4_PKMIN", 1.0f);
+	f4_cnt_max = (int)Fourth_Tune("F4_CNTMAX", 4.0f);
+	f4_lag = Fourth_Tune("F4_LAG", FOURTH_LAG_M);
+	f4_sscale = Fourth_Tune("F4_SSCALE", FOURTH_SSCALE);
+	f4_dbeta_ff = Fourth_Tune("F4_DBETA", 1.0f);
+	f4_onset_n = Fourth_Tune("F4_ONSET", FOURTH_ONSET_N_M);
+	f4_onset_post = Fourth_Tune("F4_ONSET_POST", FOURTH_ONSET_POST_M);
 	f4_ang_gain = Fourth_Tune("F4_ANG", FOURTH_ANG_GAIN);
 }
 
@@ -1640,13 +1672,13 @@ static float Fourth_At(const float *p, float s) {
 // 맵 헤딩 θ(s) [rad] 와 곡률: 구간 j (1..count-1) 는 [cum[j-1]-LAG, cum[j]-LAG) 에서 회전각을 선형 분배.
 // s 는 단조 증가로만 질의한다 (*cur, *acc 커서).
 static float Fourth_Map_Theta(float s, uint16_t *cur, float *acc, float *kappa) {
-	for (; *cur < ref_log_count && s >= f4_cum[*cur] - FOURTH_LAG_M; (*cur)++) {
+	for (; *cur < ref_log_count && s >= f4_cum[*cur] - f4_lag; (*cur)++) {
 		*acc += f4_dyaw[*cur];
 	}
 	*kappa = 0.0f;
 	if (*cur >= ref_log_count || *cur == 0) return *acc;
-	float a = f4_cum[*cur - 1] - FOURTH_LAG_M;
-	float b = f4_cum[*cur] - FOURTH_LAG_M;
+	float a = f4_cum[*cur - 1] - f4_lag;
+	float b = f4_cum[*cur] - f4_lag;
 	if (s <= a || b - a < 1e-4f) return *acc;
 	*kappa = f4_dyaw[*cur] / (b - a);
 	return *acc + f4_dyaw[*cur] * (s - a) / (b - a);
@@ -1802,7 +1834,7 @@ static uint8_t Fourth_Build_Plan(void) {
 		float d = ref_log[j].dist_from_prev_m;
 		float dy = Snap_Zetin_Segment_Yaw(ref_log[j].yaw_angle, d);
 		f4_dyaw[j] = dy * (PI / 180.0f);
-		float len = (dy != 0.0f) ? FOURTH_R0_M * fabsf(f4_dyaw[j]) : d;
+		float len = (dy != 0.0f) ? FOURTH_R0_M * fabsf(f4_dyaw[j]) : d * f4_sscale;
 		f4_cum[j] = f4_cum[j - 1] + fmaxf(len, 0.005f);
 	}
 	const float k_ref = 1.0f / FOURTH_R0_M;
@@ -1841,11 +1873,27 @@ static uint8_t Fourth_Build_Plan(void) {
 	{
 		const float s_lo = f4_cum[0] + FOURTH_EDGE_M;
 		const float s_hi = total - FOURTH_EDGE_M;
-		const float W = Clamp_F32(f4_w, 0.0f, 0.127f);
+		const float W = Clamp_F32(f4_w, 0.0f, 0.145f);
+		const float W_in = Clamp_F32(f4_w_in, 0.0f, 0.145f), W_out = Clamp_F32(f4_w_out, 0.0f, 0.145f);
+		// 곡선 방향: 맵 헤딩 변화율을 앞뒤 0.3 m 로 평활 (진입 / 탈출 구간도 같은 쪽으로 본다)
+		const int kwin = (int)(0.30f / FOURTH_DS_M);
 		const int excl = (int)(0.6f / FOURTH_DS_M);
 		for (uint16_t i = 0; i < m; i++) {
 			float s = (float)i * FOURTH_DS_M;
 			float lo = -W, hi = W;
+			{
+				int ja = (int)i - kwin, jb = (int)i + kwin;
+				if (ja < 0) ja = 0;
+				if (jb > (int)m - 1) jb = (int)m - 1;
+				const float kav = (jb > ja) ? (th[jb] - th[ja]) / ((float)(jb - ja) * FOURTH_DS_M) : 0.0f;
+				if (kav > 0.3f) {          // 좌회전: 안쪽 = +n
+					hi = W_in;
+					lo = -W_out;
+				} else if (kav < -0.3f) {  // 우회전: 안쪽 = -n
+					lo = -W_in;
+					hi = W_out;
+				}
+			}
 			uint8_t fl = 0;
 			const float tx = cosf(th[i]), ty = sinf(th[i]);
 			for (uint16_t j = 0; j < m; j++) {
@@ -1864,10 +1912,21 @@ static uint8_t Fourth_Build_Plan(void) {
 					fl |= F4_FLAG_XING;
 				}
 			}
+			// 곡선 시작점 근처: 안쪽 오프셋 제한 (맵 곡선 시작이 실제와 몇 cm 어긋나면 안쪽 블라인드에서 그대로 횡오차가 된다)
+			if (f4_onset_n < 0.14f) {
+				for (uint16_t j = 1; j < ref_log_count; j++) {
+					if (f4_dyaw[j] == 0.0f) continue;
+					if (f4_dyaw[j - 1] != 0.0f && (f4_dyaw[j - 1] > 0.0f) == (f4_dyaw[j] > 0.0f)) continue;
+					const float sa = f4_cum[j - 1] - f4_lag;
+					if (s < sa - FOURTH_ONSET_PRE_M || s > sa + f4_onset_post) continue;
+					if (f4_dyaw[j] > 0.0f) hi = fminf(hi, f4_onset_n);
+					else lo = fmaxf(lo, -f4_onset_n);
+				}
+			}
 			if (s < s_lo || s > s_hi) lo = hi = 0.0f;
 			if (lo > hi) lo = hi = 0.5f * (lo + hi);
-			f4_lo_mm[i] = (int8_t)lroundf(1000.0f * lo);
-			f4_hi_mm[i] = (int8_t)lroundf(1000.0f * hi);
+			f4_lo_mm[i] = (int16_t)lroundf(1000.0f * lo);
+			f4_hi_mm[i] = (int16_t)lroundf(1000.0f * hi);
 			f4_flag[i] = fl;
 		}
 		// 교차 표시는 앞뒤 FOURTH_XING_M 로 넓힌다 (교차 라인은 격자 표본 사이로 지나갈 수 있음)
@@ -1971,8 +2030,8 @@ static uint8_t Fourth_Build_Plan(void) {
 					if (nl > lo) lo = nl;
 					if (lo > hi) lo = hi;
 				}
-				f4_lo_mm[j] = (int8_t)lo;
-				f4_hi_mm[j] = (int8_t)hi;
+				f4_lo_mm[j] = (int16_t)lo;
+				f4_hi_mm[j] = (int16_t)hi;
 			}
 		}
 		if (!any || round == FOURTH_CAP_ROUNDS) break;
@@ -2012,6 +2071,20 @@ static uint8_t Fourth_Build_Plan(void) {
 		}
 	}
 
+	// 7) 계획 슬립각 beta(s) = K * 요레이트(= v * 몸체 곡률), 시간 지연 TAU 를 거리 지연 v * TAU 로 (F4_B 버퍼)
+	//    주행 중 헤딩 지령 = 라인 방향 + 몸체 상대각 + beta(s), 요레이트 피드포워드 = v * (몸체 곡률 + d beta / ds)
+	{
+		float *bp = F4_ARR(F4_B);
+		float acc = 0.0f;
+		for (uint16_t i = 0; i < m; i++) {
+			float bs = Clamp_F32(f4_beta_k * v[i] * kb[i], -f4_beta_max, f4_beta_max);
+			float lag = fmaxf(v[i], 0.3f) * FOURTH_BETA_TAU_S;
+			float a = 1.0f - expf(-dq[i] / lag);
+			acc += a * (bs - acc);
+			bp[i] = acc;
+		}
+	}
+
 #ifndef STM32H743xx
 	{
 		const char *path = getenv("F4_PLAN_CSV");
@@ -2046,7 +2119,8 @@ static uint8_t Fourth_Line_Measure(float *pos) {
 			pk = i;
 		}
 	}
-	if (pv < 120U || pk == 0 || pk == LINE_N_SENSORS - 1) return 0;
+	// 가장자리 센서에 피크가 있으면 무게중심이 안쪽으로 치우친다: f4_pk_min 보다 바깥 피크는 버린다
+	if (pv < 120U || pk < f4_pk_min || pk > LINE_N_SENSORS - 1 - f4_pk_min) return 0;
 	int cnt = 0;
 	for (int i = 0; i < LINE_N_SENSORS; i++) {
 		if (st & (1U << i)) {
@@ -2054,7 +2128,7 @@ static uint8_t Fourth_Line_Measure(float *pos) {
 			cnt++;
 		}
 	}
-	if (cnt > 4) return 0;
+	if (cnt > f4_cnt_max) return 0;   // 라인(20 mm)은 센서 2-3 개, 마커 테이프(50 mm)는 4-5 개
 	int i0 = (pk >= 2) ? pk - 2 : 0;
 	int i1 = (pk + 2 < LINE_N_SENSORS) ? pk + 2 : LINE_N_SENSORS - 1;
 	uint16_t fl = 255;
@@ -2100,7 +2174,7 @@ void Drive_Fourth(void) {
 
 	const float *pn = F4_ARR(F4_N), *pth = F4_ARR(F4_TH), *pk = F4_ARR(F4_K);
 	const float *pcx = F4_ARR(F4_CX), *pcy = F4_ARR(F4_CY);
-	const float *pchi = F4_ARR(F4_CHI), *pkb = F4_ARR(F4_KB), *pv = F4_ARR(F4_V);
+	const float *pchi = F4_ARR(F4_CHI), *pkb = F4_ARR(F4_KB), *pv = F4_ARR(F4_V), *pbeta = F4_ARR(F4_B);
 	const float L = FOURTH_BAR_X_M;
 	const float total = f4_cum[ref_log_count - 1];
 	const float odo_scale = ref_log_cum_dist[ref_log_count - 1] / fmaxf(total, 1.0f);   // STOP 판정용 (1차 오도메트리 기준)
@@ -2222,17 +2296,20 @@ void Drive_Fourth(void) {
 			uint16_t i0 = (uint16_t)fi;
 			float u = s - (float)i0 * FOURTH_DS_M;
 			float lx, ly;
-			if (u > FOURTH_DS_M) {
+			// 연장 분기는 맵 양 끝 밖에서만. 격자 경계에서는 float 반올림으로 u 가 -1e-6 처럼 될 수 있어
+			// u 부호만 보면 맵 시작점 기준으로 투영해 s 가 수 m 튄다
+			if (i0 + 2 >= fourth_m && u > FOURTH_DS_M) {
 				ths = pth[i0 + 1];
 				ks = 0.0f;
 				lx = pcx[i0 + 1] + (u - FOURTH_DS_M) * cosf(ths);
 				ly = pcy[i0 + 1] + (u - FOURTH_DS_M) * sinf(ths);
-			} else if (u < 0.0f) {
+			} else if (i0 == 0 && u < 0.0f) {
 				ths = pth[0];
 				ks = 0.0f;
 				lx = pcx[0] + u * cosf(ths);
 				ly = pcy[0] + u * sinf(ths);
 			} else {
+				u = Clamp_F32(u, 0.0f, FOURTH_DS_M);
 				float t0 = pth[i0], t1 = pth[i0 + 1];
 				ths = t0 + (t1 - t0) * (u / FOURTH_DS_M);
 				ks = pk[i0];
@@ -2318,7 +2395,8 @@ void Drive_Fourth(void) {
 			blind_m += d;
 			// 라인이 안 보임 = |n| > 센서 범위: 추정이 범위 안이면 바깥으로 민다 (교차 구간 제외)
 			if (!(zone & F4_FLAG_XING) && (IR_Sensor.data->state & 0xFFFFU) == 0U && fabsf(n) < FOURTH_VIS_M && blind_m > 0.01f) {
-				const float side = (n_last_seen >= 0.0f) ? 1.0f : -1.0f;
+				// 미는 방향: 추정이 0 에서 떨어져 있으면 현재 추정 쪽 (교차 구간 등 블라인드 중 라인을 넘어간 뒤 오래된 부호로 반대쪽에 밀지 않게)
+				const float side = (fabsf(n) > 0.02f) ? ((n > 0.0f) ? 1.0f : -1.0f) : ((n_last_seen >= 0.0f) ? 1.0f : -1.0f);
 				const float corr = 0.05f * (side * FOURTH_VIS_M - n);
 				bx -= corr * sinf(ths);
 				by += corr * cosf(ths);
@@ -2335,7 +2413,8 @@ void Drive_Fourth(void) {
 		const float nref = Fourth_At(pn, s);
 		{
 			const uint8_t near_line = (fabsf(nref) <= FOURTH_MARK_N_M && fabsf(n) <= FOURTH_MARK_N_M && fabsf(chi) <= FOURTH_MARK_CHI);
-			const uint8_t expected = (idx < ref_log_count && s > f4_cum[idx] - FOURTH_MARK_WIN_M);
+			// 교차로(C) 는 실제로 읽지 않는다: 비스듬히 지나면 한쪽 마커 센서가 교차선을 먼저 밟아 L/R 로 오인 (지나가면 가상 기록)
+			const uint8_t expected = (idx < ref_log_count && s > f4_cum[idx] - FOURTH_MARK_WIN_M && ref_log[idx].type != CROSS_CROSS);
 			const uint8_t goal_zone = (s > total - FOURTH_GOAL_ZONE_M) || (g_total_STOP == 0);
 			g_suppress_marker_detect = (goal_zone || (near_line && expected)) ? 0 : 1;
 		}
@@ -2352,14 +2431,13 @@ void Drive_Fourth(void) {
 		// 5) 방향 지령 (IMU 방향 추종 모드): 라인 방향 + 계획 몸체 상대각 + 슬립각 - 위치 오차 보정
 		const float chi_ref = Fourth_At(pchi, s);
 		const float kb = Fourth_At(pkb, s);
-		const float kb_lag = Fourth_At(pkb, s - fmaxf(vv, 0.0f) * FOURTH_BETA_TAU_S);
-		float beta_ff = fminf(f4_beta_max, f4_beta_k * vv * fabsf(kb_lag));
-		if (kb_lag < 0.0f) beta_ff = -beta_ff;
+		const float beta_ff = Fourth_At(pbeta, s);
+		const float dbeta_ds = (Fourth_At(pbeta, s + 0.025f) - Fourth_At(pbeta, s - 0.025f)) / 0.05f;
 		const float e = n - nref;
 		const float lpv = f4_lp0 + f4_lpt * fmaxf(vv, 0.0f);
 		const float psi_cmd = ths + chi_ref + beta_ff - atanf(e / lpv);
 		g_straight_cut_yaw_ref = Wrap_Angle_Deg(yaw + f4_hgain * (psi_cmd - psim) * (180.0f / PI));
-		g_straight_cut_kappa_ref = kb;
+		g_straight_cut_kappa_ref = kb + f4_dbeta_ff * dbeta_ds;
 		{
 			// 출발선 이전 / 골 직전: 라인 PD 추종 (target_pos = 0), 그 밖: IMU 방향 추종
 			const uint8_t line_mode = (g_total_STOP == 0) || (s > total - FOURTH_LINE_END_M);
@@ -2421,6 +2499,7 @@ void Drive_Fourth(void) {
 		LCD_Printf(0, 4, "T:%.2fs", lap_time);
 		LCD_Printf(0, 5, "Blind:%.2fm", blind_max);
 	}
+	Drive_Save_MapLog_Show(4, lap_time, lost_exit);
 	Drive_Wait_Exit_Or_Heal(1);
 	LCD_Clear();
 }
@@ -2674,6 +2753,7 @@ void Drive_Fifth(void) {
 		LCD_Printf(0, 3, "C:%d", g_total_C);
 		LCD_Printf(0, 4, "T:%.2fs", lap_time);
 	}
+	Drive_Save_MapLog_Show(5, lap_time, lost_exit);
 	Drive_Wait_Exit_Or_Heal(1);
 	LCD_Clear();
 }
